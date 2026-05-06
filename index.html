@@ -4293,7 +4293,9 @@
     }
   }
 
-  function counterLogin() {
+  // 雲端登入：呼叫 GAS verifyEmployee（讀 Google Sheet 員工分頁）
+  // 失敗時 fallback 到本機 EMPLOYEES（避免雲端故障時整個系統登不進去）
+  async function counterLogin() {
     const idEl = document.getElementById('counter-login-id');
     const pwEl = document.getElementById('counter-login-pw');
     const errEl = document.getElementById('counter-login-error');
@@ -4304,22 +4306,68 @@
       if (errEl) errEl.textContent = '請輸入員工編號與密碼';
       return;
     }
-    const user = EMPLOYEES.find(e =>
-      e.employeeId === id && e.password === pw && e.isActive
-    );
+
+    let user = null;
+
+    // 1. 雲端優先驗證
+    if (window.KW && KW.api && KW.api.enabled()) {
+      if (errEl) errEl.textContent = '雲端驗證中...';
+      try {
+        const res = await KW.api.verifyEmployee({ employeeId: id, password: pw });
+        if (res && res.ok && res.data) {
+          user = {
+            employeeId: res.data.employeeId,
+            name: res.data.name,
+            role: res.data.role,
+            clinic: res.data.clinic,
+            clinics: res.data.clinics || [],
+            isActive: true,
+            lastLogin: res.data.lastLogin || new Date().toISOString(),
+            _source: 'cloud',
+          };
+          // 同步到本機 EMPLOYEES（之後 renderAdminUsers / 同會話內使用）
+          const idx = EMPLOYEES.findIndex(e => e.employeeId === id);
+          if (idx >= 0) EMPLOYEES[idx] = Object.assign({}, EMPLOYEES[idx], user);
+          else EMPLOYEES.push(Object.assign({}, user));
+        } else if (res && res.error) {
+          // 雲端明確回覆「找不到」「密碼錯」「停用」等 → 不要 fallback，直接顯示錯誤
+          const reasonMap = {
+            'not_found': '找不到此員工編號',
+            'bad_password': '密碼錯誤',
+            'inactive': '此帳號已停用',
+            'missing_credentials': '請輸入員工編號與密碼',
+          };
+          if (errEl) errEl.textContent = reasonMap[res.error] || ('登入失敗：' + res.error);
+          return;
+        }
+      } catch (e) {
+        console.warn('[KW] verifyEmployee failed, fallback to local:', e);
+      }
+    }
+
+    // 2. 雲端沒結果（或未啟用）→ fallback 到本機 EMPLOYEES
+    if (!user) {
+      user = EMPLOYEES.find(e =>
+        e.employeeId === id && e.password === pw && e.isActive
+      );
+      if (user) user._source = 'local';
+    }
+
     if (!user) {
       if (errEl) errEl.textContent = '員工編號或密碼錯誤';
       return;
     }
+
     // 紀錄這次登入時間（後續所有由此員工操作的預約 / 報到 / 改約都會帶 by 紀錄）
     user.lastLogin = new Date().toISOString();
     state.counterUser = user;
     if (user.clinic) state.counterClinic = user.clinic;
     if (idEl) idEl.value = '';
     if (pwEl) pwEl.value = '';
+    if (errEl) errEl.textContent = '';
     showCounterScreen();
-    if (typeof showToast === 'function') showToast(`歡迎回來，${user.name}`);
-    // 即時更新管理員工表（若使用者切到該分頁）
+    const sourceTag = user._source === 'cloud' ? '☁️' : '💾';
+    if (typeof showToast === 'function') showToast(`${sourceTag} 歡迎回來，${user.name}`);
     if (typeof renderAdminUsers === 'function') renderAdminUsers();
   }
 
