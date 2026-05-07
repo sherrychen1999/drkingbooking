@@ -7186,14 +7186,16 @@
   renderCounterPage();
 </script>
 
- <!-- ============================================================
-     ⚠️  雲端預約同步補丁 — 階段 6.2
-     貼到 index.html 的 </body> 標籤前
-     讓櫃台日曆 / 預約報到頁從 Google Sheet 撈資料，不再用 demo 假資料
+<!-- ============================================================
+     ⚠️  雲端預約同步補丁 v3
+     - 醫師姓名嚴格正規化（去 " 醫師" / 去全形空白 / 去半形空白）
+     - 顯示「未分派 / 時段外」預約區塊（不再隱形）
+     - 建立預約前先驗證該時段是否有班表（無則擋下）
+     - Console 完整除錯訊息
+     貼到 index.html 的 </body> 標籤前（取代舊補丁）
      ============================================================ -->
 <script>
 (function() {
-  // 等到原本的 state 載入後才執行
   function waitForReady(cb, retries) {
     retries = retries || 50;
     if (typeof state !== 'undefined' && typeof renderCounterPage === 'function' && typeof getAllAppointmentsForCheckin === 'function') {
@@ -7201,15 +7203,13 @@
     } else if (retries > 0) {
       setTimeout(function() { waitForReady(cb, retries - 1); }, 100);
     } else {
-      console.error('[KW 補丁] 找不到原本的 state/render 函數');
+      console.error('[KW v3] 找不到原本的 state/render 函數');
     }
   }
 
   waitForReady(function() {
-    // 雲端快取
     state.cloudApptCache = state.cloudApptCache || {};
 
-    // 中文狀態 → 內部代碼
     var STATUS_MAP = {
       '已預約': 'scheduled',
       '已報到': 'checked_in',
@@ -7233,19 +7233,56 @@
       return (parts[0] || 0) * 60 + (parts[1] || 0);
     }
 
-    // 從 GAS 抓某日該院區的所有預約
+    // 嚴格醫師姓名正規化：去尾部「醫師」「Dr.」、去全形/半形空白
+    function normDoctor(s) {
+      return String(s || '')
+        .replace(/\s*醫師\s*$/, '')
+        .replace(/^Dr\.?\s*/i, '')
+        .replace(/[　\s]/g, '')   // 全形空白 + 半形空白
+        .trim();
+    }
+
+    function isoWeekday(date) {
+      var d = (date instanceof Date) ? date : new Date(date);
+      var w = d.getDay();
+      return w === 0 ? 7 : w;  // 週日=7
+    }
+
+    // 取得某院區某日全部班表（用前端的 FIXED_SCHEDULE）
+    function getSchedulesForClinicDate(clinicName, date) {
+      if (typeof FIXED_SCHEDULE === 'undefined') return [];
+      var wd = isoWeekday(date);
+      return FIXED_SCHEDULE.filter(function(s) {
+        return s.enabled !== false && s.clinic === clinicName && Number(s.weekday) === wd;
+      });
+    }
+
+    // 檢查 (clinic, date, doctor, startTime) 是否落在某條班表內
+    function isWithinSchedule(clinic, date, doctorShortName, startTime) {
+      var schedules = getSchedulesForClinicDate(clinic, date);
+      var startMin = timeStrToMin(startTime);
+      var target = normDoctor(doctorShortName);
+      return schedules.some(function(s) {
+        return normDoctor(s.doctor) === target
+          && startMin >= timeStrToMin(s.start)
+          && startMin < timeStrToMin(s.end);
+      });
+    }
+
     window.fetchCloudAppts = function(clinic, date) {
       if (!window.KW || !KW.api || !KW.api.enabled()) {
         return Promise.resolve([]);
       }
       var dateStr = fmtDate(date);
       var key = clinic + '|' + dateStr;
+      console.log('[KW v3] 抓取雲端預約:', key);
       return KW.api.getAppointmentsByClinicDate(clinic, dateStr).then(function(res) {
         if (res && res.ok && Array.isArray(res.data)) {
           var appts = res.data.map(function(r) {
             var startMin = timeStrToMin(r['開始時段']);
             var endMin = timeStrToMin(r['結束時段']);
             if (endMin <= startMin) endMin = startMin + 10;
+            var rawDoc = r['醫師'] || '';
             return {
               name: r['病人姓名'] || '',
               type: r['類型'] || '複診',
@@ -7254,7 +7291,8 @@
               spanSlots: Math.max(1, Math.round((endMin - startMin) / 10)),
               flag: 'normal',
               cloudId: r['預約編號'],
-              doctor: r['醫師'] || '',
+              doctor: normDoctor(rawDoc),
+              doctorRaw: rawDoc,
               clinicName: clinic,
               date: dateStr,
               status: STATUS_MAP[r['狀態']] || 'scheduled',
@@ -7274,32 +7312,40 @@
             };
           });
           state.cloudApptCache[key] = appts;
+          console.log('[KW v3] ✓ 成功抓到', appts.length, '筆，明細：',
+            appts.map(function(a) { return a.name + '(' + a.doctor + '@' + Math.floor(a.startMin/60) + ':' + (a.startMin%60).toString().padStart(2,'0') + ')'; }).join(', ')
+          );
           return appts;
         }
+        console.warn('[KW v3] 雲端回應異常', res);
         state.cloudApptCache[key] = [];
         return [];
       }).catch(function(e) {
-        console.warn('[KW] fetchCloudAppts failed:', e);
+        console.warn('[KW v3] fetchCloudAppts 失敗:', e);
         state.cloudApptCache[key] = [];
         return [];
       });
     };
 
-    // 包裝 buildDayAppointmentsForDoctor — 雲端模式從快取讀
+    // 比對醫師名（雲端模式）
     var _origBuild = window.buildDayAppointmentsForDoctor;
     window.buildDayAppointmentsForDoctor = function(doctorShortName, scheduleList, dateStr) {
       if (window.KW && KW.api && KW.api.enabled()) {
         var clinic = (scheduleList[0] && scheduleList[0].clinic) || state.counterClinic || state.checkinClinic;
         var cacheKey = clinic + '|' + dateStr;
         if (state.cloudApptCache[cacheKey] !== undefined) {
-          return (state.cloudApptCache[cacheKey] || []).filter(function(a) { return a.doctor === doctorShortName; });
+          var target = normDoctor(doctorShortName);
+          var matched = (state.cloudApptCache[cacheKey] || []).filter(function(a) {
+            return a.doctor === target;
+          });
+          return matched;
         }
         return [];
       }
       return _origBuild.apply(this, arguments);
     };
 
-    // 包裝 getAllAppointmentsForCheckin
+    // 預約報到頁
     var _origGetAll = window.getAllAppointmentsForCheckin;
     window.getAllAppointmentsForCheckin = function(clinicName, date) {
       if (window.KW && KW.api && KW.api.enabled()) {
@@ -7311,30 +7357,93 @@
             return Object.assign({}, a, {
               key: a.cloudId || (clinicName + '|' + dateStr + '|' + a.doctor + '|' + a.startMin),
             });
-          }).sort(function(a,b) { return a.startMin - b.startMin || a.doctor.localeCompare(b.doctor); });
+          }).sort(function(a,b) { return a.startMin - b.startMin || (a.doctor||'').localeCompare(b.doctor||''); });
         }
         return [];
       }
       return _origGetAll.apply(this, arguments);
     };
 
-    // 包裝 renderCounterPage — 先抓再 render
+    // 渲染「未分派 / 時段外」區塊
+    function renderOrphanSection() {
+      if (!state.counterClinic || !state.counterDate) return;
+      var dateStr = fmtDate(state.counterDate);
+      var cacheKey = state.counterClinic + '|' + dateStr;
+      var all = state.cloudApptCache[cacheKey] || [];
+      var schedules = getSchedulesForClinicDate(state.counterClinic, state.counterDate);
+      var validDocs = schedules.map(function(s) { return normDoctor(s.doctor); });
+
+      // 篩出：醫師=「系統指派」、或醫師不在當日班表、或時間不在任何班表內
+      var orphans = all.filter(function(a) {
+        if (!a.doctor || a.doctor === '系統指派' || a.doctor === '系統') return true;
+        if (validDocs.indexOf(a.doctor) === -1) return true;
+        // 時段檢查
+        var inSchedule = schedules.some(function(s) {
+          return normDoctor(s.doctor) === a.doctor
+            && a.startMin >= timeStrToMin(s.start)
+            && a.startMin < timeStrToMin(s.end);
+        });
+        return !inSchedule;
+      });
+
+      // 找日曆容器，在它前面插入未分派區塊
+      var container = document.getElementById('counter-day-calendar');
+      if (!container) return;
+      var existing = document.getElementById('kw-orphan-section');
+      if (existing) existing.remove();
+      if (orphans.length === 0) return;
+
+      var html = '<div id="kw-orphan-section" style="background:#fef3c7; border:1px solid #fcd34d; border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:13px;">'
+        + '<div style="font-weight:700; color:#92400e; margin-bottom:6px;">⚠️ 未分派／時段外預約 (' + orphans.length + ' 筆) — 需櫃台手動處理</div>'
+        + '<table style="width:100%; font-size:12px; border-collapse:collapse;"><thead><tr style="color:#78350f;">'
+        + '<th style="text-align:left; padding:4px 8px;">病人</th>'
+        + '<th style="text-align:left; padding:4px 8px;">時段</th>'
+        + '<th style="text-align:left; padding:4px 8px;">類型</th>'
+        + '<th style="text-align:left; padding:4px 8px;">醫師欄位</th>'
+        + '<th style="text-align:left; padding:4px 8px;">原因</th>'
+        + '</tr></thead><tbody>';
+      orphans.forEach(function(a) {
+        var reason = '';
+        if (!a.doctor || a.doctor === '系統指派') reason = '醫師=「系統指派」需分派';
+        else if (validDocs.indexOf(a.doctor) === -1) reason = '醫師「' + a.doctor + '」當日無班表';
+        else reason = '時間超出該醫師班表';
+        html += '<tr style="border-top:1px solid #fde68a;">'
+          + '<td style="padding:4px 8px;"><strong>' + a.name + '</strong></td>'
+          + '<td style="padding:4px 8px;">' + Math.floor(a.startMin/60) + ':' + (a.startMin%60).toString().padStart(2,'0') + '</td>'
+          + '<td style="padding:4px 8px;">' + a.type + '</td>'
+          + '<td style="padding:4px 8px;">' + (a.doctorRaw || '—') + '</td>'
+          + '<td style="padding:4px 8px; color:#9a3412;">' + reason + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table><div style="font-size:11px; color:#92400e; margin-top:6px;">💡 解法：在 Google Sheet 預約分頁直接修改「醫師」或「開始時段」欄位，回頁面 ⌘+Shift+R</div></div>';
+      container.parentNode.insertBefore(
+        Object.assign(document.createElement('div'), { innerHTML: html }).firstChild,
+        container
+      );
+    }
+
+    // renderCounterPage 包裝：抓資料 → render → 顯示未分派區塊
     var _origRender = window.renderCounterPage;
     window.renderCounterPage = function() {
+      var self = this;
+      function doRender() {
+        _origRender.apply(self);
+        renderOrphanSection();
+      }
       if (window.KW && KW.api && KW.api.enabled() && state.counterClinic && state.counterDate) {
         var dateStr = fmtDate(state.counterDate);
         var key = state.counterClinic + '|' + dateStr;
         if (state.cloudApptCache[key] === undefined) {
-          var self = this;
-          fetchCloudAppts(state.counterClinic, state.counterDate).then(function() {
-            _origRender.apply(self);
-          });
+          fetchCloudAppts(state.counterClinic, state.counterDate).then(doRender);
+        } else {
+          doRender();
         }
+      } else {
+        _origRender.apply(self);
       }
-      return _origRender.apply(this);
     };
 
-    // 包裝 renderCheckinView
+    // renderCheckinView 包裝
     var _origCheckin = window.renderCheckinView;
     window.renderCheckinView = function() {
       if (window.KW && KW.api && KW.api.enabled() && state.checkinClinic && state.checkinDate) {
@@ -7345,12 +7454,13 @@
           fetchCloudAppts(state.checkinClinic, state.checkinDate).then(function() {
             _origCheckin.apply(self);
           });
+          return;
         }
       }
       return _origCheckin.apply(this);
     };
 
-    // 狀態變動 → 清快取讓下次重抓
+    // 報到/取消/改約後 → 清快取重抓
     var _origConfirm = window.confirmCheckinModal;
     if (_origConfirm) {
       window.confirmCheckinModal = function() {
@@ -7359,7 +7469,6 @@
         var dateStr = state.checkinDate ? fmtDate(state.checkinDate) : '';
         if (clinic && dateStr) {
           delete state.cloudApptCache[clinic + '|' + dateStr];
-          // 1.5 秒後重抓並 render（給 GAS 寫入時間）
           setTimeout(function() {
             fetchCloudAppts(clinic, state.checkinDate).then(function() {
               if (typeof renderCheckinView === 'function') renderCheckinView();
@@ -7371,20 +7480,45 @@
       };
     }
 
-    // 包裝 onQuickBookingSubmit — 建立預約後重抓
+    // 建立預約前驗證 + 建立後重抓
     var _origQB = window.onQuickBookingSubmit;
     if (_origQB) {
       window.onQuickBookingSubmit = function() {
+        // === 班表驗證 ===
+        var name = (document.getElementById('qb-name') || {}).value || '';
+        var clinic = (document.getElementById('counter-quick-clinic') || {}).value || '';
+        var doctor = (document.getElementById('counter-quick-doctor') || {}).value || '';
+        var datetime = (document.getElementById('qb-datetime') || {}).value || '';
+        if (clinic && doctor && datetime && doctor !== '__any__') {
+          var date = new Date(datetime.split('T')[0]);
+          var time = (datetime.split('T')[1] || '').slice(0, 5);
+          if (!isWithinSchedule(clinic, date, doctor, time)) {
+            // 找出該醫師當日的班表時段
+            var schedules = getSchedulesForClinicDate(clinic, date);
+            var docSchedules = schedules.filter(function(s) { return normDoctor(s.doctor) === normDoctor(doctor); });
+            var msg;
+            if (docSchedules.length === 0) {
+              msg = '⚠️ ' + doctor + ' 在 ' + datetime.split('T')[0] + ' 該院區未開診！\n\n請選擇有班表的日期/醫師，或改選其他醫師。';
+            } else {
+              msg = '⚠️ ' + doctor + ' 在 ' + datetime.split('T')[0] + ' ' + time + ' 不在班表內！\n\n當日班表時段：\n  ' + docSchedules.map(function(s) { return s.start + '-' + s.end; }).join('\n  ') + '\n\n請改選班表內的時段。';
+            }
+            alert(msg);
+            return;  // ★ 擋下，不送出
+          }
+        }
+
+        // 通過驗證 → 原本的建立流程
         var result = _origQB.apply(this, arguments);
-        var clinic = state.counterClinic;
-        if (clinic) {
-          // 清掉所有日期的快取（因為新預約可能在任何日期）
+
+        // 建立後重抓
+        var clinicSel = state.counterClinic;
+        if (clinicSel) {
           Object.keys(state.cloudApptCache).forEach(function(k) {
-            if (k.indexOf(clinic + '|') === 0) delete state.cloudApptCache[k];
+            if (k.indexOf(clinicSel + '|') === 0) delete state.cloudApptCache[k];
           });
           setTimeout(function() {
             if (state.counterDate) {
-              fetchCloudAppts(clinic, state.counterDate).then(function() {
+              fetchCloudAppts(clinicSel, state.counterDate).then(function() {
                 if (typeof renderCounterPage === 'function') renderCounterPage();
               });
             }
@@ -7394,7 +7528,7 @@
       };
     }
 
-    console.log('[KW 補丁] ✓ 雲端預約同步已啟用（階段 6.2）');
+    console.log('[KW v3] ✓ 雲端預約同步已啟用（含班表驗證 + 未分派區塊）');
   });
 })();
 </script>
