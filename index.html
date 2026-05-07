@@ -7186,5 +7186,217 @@
   renderCounterPage();
 </script>
 
+ <!-- ============================================================
+     ⚠️  雲端預約同步補丁 — 階段 6.2
+     貼到 index.html 的 </body> 標籤前
+     讓櫃台日曆 / 預約報到頁從 Google Sheet 撈資料，不再用 demo 假資料
+     ============================================================ -->
+<script>
+(function() {
+  // 等到原本的 state 載入後才執行
+  function waitForReady(cb, retries) {
+    retries = retries || 50;
+    if (typeof state !== 'undefined' && typeof renderCounterPage === 'function' && typeof getAllAppointmentsForCheckin === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function() { waitForReady(cb, retries - 1); }, 100);
+    } else {
+      console.error('[KW 補丁] 找不到原本的 state/render 函數');
+    }
+  }
+
+  waitForReady(function() {
+    // 雲端快取
+    state.cloudApptCache = state.cloudApptCache || {};
+
+    // 中文狀態 → 內部代碼
+    var STATUS_MAP = {
+      '已預約': 'scheduled',
+      '已報到': 'checked_in',
+      '已取消': 'cancelled',
+      '已改約': 'rescheduled',
+      '未到診': 'no_show',
+    };
+
+    function fmtDate(d) {
+      if (typeof fmtIsoDate === 'function') return fmtIsoDate(d);
+      var dt = (d instanceof Date) ? d : new Date(d);
+      var y = dt.getFullYear();
+      var m = String(dt.getMonth() + 1).padStart(2, '0');
+      var dy = String(dt.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + dy;
+    }
+
+    function timeStrToMin(s) {
+      if (typeof timeToMinutes === 'function') return timeToMinutes(s);
+      var parts = String(s || '0:0').split(':').map(Number);
+      return (parts[0] || 0) * 60 + (parts[1] || 0);
+    }
+
+    // 從 GAS 抓某日該院區的所有預約
+    window.fetchCloudAppts = function(clinic, date) {
+      if (!window.KW || !KW.api || !KW.api.enabled()) {
+        return Promise.resolve([]);
+      }
+      var dateStr = fmtDate(date);
+      var key = clinic + '|' + dateStr;
+      return KW.api.getAppointmentsByClinicDate(clinic, dateStr).then(function(res) {
+        if (res && res.ok && Array.isArray(res.data)) {
+          var appts = res.data.map(function(r) {
+            var startMin = timeStrToMin(r['開始時段']);
+            var endMin = timeStrToMin(r['結束時段']);
+            if (endMin <= startMin) endMin = startMin + 10;
+            return {
+              name: r['病人姓名'] || '',
+              type: r['類型'] || '複診',
+              startMin: startMin,
+              endMin: endMin,
+              spanSlots: Math.max(1, Math.round((endMin - startMin) / 10)),
+              flag: 'normal',
+              cloudId: r['預約編號'],
+              doctor: r['醫師'] || '',
+              clinicName: clinic,
+              date: dateStr,
+              status: STATUS_MAP[r['狀態']] || 'scheduled',
+              createdBy: r['建立者'] || 'patient',
+              createdRole: r['建立角色'] || 'patient',
+              createdAt: r['建立時間'] || '',
+              createSource: r['建立來源'] || 'patient_app',
+              createNote: r['備註'] || '',
+              actionBy: r['操作者'] || '',
+              actionByRole: r['操作角色'] || '',
+              actionAt: r['操作時間'] || '',
+              medicationWeeks: r['拿藥週數'] || '',
+              actionNote: r['備註'] || '',
+              newDate: r['改約後日期'] || '',
+              newTime: r['改約後時段'] || '',
+              phone: r['電話'] || '',
+            };
+          });
+          state.cloudApptCache[key] = appts;
+          return appts;
+        }
+        state.cloudApptCache[key] = [];
+        return [];
+      }).catch(function(e) {
+        console.warn('[KW] fetchCloudAppts failed:', e);
+        state.cloudApptCache[key] = [];
+        return [];
+      });
+    };
+
+    // 包裝 buildDayAppointmentsForDoctor — 雲端模式從快取讀
+    var _origBuild = window.buildDayAppointmentsForDoctor;
+    window.buildDayAppointmentsForDoctor = function(doctorShortName, scheduleList, dateStr) {
+      if (window.KW && KW.api && KW.api.enabled()) {
+        var clinic = (scheduleList[0] && scheduleList[0].clinic) || state.counterClinic || state.checkinClinic;
+        var cacheKey = clinic + '|' + dateStr;
+        if (state.cloudApptCache[cacheKey] !== undefined) {
+          return (state.cloudApptCache[cacheKey] || []).filter(function(a) { return a.doctor === doctorShortName; });
+        }
+        return [];
+      }
+      return _origBuild.apply(this, arguments);
+    };
+
+    // 包裝 getAllAppointmentsForCheckin
+    var _origGetAll = window.getAllAppointmentsForCheckin;
+    window.getAllAppointmentsForCheckin = function(clinicName, date) {
+      if (window.KW && KW.api && KW.api.enabled()) {
+        var dateStr = fmtDate(date);
+        var cacheKey = clinicName + '|' + dateStr;
+        if (state.cloudApptCache[cacheKey] !== undefined) {
+          var all = state.cloudApptCache[cacheKey] || [];
+          return all.map(function(a) {
+            return Object.assign({}, a, {
+              key: a.cloudId || (clinicName + '|' + dateStr + '|' + a.doctor + '|' + a.startMin),
+            });
+          }).sort(function(a,b) { return a.startMin - b.startMin || a.doctor.localeCompare(b.doctor); });
+        }
+        return [];
+      }
+      return _origGetAll.apply(this, arguments);
+    };
+
+    // 包裝 renderCounterPage — 先抓再 render
+    var _origRender = window.renderCounterPage;
+    window.renderCounterPage = function() {
+      if (window.KW && KW.api && KW.api.enabled() && state.counterClinic && state.counterDate) {
+        var dateStr = fmtDate(state.counterDate);
+        var key = state.counterClinic + '|' + dateStr;
+        if (state.cloudApptCache[key] === undefined) {
+          var self = this;
+          fetchCloudAppts(state.counterClinic, state.counterDate).then(function() {
+            _origRender.apply(self);
+          });
+        }
+      }
+      return _origRender.apply(this);
+    };
+
+    // 包裝 renderCheckinView
+    var _origCheckin = window.renderCheckinView;
+    window.renderCheckinView = function() {
+      if (window.KW && KW.api && KW.api.enabled() && state.checkinClinic && state.checkinDate) {
+        var dateStr = fmtDate(state.checkinDate);
+        var key = state.checkinClinic + '|' + dateStr;
+        if (state.cloudApptCache[key] === undefined) {
+          var self = this;
+          fetchCloudAppts(state.checkinClinic, state.checkinDate).then(function() {
+            _origCheckin.apply(self);
+          });
+        }
+      }
+      return _origCheckin.apply(this);
+    };
+
+    // 狀態變動 → 清快取讓下次重抓
+    var _origConfirm = window.confirmCheckinModal;
+    if (_origConfirm) {
+      window.confirmCheckinModal = function() {
+        var result = _origConfirm.apply(this, arguments);
+        var clinic = state.checkinClinic;
+        var dateStr = state.checkinDate ? fmtDate(state.checkinDate) : '';
+        if (clinic && dateStr) {
+          delete state.cloudApptCache[clinic + '|' + dateStr];
+          // 1.5 秒後重抓並 render（給 GAS 寫入時間）
+          setTimeout(function() {
+            fetchCloudAppts(clinic, state.checkinDate).then(function() {
+              if (typeof renderCheckinView === 'function') renderCheckinView();
+              if (typeof renderCounterPage === 'function') renderCounterPage();
+            });
+          }, 1500);
+        }
+        return result;
+      };
+    }
+
+    // 包裝 onQuickBookingSubmit — 建立預約後重抓
+    var _origQB = window.onQuickBookingSubmit;
+    if (_origQB) {
+      window.onQuickBookingSubmit = function() {
+        var result = _origQB.apply(this, arguments);
+        var clinic = state.counterClinic;
+        if (clinic) {
+          // 清掉所有日期的快取（因為新預約可能在任何日期）
+          Object.keys(state.cloudApptCache).forEach(function(k) {
+            if (k.indexOf(clinic + '|') === 0) delete state.cloudApptCache[k];
+          });
+          setTimeout(function() {
+            if (state.counterDate) {
+              fetchCloudAppts(clinic, state.counterDate).then(function() {
+                if (typeof renderCounterPage === 'function') renderCounterPage();
+              });
+            }
+          }, 1500);
+        }
+        return result;
+      };
+    }
+
+    console.log('[KW 補丁] ✓ 雲端預約同步已啟用（階段 6.2）');
+  });
+})();
+</script>
 </body>
 </html>
