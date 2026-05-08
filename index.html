@@ -7186,13 +7186,13 @@
   renderCounterPage();
 </script>
 <!-- ============================================================
-     ⚠️  雲端預約同步補丁 v5 — 流程優化整合版
-     一次包含：
-       1. 移除「姓名」必填星號（姓名實際上可選填）
-       2. 在系統內補登（彈出 modal，不需動 Google Sheet 母檔）
-       3. 預約成功後 GAS 自動寫入「病人」分頁（已內建）
-       4. 預約日期時間改成：日曆 + 小時下拉 + 分鐘下拉（10 分鐘為單位）
-       5. 沿用 v4 所有功能：院區自動鎖定、班表驗證、未補登區塊、雙向同步
+     ⚠️  雲端預約同步補丁 v6 — 修正版
+     主要修正：
+       1. 時間解析 NaN → 支援 Date 物件序列化後的 ISO 字串
+       2. 電話顯示補回前導 0
+       3. 預約完成立刻顯示在日曆（不齊全也顯示，標示「待補登」）
+       4. 自訂時間選擇器改為換行排版，不擠出頁面
+     沿用 v5 所有功能：補登 modal、院區鎖定、病人自動寫入
      貼到 index.html 的 </body> 標籤前（取代舊補丁）
      ============================================================ -->
 <script>
@@ -7204,7 +7204,7 @@
     } else if (retries > 0) {
       setTimeout(function() { waitForReady(cb, retries - 1); }, 100);
     } else {
-      console.error('[KW v5] 找不到原本的 state/render 函數');
+      console.error('[KW v6] 找不到原本的 state/render 函數');
     }
   }
 
@@ -7212,11 +7212,8 @@
     state.cloudApptCache = state.cloudApptCache || {};
 
     var STATUS_MAP = {
-      '已預約': 'scheduled',
-      '已報到': 'checked_in',
-      '已取消': 'cancelled',
-      '已改約': 'rescheduled',
-      '未到診': 'no_show',
+      '已預約': 'scheduled', '已報到': 'checked_in',
+      '已取消': 'cancelled', '已改約': 'rescheduled', '未到診': 'no_show',
     };
 
     function fmtDate(d) {
@@ -7227,18 +7224,41 @@
       var dy = String(dt.getDate()).padStart(2, '0');
       return y + '-' + m + '-' + dy;
     }
+
+    // ★ 核心修正：時間解析支援多種格式
     function timeStrToMin(s) {
-      if (typeof timeToMinutes === 'function') return timeToMinutes(s);
-      var parts = String(s || '0:0').split(':').map(Number);
-      return (parts[0] || 0) * 60 + (parts[1] || 0);
+      if (s == null) return NaN;
+      if (s instanceof Date) return s.getHours() * 60 + s.getMinutes();
+      if (typeof s === 'string') {
+        // ISO 日期字串（GAS Date 物件序列化後的形式：1899-12-30T13:10:00.000Z）
+        var iso = s.match(/T(\d{2}):(\d{2})/);
+        if (iso) return parseInt(iso[1], 10) * 60 + parseInt(iso[2], 10);
+        // 標準 HH:mm
+        var hm = s.match(/^(\d{1,2}):(\d{1,2})/);
+        if (hm) return parseInt(hm[1], 10) * 60 + parseInt(hm[2], 10);
+      }
+      return NaN;
     }
+
+    // 顯示時間（補 0）
+    function fmtMinToHHMM(min) {
+      if (isNaN(min)) return '--:--';
+      return String(Math.floor(min/60)).padStart(2,'0') + ':' + String(min%60).padStart(2,'0');
+    }
+
+    // 電話補 0
+    function padPhone(s) {
+      var p = String(s || '').replace(/[^0-9]/g, '');
+      if (p.length === 9 && p[0] === '9') return '0' + p;
+      return p;
+    }
+
     function normDoctor(s) {
       return String(s || '').replace(/\s*醫師\s*$/, '').replace(/^Dr\.?\s*/i, '').replace(/[　\s]/g, '').trim();
     }
     function isoWeekday(date) {
       var d = (date instanceof Date) ? date : new Date(date);
-      var w = d.getDay();
-      return w === 0 ? 7 : w;
+      var w = d.getDay(); return w === 0 ? 7 : w;
     }
     function getSchedulesForClinicDate(clinicName, date) {
       if (typeof FIXED_SCHEDULE === 'undefined') return [];
@@ -7250,6 +7270,7 @@
     function isWithinSchedule(clinic, date, doctorShortName, startTime) {
       var schedules = getSchedulesForClinicDate(clinic, date);
       var startMin = timeStrToMin(startTime);
+      if (isNaN(startMin)) return false;
       var target = normDoctor(doctorShortName);
       return schedules.some(function(s) {
         return normDoctor(s.doctor) === target && startMin >= timeStrToMin(s.start) && startMin < timeStrToMin(s.end);
@@ -7257,57 +7278,55 @@
     }
 
     // ==========================================================
-    // 1. 移除「姓名」必填星號 + 改成自訂日期時間選擇器
+    // 表單客製化：移除星號 + 自訂時間選擇器（改換行排版）
     // ==========================================================
     function applyFormCustomization() {
-      // 移除姓名星號
       var nameEl = document.getElementById('qb-name');
       if (nameEl && nameEl.placeholder.indexOf('*') !== -1) {
         nameEl.placeholder = '姓名（可選填）';
       }
 
-      // 替換 datetime-local 成「日期 + 小時 + 分鐘」
       var dtEl = document.getElementById('qb-datetime');
       if (dtEl && !document.getElementById('qb-date-picker')) {
-        // 隱藏原 datetime input
         dtEl.style.display = 'none';
 
-        // 建立新 wrapper
         var wrap = document.createElement('div');
         wrap.id = 'qb-datetime-wrap';
-        wrap.style.cssText = 'display:flex; gap:6px; align-items:center; flex:1; min-width:240px;';
+        // ★ 改成可換行 + 緊湊
+        wrap.style.cssText = 'display:flex; gap:4px; align-items:center; flex:1 1 100%; min-width:200px; flex-wrap:wrap;';
 
-        // 日期
         var dateInput = document.createElement('input');
         dateInput.type = 'date';
         dateInput.id = 'qb-date-picker';
         dateInput.className = 'form-control';
-        dateInput.style.cssText = 'flex:1; min-width:130px;';
+        dateInput.style.cssText = 'flex:1 1 130px; min-width:120px;';
         var today = new Date();
         dateInput.value = fmtDate(today);
 
-        // 小時
         var hourSel = document.createElement('select');
         hourSel.id = 'qb-hour-picker';
         hourSel.className = 'form-control';
-        hourSel.style.cssText = 'width:70px;';
+        hourSel.style.cssText = 'width:65px; flex:0 0 65px;';
         for (var h = 0; h < 24; h++) {
           var opt = document.createElement('option');
           opt.value = String(h).padStart(2, '0');
-          opt.textContent = String(h).padStart(2, '0') + ' 時';
+          opt.textContent = String(h).padStart(2, '0');
           hourSel.appendChild(opt);
         }
         hourSel.value = String(today.getHours()).padStart(2, '0');
 
-        // 分鐘（10 分鐘為單位）
+        var sep = document.createElement('span');
+        sep.textContent = ':';
+        sep.style.cssText = 'font-weight:600; color:#475569;';
+
         var minSel = document.createElement('select');
         minSel.id = 'qb-min-picker';
         minSel.className = 'form-control';
-        minSel.style.cssText = 'width:70px;';
+        minSel.style.cssText = 'width:65px; flex:0 0 65px;';
         [0,10,20,30,40,50].forEach(function(m) {
           var opt = document.createElement('option');
           opt.value = String(m).padStart(2, '0');
-          opt.textContent = String(m).padStart(2, '0') + ' 分';
+          opt.textContent = String(m).padStart(2, '0');
           minSel.appendChild(opt);
         });
         var curMin = Math.floor(today.getMinutes() / 10) * 10;
@@ -7315,10 +7334,10 @@
 
         wrap.appendChild(dateInput);
         wrap.appendChild(hourSel);
+        wrap.appendChild(sep);
         wrap.appendChild(minSel);
         dtEl.parentNode.insertBefore(wrap, dtEl);
 
-        // 同步函數：更新隱藏的 qb-datetime
         function syncDatetime() {
           dtEl.value = dateInput.value + 'T' + hourSel.value + ':' + minSel.value;
         }
@@ -7329,19 +7348,14 @@
       }
     }
 
-    // ==========================================================
-    // 2. 員工權限自動鎖定院區
-    // ==========================================================
+    // 院區鎖定
     function isAdminUser() {
       var u = state.counterUser;
       return u && (u.role === 'admin' || (Array.isArray(u.clinics) && u.clinics.length === 0));
     }
     function getUserClinics() {
-      var u = state.counterUser;
-      if (!u) return [];
-      if (isAdminUser()) {
-        return (typeof CLINICS !== 'undefined') ? CLINICS.map(function(c) { return c.name; }) : [];
-      }
+      var u = state.counterUser; if (!u) return [];
+      if (isAdminUser()) return (typeof CLINICS !== 'undefined') ? CLINICS.map(function(c) { return c.name; }) : [];
       if (Array.isArray(u.clinics) && u.clinics.length > 0) return u.clinics.slice();
       if (u.clinic) return [u.clinic];
       return [];
@@ -7365,15 +7379,12 @@
       if (allowed.length === 1) {
         sel.value = allowed[0]; sel.disabled = true;
         sel.style.background = '#f1f5f9';
-        sel.title = '已鎖定為您的就職院區：' + allowed[0];
         if (typeof onCounterQuickClinicChange === 'function') setTimeout(onCounterQuickClinicChange, 50);
-      } else {
-        sel.disabled = false; sel.style.background = '';
-      }
+      } else { sel.disabled = false; sel.style.background = ''; }
     }
 
     // ==========================================================
-    // 3. 抓雲端預約
+    // 抓雲端預約（電話補 0、時間正規化）
     // ==========================================================
     window.fetchCloudAppts = function(clinic, date) {
       if (!window.KW || !KW.api || !KW.api.enabled()) return Promise.resolve([]);
@@ -7384,7 +7395,8 @@
           var appts = res.data.map(function(r) {
             var startMin = timeStrToMin(r['開始時段']);
             var endMin = timeStrToMin(r['結束時段']);
-            if (endMin <= startMin) endMin = startMin + 10;
+            if (isNaN(startMin)) startMin = 0;
+            if (isNaN(endMin) || endMin <= startMin) endMin = startMin + 10;
             return {
               name: r['病人姓名'] || '',
               type: r['類型'] || '複診',
@@ -7408,16 +7420,17 @@
               createNote: r['備註'] || '',
               newDate: r['改約後日期'] || '',
               newTime: r['改約後時段'] || '',
-              phone: r['電話'] || '',
+              phone: padPhone(r['電話']),
             };
           });
           state.cloudApptCache[key] = appts;
+          console.log('[KW v6] ✓ 抓到', appts.length, '筆，', appts.map(function(a){return a.name+'('+a.doctor+'@'+fmtMinToHHMM(a.startMin)+')';}).join(', '));
           return appts;
         }
         state.cloudApptCache[key] = [];
         return [];
       }).catch(function(e) {
-        console.warn('[KW v5] fetch 失敗:', e);
+        console.warn('[KW v6] fetch 失敗:', e);
         state.cloudApptCache[key] = [];
         return [];
       });
@@ -7456,7 +7469,7 @@
     };
 
     // ==========================================================
-    // 4. 「待補登」區塊（含「✏️ 補登」按鈕）+ 補登 modal
+    // 待補登區塊
     // ==========================================================
     function refreshOrphanData() {
       if (!state.counterClinic || !state.counterDate) return;
@@ -7524,7 +7537,7 @@
         html += '<tr style="border-top:1px solid #fde68a;">'
           + '<td style="padding:4px 8px;"><strong>' + (a.name && a.name !== '（未填）' ? a.name : '<span style="color:#dc2626;">（未填）</span>') + '</strong></td>'
           + '<td style="padding:4px 8px;">' + (a.phone || '—') + '</td>'
-          + '<td style="padding:4px 8px;">' + Math.floor(a.startMin/60) + ':' + (a.startMin%60).toString().padStart(2,'0') + '</td>'
+          + '<td style="padding:4px 8px;">' + fmtMinToHHMM(a.startMin) + '</td>'
           + '<td style="padding:4px 8px;">' + a.type + '</td>'
           + '<td style="padding:4px 8px;">' + (a.doctorRaw || '<span style="color:#dc2626;">（未指定）</span>') + '</td>'
           + '<td style="padding:4px 8px; color:#9a3412;">' + problems.join('、') + '</td>'
@@ -7539,14 +7552,14 @@
     }
 
     // ==========================================================
-    // 5. 補登 modal（在系統內補資料，不需動 Sheet）
+    // 補登 modal
     // ==========================================================
     function ensureModalDOM() {
       if (document.getElementById('kw-supplement-modal-bd')) return;
       var bd = document.createElement('div');
       bd.id = 'kw-supplement-modal-bd';
       bd.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:10000; display:none; align-items:center; justify-content:center;';
-      bd.onclick = function(e) { if (e.target === bd) closeSupplementModal(); };
+      bd.onclick = function(e) { if (e.target === bd) kwCloseSupplementModal(); };
       bd.innerHTML = '<div style="background:#fff; border-radius:12px; padding:20px 24px; width:90%; max-width:520px; max-height:85vh; overflow:auto;">'
         + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">'
         + '<h3 style="margin:0; color:#0f172a;">✏️ 補登預約資料</h3>'
@@ -7580,22 +7593,17 @@
       ensureModalDOM();
       _currentSuppAppt = appt;
 
-      // 填當前資料
       document.getElementById('kw-supp-info').textContent = '預約編號 ' + apptId + ' ｜ ' + state.counterClinic + ' ｜ ' + dateStr;
       document.getElementById('kw-supp-name').value = (appt.name && appt.name !== '（未填）' && appt.name !== '（未填寫）') ? appt.name : '';
       document.getElementById('kw-supp-phone').value = appt.phone || '';
       document.getElementById('kw-supp-case').value = '';
       document.getElementById('kw-supp-note').value = '';
 
-      // 醫師下拉：當日班表的醫師
       var docSel = document.getElementById('kw-supp-doctor');
       docSel.innerHTML = '<option value="">— 不指定 —</option>';
       var schedules = getSchedulesForClinicDate(state.counterClinic, state.counterDate);
       var docMap = {};
-      schedules.forEach(function(s) {
-        var d = normDoctor(s.doctor);
-        if (!docMap[d]) docMap[d] = s.doctor;
-      });
+      schedules.forEach(function(s) { var d = normDoctor(s.doctor); if (!docMap[d]) docMap[d] = s.doctor; });
       Object.keys(docMap).forEach(function(d) {
         var opt = document.createElement('option');
         opt.value = docMap[d];
@@ -7604,7 +7612,6 @@
       });
       if (appt.doctor && docMap[appt.doctor]) docSel.value = docMap[appt.doctor];
 
-      // 時間下拉
       var hSel = document.getElementById('kw-supp-hour');
       var mSel = document.getElementById('kw-supp-min');
       hSel.innerHTML = '';
@@ -7619,11 +7626,11 @@
         opt.value = String(m).padStart(2,'0'); opt.textContent = String(m).padStart(2,'0') + ' 分';
         mSel.appendChild(opt);
       });
-      hSel.value = String(Math.floor(appt.startMin/60)).padStart(2,'0');
-      mSel.value = String(Math.floor((appt.startMin%60)/10)*10).padStart(2,'0');
+      var validStart = !isNaN(appt.startMin) && appt.startMin > 0;
+      hSel.value = validStart ? String(Math.floor(appt.startMin/60)).padStart(2,'0') : '09';
+      mSel.value = validStart ? String(Math.floor((appt.startMin%60)/10)*10).padStart(2,'0') : '00';
 
       document.getElementById('kw-supp-type').value = appt.type || '複診';
-
       document.getElementById('kw-supplement-modal-bd').style.display = 'flex';
     };
 
@@ -7637,7 +7644,7 @@
       if (!_currentSuppAppt) return;
       var fields = {};
       var name = document.getElementById('kw-supp-name').value.trim();
-      var phone = document.getElementById('kw-supp-phone').value.trim();
+      var phone = padPhone(document.getElementById('kw-supp-phone').value.trim());
       var caseFull = document.getElementById('kw-supp-case').value.trim();
       var doctor = document.getElementById('kw-supp-doctor').value;
       var startTime = document.getElementById('kw-supp-hour').value + ':' + document.getElementById('kw-supp-min').value;
@@ -7650,36 +7657,30 @@
       if (doctor) fields['醫師'] = doctor;
       if (startTime) {
         fields['開始時段'] = startTime;
-        // 結束時段依類型計算
         var startMin = timeStrToMin(startTime);
         var endMin = startMin + (type === '初診' ? 20 : 10);
         fields['結束時段'] = String(Math.floor(endMin/60)).padStart(2,'0') + ':' + String(endMin%60).padStart(2,'0');
       }
       if (type) fields['類型'] = type;
       if (note) fields['備註'] = note;
-
       if (Object.keys(fields).length === 0) { alert('沒有要修改的內容'); return; }
 
       var u = state.counterUser || {};
       KW.api._post('updateAppointmentFields', {
         apptId: _currentSuppAppt.cloudId,
         fields: fields,
-        employeeId: u.employeeId || '',
-        employeeName: u.name || '',
-        employeeRole: u.role || '',
+        employeeId: u.employeeId || '', employeeName: u.name || '', employeeRole: u.role || '',
       }, true).then(function(res) {
         if (res && res.ok) {
           alert('✅ 補登成功！');
           kwCloseSupplementModal();
           refreshOrphanData();
-        } else {
-          alert('⚠️ 補登失敗：' + (res && res.error || '未知錯誤'));
-        }
+        } else { alert('⚠️ 補登失敗：' + (res && res.error || '未知錯誤')); }
       });
     };
 
     // ==========================================================
-    // 6. renderCounterPage 包裝
+    // renderCounterPage
     // ==========================================================
     var _origRender = window.renderCounterPage;
     window.renderCounterPage = function() {
@@ -7733,12 +7734,11 @@
     }
 
     // ==========================================================
-    // 7. 簡化建立預約：姓名/醫師非必填 + 時段驗證
+    // 簡化建立預約
     // ==========================================================
     var _origQB = window.onQuickBookingSubmit;
     if (_origQB) {
       window.onQuickBookingSubmit = function() {
-        // 同步自訂日期時間到 qb-datetime（保險再執行一次）
         var dpEl = document.getElementById('qb-date-picker');
         var hpEl = document.getElementById('qb-hour-picker');
         var mpEl = document.getElementById('qb-min-picker');
@@ -7747,7 +7747,8 @@
           dtEl.value = dpEl.value + 'T' + hpEl.value + ':' + mpEl.value;
         }
 
-        var phone = (document.getElementById('qb-phone') || {}).value.trim();
+        var phoneInput = (document.getElementById('qb-phone') || {}).value || '';
+        var phone = padPhone(phoneInput.trim());
         var clinic = (document.getElementById('counter-quick-clinic') || {}).value;
         var doctor = (document.getElementById('counter-quick-doctor') || {}).value;
         var type = (document.getElementById('qb-type') || {}).value;
@@ -7755,8 +7756,12 @@
 
         if (!phone) { alert('⚠️ 電話為必填，請至少留下病患電話。'); return; }
         if (!clinic) { alert('⚠️ 請選擇院區。'); return; }
-        if (!type) { alert('⚠️ 請選擇就診類型（初診 / 複診）。'); return; }
+        if (!type) { alert('⚠️ 請選擇就診類型。'); return; }
         if (!datetime) { alert('⚠️ 請選擇預約日期時間。'); return; }
+
+        // 把補正後的電話寫回欄位（避免 9 碼送出去）
+        var phoneEl = document.getElementById('qb-phone');
+        if (phoneEl) phoneEl.value = phone;
 
         var doctorIsUnassigned = !doctor || doctor === '' || doctor === '__any__';
 
@@ -7776,10 +7781,7 @@
 
         var nameEl = document.getElementById('qb-name');
         var doctorEl = document.getElementById('counter-quick-doctor');
-        var origName = nameEl ? nameEl.value : '';
-        var origDoctor = doctorEl ? doctorEl.value : '';
         var needNameReminder = false, needDoctorReminder = false;
-
         if (nameEl && !nameEl.value.trim()) { nameEl.value = '（未填）'; needNameReminder = true; }
         if (doctorIsUnassigned && doctorEl) { doctorEl.value = '__any__'; needDoctorReminder = true; }
 
@@ -7811,7 +7813,6 @@
       };
     }
 
-    // 登入後立刻鎖院區 + 套用表單客製化
     var _origShowCounter = window.showCounterScreen;
     if (_origShowCounter) {
       window.showCounterScreen = function() {
@@ -7824,7 +7825,7 @@
       };
     }
 
-    console.log('[KW v5] ✓ 流程優化全部就緒（補登 modal + 病人自動寫入 + 自訂時間選擇器）');
+    console.log('[KW v6] ✓ 修正版啟用（時間/電話正規化 + 排版微調）');
   });
 })();
 </script>
