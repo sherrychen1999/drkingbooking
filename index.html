@@ -8275,5 +8275,2089 @@
   });
 })();
 </script>
+<!-- ============================================================
+     ⭐ 累積補丁 v8（最終要貼到 GitHub 的就是這個檔）
+     ============================================================
+     貼法：把整段（從本檔開頭到結尾）貼到 index.html 的 </body> 標籤前，
+           接在 v6 + v7 patch 之後。
+     ============================================================
+     已收錄的改動清單（依加入時間排序）：
+     ----------------------------------------------------------
+     [v8.2] 補登 modal 修正
+       - 把「時 + 分」雙下拉換成原生 <input type="time">
+       - 補登成功後強制清空全部院區的快取（解決前端不刷新問題）
+       - F12 Console 加除錯 log
+       - 自動對齊到 10 分鐘倍數
+     ----------------------------------------------------------
+     [v8.3] 排版優化（CSS）
+       - 電話預約快速登錄：修正日期/時/分擠在一起、分鐘掉下行
+       - 日期時段組合佔 2 個 grid 欄、備註佔 2 欄
+       - 院區下拉放大（今日看診表 + 預約報到）— 從 13px 變 17px 加邊框
+       - 窄畫面自動切換為 2 欄佈局（手機 / 平板友善）
+     ----------------------------------------------------------
+     [v8.5] 預約報到加「通知狀態」欄（JS，取代 v8.4）
+       - 顯示實際發送狀態（不只是病人選的方式）
+       - 📱 簡訊 ✓ = 確認已發送成功
+       - ⚠ 失敗 = 發送失敗（紅色警示）
+       - 🔕 不通知 = 病人選擇不通知
+       - 💚 LINE ✓ = LINE 已發送（LINE 整合後生效）
+       - ⏳ 待發送 = 尚未發送 / 不確定
+       - ⚠ 需配合後端 snippet 一起更新才能顯示實際狀態
+     ----------------------------------------------------------
+     [v8.6] 減重預約查詢改接雲端（JS）
+       - 病人查詢頁從 Google Sheet 即時撈資料（不再用本機 demo）
+       - 只顯示「今日以後」的預約（過期的不呈現）
+       - 自動排除「已取消」「已改約」紀錄
+       - 多筆結果一頁顯示，依日期由近到遠排序
+       - ⚠ 需配合後端 snippet（v8.6 函數）才能查到雲端資料
+     ----------------------------------------------------------
+     [v8.7] 當日報表模組（JS）
+       - 取代原本「📊 當日報表」placeholder（之前點下去只跳「開發中」）
+       - 院區 + 日期切換，從雲端撈當日所有預約
+       - 個別醫師：總預約（初診/複診）、到診（初診/複診）、改約 4 分類
+       - 院區小計：所有醫師加總
+       - 改約 4 分類：改期有拿藥 / 改期未拿藥 / 有拿藥未預約 / 都沒有
+         （從 狀態 + 拿藥週數 自動推導）
+       - ⚠ 需配合後端 snippet（v8.7 getDailyReport 函數）
+     ----------------------------------------------------------
+     [v8.8] 服務項目 CRUD（JS）
+       - 系統管理 → 服務項目 從 Google Sheet「服務項目」分頁載入
+       - 新增 / 編輯 / 刪除按鈕（modal 操作）
+       - 可調整項目代碼 / 名稱 / 類別 / 佔用時段（10 分鐘格數）/ 費用 / 是否上線
+       - 首次使用會自動建立「服務項目」分頁 + 5 個預設項目
+       - ⚠ 需配合後端 snippet（v8.8 服務項目函數）
+     ----------------------------------------------------------
+     [v8.9] 通知範本 CRUD（JS）
+       - 系統管理 → 通知範本 從 Google Sheet「通知範本」分頁載入
+       - 新增 / 編輯 / 刪除（modal 操作）
+       - LINE 範本 + 簡訊範本 + 發送時機分開欄位
+       - 全院區即時讀取最新範本（不需要重新部署前端）
+       - 首次使用會自動建立「通知範本」分頁 + 5 個預設範本
+       - ⚠ 需配合後端 snippet（v8.9 通知範本函數）
+     ----------------------------------------------------------
+     [v8.10] 報表區間檢視 + Excel 匯出（JS）
+       - 報表頁加 日 / 週 / 月 切換按鈕
+       - 日：單日（保留 v8.7 原行為）
+       - 週：當週週一 → 週日（昨週 / 本週 / 下週）
+       - 月：當月 1 號 → 月底（上月 / 本月 / 下月）
+       - 加「📥 匯出 Excel」按鈕 → 下載 .xlsx
+         · 摘要分頁：醫師逐欄 + 院區小計
+         · 明細分頁：所有預約逐筆（含日期/時段/拿藥週數/改至）
+       - ⚠ 需配合後端 snippet（v8.10 getReportByRange 函數）
+     ----------------------------------------------------------
+     [v8.11] 員工職位擴充 → 3 層權限（JS）
+       - 全權限（admin）：減重櫃檯 / 總經理 / 副總 / 特助 / 策略長 / 系統管理員
+       - 多院區管理（manager）：院區經理 / 區經理 / 院區主管
+       - 單院區（counter）：院區櫃檯 / 院區護理師
+       - 顯示原始職位名稱（如「總經理」「院區護理師」），不只是「admin」
+       - Excel 匯入時自動辨識新職位名稱
+       - ⚠ 需配合後端 snippet（v8.11 _normalizeRole + verifyEmployee）
+     ----------------------------------------------------------
+     [v8.12] 醫師照片批次上傳 + 雲端儲存（JS）
+       - 醫師管理頁加「📤 批次上傳照片」按鈕
+       - 一次選多張，檔名自動配對醫師
+         · 支援格式：蕭捷健.jpg / 蕭捷健醫師.png / 蕭捷健 醫師.webp 等
+       - 自動壓縮（最長邊 240px，JPG 80%）確保 < 50KB
+       - 配對清單顯示「已配對 / 找不到」狀態
+       - 上傳後存到 Google Sheet「醫師照片」分頁
+       - 全院區所有人下次開頁就看得到
+       - 既有單張上傳（點頭像）也改為自動雲端同步
+       - ⚠ 需配合後端 snippet（v8.12 醫師照片 3 個函數）
+     ----------------------------------------------------------
+     （後續會繼續累積，使用者確認後一次貼上）
+     ============================================================ -->
+
+<!-- ===== [v8.2] 補登 modal 修正 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 80;
+    if (typeof state !== 'undefined' && typeof window.kwSaveSupplement === 'function' && typeof window.kwOpenSupplementModal === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    } else {
+      console.warn('[KW v8.2] v6 補登 modal 未就緒');
+    }
+  }
+
+  waitReady(function() {
+    // ===== 工具：強制清空所有院區的雲端快取，重新拉資料 =====
+    function bustAllCacheAndRerender() {
+      Object.keys(state.cloudApptCache).forEach(function(k) {
+        delete state.cloudApptCache[k];
+      });
+      if (state.counterClinic && state.counterDate && typeof fetchCloudAppts === 'function') {
+        fetchCloudAppts(state.counterClinic, state.counterDate).then(function() {
+          if (typeof renderCounterPage === 'function') renderCounterPage();
+          if (typeof renderCheckinView === 'function' && state.checkinDate) renderCheckinView();
+        });
+      }
+    }
+
+    // ===== 改良版補登 modal — 用 input type="time" 替代雙下拉 =====
+    var _origOpen = window.kwOpenSupplementModal;
+    window.kwOpenSupplementModal = function(apptId) {
+      // 先讓原本的開啟邏輯跑（建立 modal、填入舊資料）
+      _origOpen(apptId);
+      // 然後替換時間欄位
+      setTimeout(function() {
+        var hSel = document.getElementById('kw-supp-hour');
+        var mSel = document.getElementById('kw-supp-min');
+        if (!hSel || !mSel) return;
+        // 從現有下拉抓出當前時間
+        var curH = hSel.value || '09';
+        var curM = mSel.value || '00';
+        var curTime = curH + ':' + curM;
+        // 用一個 input type="time" 包裝起來
+        var wrap = hSel.parentNode;
+        // 檢查是否已替換過
+        if (document.getElementById('kw-supp-time-input')) return;
+        var timeInput = document.createElement('input');
+        timeInput.type = 'time';
+        timeInput.id = 'kw-supp-time-input';
+        timeInput.className = 'form-control';
+        timeInput.value = curTime;
+        timeInput.step = 600; // 每 10 分鐘
+        timeInput.style.cssText = 'width:140px; padding:6px 10px; font-size:14px;';
+        // 隱藏原本兩個下拉，但保留它們在 DOM 裡（讓原 save 函數還是能讀到）
+        hSel.style.display = 'none';
+        mSel.style.display = 'none';
+        // 加入新的 time input
+        wrap.appendChild(timeInput);
+        // 同步：time input 改變 → 更新 hSel / mSel
+        timeInput.addEventListener('change', function() {
+          var v = timeInput.value || '09:00';
+          var parts = v.split(':');
+          var h = parts[0] || '09';
+          var m = parts[1] || '00';
+          // 對齊到 10 分鐘
+          var mNum = parseInt(m, 10) || 0;
+          mNum = Math.round(mNum / 10) * 10;
+          if (mNum >= 60) mNum = 50;
+          var mStr = String(mNum).padStart(2, '0');
+          hSel.value = h;
+          mSel.value = mStr;
+          // 如果對齊後跟使用者輸入不同，同步回 input
+          timeInput.value = h + ':' + mStr;
+          console.log('[KW v8.2] 時間已更新：', timeInput.value);
+        });
+        // 也對齊 input 一次（防止 step 對齊問題）
+        timeInput.dispatchEvent(new Event('change'));
+      }, 50);
+    };
+
+    // ===== 改良版 kwSaveSupplement — 加 log + 強制刷新 =====
+    var _origSave = window.kwSaveSupplement;
+    window.kwSaveSupplement = function() {
+      // 先確保 time input 已同步回 hSel/mSel
+      var timeInput = document.getElementById('kw-supp-time-input');
+      if (timeInput && timeInput.value) {
+        var parts = timeInput.value.split(':');
+        var hSel = document.getElementById('kw-supp-hour');
+        var mSel = document.getElementById('kw-supp-min');
+        if (hSel && mSel) {
+          hSel.value = parts[0];
+          var mNum = parseInt(parts[1] || '0', 10);
+          mNum = Math.round(mNum / 10) * 10;
+          if (mNum >= 60) mNum = 50;
+          mSel.value = String(mNum).padStart(2, '0');
+        }
+      }
+
+      // 把要送的時間 log 出來方便除錯
+      var dbgTime = (document.getElementById('kw-supp-hour')||{}).value + ':' +
+                    (document.getElementById('kw-supp-min')||{}).value;
+      console.log('[KW v8.2] 補登即將送出，時間=' + dbgTime);
+
+      // 攔截 KW.api._post 的回應，加強刷新
+      var _origPost = KW.api._post;
+      KW.api._post = function(action, payload, withToken) {
+        if (action === 'updateAppointmentFields') {
+          console.log('[KW v8.2] updateAppointmentFields payload:', JSON.parse(JSON.stringify(payload)));
+        }
+        var p = _origPost.call(KW.api, action, payload, withToken);
+        if (action === 'updateAppointmentFields') {
+          // 包裹 promise 以加強處理
+          return p.then(function(res) {
+            console.log('[KW v8.2] updateAppointmentFields 回應:', res);
+            if (res && res.ok) {
+              // 強制清快取 + 重抓
+              setTimeout(bustAllCacheAndRerender, 200);
+            }
+            return res;
+          });
+        }
+        return p;
+      };
+
+      try {
+        _origSave();
+      } finally {
+        // 還原 _post 攔截
+        setTimeout(function() { KW.api._post = _origPost; }, 3000);
+      }
+    };
+
+    console.log('[KW v8.2] ✓ 補登 modal 已強化（time input + 強制刷新 + 除錯 log）');
+  });
+})();
+</script>
+<!-- ===== [v8.2] 補登 modal 修正 結束 ===== -->
+
+<!-- ===== [v8.3] 排版優化 開始 ===== -->
+<style>
+  /* === 電話預約快速登錄 grid 排版 === */
+  .quick-booking-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    align-items: start;
+  }
+  #qb-datetime-wrap {
+    grid-column: span 2;
+    display: flex !important;
+    gap: 6px !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    min-width: 0;
+  }
+  #qb-date-picker {
+    flex: 1 1 130px !important;
+    min-width: 130px !important;
+  }
+  #qb-hour-picker, #qb-min-picker {
+    flex: 0 0 64px !important;
+    width: 64px !important;
+  }
+  #qb-note { grid-column: span 2; }
+  #qb-submit-btn { min-height: 38px; }
+  @media (max-width: 720px) {
+    .quick-booking-grid { grid-template-columns: 1fr 1fr; }
+    #qb-datetime-wrap, #qb-note { grid-column: 1 / -1; }
+  }
+
+  /* === 院區下拉放大（今日看診表 + 預約報到） === */
+  #counter-clinic-select,
+  #checkin-clinic-select {
+    font-size: 17px !important;
+    padding: 7px 14px !important;
+    border: 2px solid #3498db !important;
+    border-radius: 8px !important;
+    background: #eff6ff !important;
+    color: #1e40af !important;
+    margin: 0 4px !important;
+    cursor: pointer !important;
+    min-width: 150px !important;
+    font-weight: 700 !important;
+    transition: all 0.15s;
+  }
+  #counter-clinic-select:hover,
+  #checkin-clinic-select:hover {
+    background: #dbeafe !important;
+    border-color: #1d4ed8 !important;
+    box-shadow: 0 2px 6px rgba(52,152,219,0.25);
+  }
+</style>
+<!-- ===== [v8.3] 排版優化 結束 ===== -->
+
+<!-- ===== [v8.5] 預約報到加通知狀態欄 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 80;
+    if (typeof state !== 'undefined' && typeof window.fetchCloudAppts === 'function' && typeof window.renderCheckinView === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    }
+  }
+  waitReady(function() {
+    function fmtD(d) {
+      if (typeof fmtIsoDate === 'function') return fmtIsoDate(d);
+      var dt = (d instanceof Date) ? d : new Date(d);
+      return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+    }
+    // 每次 fetchCloudAppts 完成後並行抓 通知方式 + 通知狀態 寫回 cache
+    var _origFetch = window.fetchCloudAppts;
+    window.fetchCloudAppts = function(clinic, date) {
+      return _origFetch.apply(this, arguments).then(function(appts) {
+        if (!appts || !appts.length) return appts;
+        var dateStr = fmtD(date);
+        return Promise.all([
+          KW.api._get('getAppointmentsByClinicDate', { clinic: clinic, date: dateStr }).catch(function() { return null; }),
+          KW.api._post('getNotifyLogByClinicDate', { clinic: clinic, date: dateStr }, true).catch(function() { return null; })
+        ]).then(function(results) {
+          var rawRes = results[0];
+          var notifyRes = results[1];
+          // 補 通知方式（intent）
+          if (rawRes && rawRes.ok && Array.isArray(rawRes.data)) {
+            var nm = {};
+            rawRes.data.forEach(function(r) { nm[r['預約編號']] = r['通知方式'] || ''; });
+            appts.forEach(function(a) {
+              if (a.cloudId && nm[a.cloudId] != null) a.notify = nm[a.cloudId];
+            });
+          }
+          // 補 實際發送狀態（如後端有 getNotifyLogByClinicDate 才會有）
+          var hasApi = false;
+          if (notifyRes && notifyRes.ok && notifyRes.data && typeof notifyRes.data === 'object' && !Array.isArray(notifyRes.data)) {
+            hasApi = true;
+            appts.forEach(function(a) {
+              var s = notifyRes.data[a.cloudId];
+              a.notifyStatus = s ? (s.smsStatus || 'pending') : 'pending';
+              a.notifySentAt = s ? (s.smsSentAt || '') : '';
+            });
+          }
+          appts._hasNotifyApi = hasApi;
+          return appts;
+        });
+      });
+    };
+    // 通知 badge：依「實際發送狀態」+「通知方式」決定
+    function badge(notify, status, hasApi) {
+      if (notify === 'none') {
+        return '<span style="background:#94a3b8;color:#fff;padding:3px 9px;border-radius:12px;font-size:11px;">🔕 不通知</span>';
+      }
+      if (!hasApi) {
+        // 後端沒升級：只能依 intent 顯示（無法確認真的發出）
+        if (notify === 'sms') return '<span style="background:#3b82f6;color:#fff;padding:3px 9px;border-radius:12px;font-size:11px;font-weight:600;">📱 簡訊</span>';
+        if (notify === 'line') return '<span style="background:#06c755;color:#fff;padding:3px 9px;border-radius:12px;font-size:11px;font-weight:600;">💚 LINE</span>';
+        return '<span style="color:#94a3b8;font-size:11px;">—</span>';
+      }
+      // 後端 v8.5 已就緒：依實際發送狀態
+      if (notify === 'sms' && status === 'sent') {
+        return '<span style="background:#3b82f6;color:#fff;padding:3px 9px;border-radius:12px;font-size:11px;font-weight:600;">📱 簡訊 ✓</span>';
+      }
+      if (notify === 'sms' && status === 'failed') {
+        return '<span style="background:#ef4444;color:#fff;padding:3px 9px;border-radius:12px;font-size:11px;font-weight:600;">⚠ 失敗</span>';
+      }
+      if (notify === 'line' && status === 'sent') {
+        return '<span style="background:#06c755;color:#fff;padding:3px 9px;border-radius:12px;font-size:11px;font-weight:600;">💚 LINE ✓</span>';
+      }
+      // 待發送 / 未知
+      return '<span style="background:#fef3c7;color:#92400e;padding:3px 9px;border-radius:12px;font-size:11px;">⏳ 待發送</span>';
+    }
+    // 預約報到 table 加「通知」欄
+    function decorate() {
+      var sv = document.getElementById('counter-subview-checkin');
+      if (!sv || sv.style.display === 'none') return;
+      var table = sv.querySelector('.checkin-table');
+      if (!table) return;
+      var ths = table.querySelectorAll('thead th');
+      if (Array.prototype.some.call(ths, function(th){ return th.textContent.indexOf('通知') === 0; })) return;
+      var clinic = state.checkinClinic;
+      var dateStr = state.checkinDate ? fmtD(state.checkinDate) : '';
+      if (!clinic || !dateStr) return;
+      var cached = state.cloudApptCache[clinic + '|' + dateStr] || [];
+      var hasApi = cached._hasNotifyApi || false;
+      var byKey = {};
+      cached.forEach(function(a) {
+        var k = a.cloudId || (clinic + '|' + dateStr + '|' + a.doctor + '|' + a.startMin);
+        byKey[k] = a;
+      });
+      var hr = table.querySelector('thead tr');
+      var newTh = document.createElement('th');
+      newTh.style.cssText = 'width:100px; text-align:center;';
+      newTh.textContent = '通知';
+      if (hr.children[5]) hr.insertBefore(newTh, hr.children[5]); else hr.appendChild(newTh);
+      Array.prototype.forEach.call(table.querySelectorAll('tbody tr'), function(tr) {
+        if (tr.classList.contains('checkin-doctor-group')) {
+          var td = tr.querySelector('td');
+          if (td) {
+            var c = parseInt(td.getAttribute('colspan') || '7', 10);
+            td.setAttribute('colspan', String(c + 1));
+          }
+          return;
+        }
+        var btn = tr.querySelector('button[onclick*="openCheckinModal"], button[onclick*="undoCheckinOverride"]');
+        var key = null;
+        if (btn) {
+          var oc = btn.getAttribute('onclick') || '';
+          var m = oc.match(/openCheckinModal\([^,]+,\s*['"]([^'"]+)['"]/) ||
+                  oc.match(/undoCheckinOverride\(['"]([^'"]+)['"]/);
+          if (m) key = m[1];
+        }
+        var appt = key ? byKey[key] : null;
+        var td2 = document.createElement('td');
+        td2.style.cssText = 'text-align:center;';
+        td2.innerHTML = badge(
+          appt ? (appt.notify || '') : '',
+          appt ? (appt.notifyStatus || 'pending') : '',
+          hasApi
+        );
+        if (tr.children[5]) tr.insertBefore(td2, tr.children[5]); else tr.appendChild(td2);
+      });
+    }
+    var _origR = window.renderCheckinView;
+    window.renderCheckinView = function() {
+      var ret = _origR.apply(this, arguments);
+      setTimeout(decorate, 100);
+      setTimeout(decorate, 500);
+      return ret;
+    };
+    console.log('[KW v8.5] ✓ 預約報到加通知狀態欄（依實際發送結果）');
+  });
+})();
+</script>
+<!-- ===== [v8.5] 預約報到加通知狀態欄 結束 ===== -->
+
+<!-- ===== [v8.6] 減重預約查詢改接雲端 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 80;
+    if (typeof state !== 'undefined' && typeof window.onPatientSearch === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    }
+  }
+  waitReady(function() {
+    function todayStr() {
+      var d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function weekdayCh(dateStr) {
+      if (!dateStr) return '';
+      var d = new Date(dateStr);
+      var w = d.getDay();
+      return ['日','一','二','三','四','五','六'][w];
+    }
+    // 取代原本的 onPatientSearch — 改走雲端
+    window.onPatientSearch = function() {
+      var out = document.getElementById('patient-search-results');
+      var criteria = {
+        name:       (document.getElementById('ps-name')||{}).value || '',
+        clinic:     (document.getElementById('ps-clinic')||{}).value || '',
+        caseDigits: ((document.getElementById('ps-case')||{}).value || '').replace(/^[A-Za-z]/, ''),
+        phone:      (document.getElementById('ps-phone')||{}).value || '',
+        birthday:   (document.getElementById('ps-birthday')||{}).value || '',
+        idNo:       (document.getElementById('ps-idno')||{}).value || '',
+      };
+      Object.keys(criteria).forEach(function(k){ criteria[k] = String(criteria[k]).trim(); });
+      var hasAny = Object.keys(criteria).some(function(k){ return criteria[k] !== ''; });
+      if (!hasAny) {
+        if (typeof showToast === 'function') showToast('請至少輸入一項查詢條件', 'warn');
+        return;
+      }
+      if (out) out.innerHTML = '<div style="text-align:center; padding:30px; color:#94a3b8;">⏳ 雲端查詢中...</div>';
+
+      KW.api._post('searchPatientsWithFutureAppts', { criteria: criteria, fromDate: todayStr() }, true)
+        .then(function(res) {
+          if (res && res.ok && Array.isArray(res.data)) {
+            renderV86(res.data);
+          } else if (res && res.error === 'unknown_action: searchPatientsWithFutureAppts') {
+            if (out) out.innerHTML = '<div style="text-align:center; padding:30px; color:#dc2626;">⚠ 後端 v8.6 endpoint 未就緒<br><span style="font-size:12px; color:#94a3b8;">請更新 Apps Script Code.gs（加入 searchPatientsWithFutureAppts 函數）</span></div>';
+          } else {
+            if (out) out.innerHTML = '<div style="text-align:center; padding:30px; color:#dc2626;">⚠ 查詢失敗：' + escapeHtml(res && res.error || '未知錯誤') + '</div>';
+          }
+        }).catch(function(err) {
+          if (out) out.innerHTML = '<div style="text-align:center; padding:30px; color:#dc2626;">⚠ 查詢失敗：' + escapeHtml(String(err)) + '</div>';
+        });
+    };
+
+    function renderV86(results) {
+      var out = document.getElementById('patient-search-results');
+      if (!out) return;
+      if (results.length === 0) {
+        out.innerHTML = '<div class="empty-state"><div class="icon-big">🔍</div><div style="font-weight:600; color:#475569;">查無符合條件的病人</div><div style="font-size:13px; margin-top:4px;">請確認輸入內容是否正確</div></div>';
+        return;
+      }
+      var today = todayStr();
+      var html = '<div style="margin-bottom:10px; font-size:13px; color:#475569;">📋 雲端查詢結果：找到 <strong style="color:#1e40af;">' + results.length + '</strong> 位病人 <span style="color:#94a3b8; font-size:11px;">（僅顯示 ' + today + ' 起的未來預約）</span></div>';
+
+      results.forEach(function(item) {
+        var p = item.patient || {};
+        var apps = item.appointments || [];
+        var lineBadge = p['LINE綁定'] === 'TRUE'
+          ? '<span style="background:#06c755; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px;">LINE 已綁</span>'
+          : '<span style="background:#94a3b8; color:#fff; padding:2px 8px; border-radius:10px; font-size:11px;">SMS 通知</span>';
+
+        var apptRows = '';
+        if (apps.length === 0) {
+          apptRows = '<tr><td colspan="6" style="text-align:center; color:#94a3b8; padding:14px;">無未來預約</td></tr>';
+        } else {
+          apps.forEach(function(a) {
+            var status = String(a['狀態'] || '');
+            var statusClass = 'upcoming';
+            if (status === '已報到') statusClass = 'completed';
+            else if (status === '未到診') statusClass = 'noshow';
+            var dateStr = String(a['看診日期'] || '');
+            var wd = dateStr ? weekdayCh(dateStr) : '';
+            var doctor = String(a['醫師'] || '');
+            if (doctor && doctor.indexOf('醫師') === -1) doctor += ' 醫師';
+            apptRows += '<tr>'
+              + '<td>' + escapeHtml(dateStr) + (wd ? '（週' + wd + '）' : '') + '</td>'
+              + '<td>' + escapeHtml(a['開始時段'] || '') + (a['結束時段'] ? '-' + escapeHtml(a['結束時段']) : '') + '</td>'
+              + '<td>' + escapeHtml(a['類型'] || '') + '</td>'
+              + '<td>' + escapeHtml(doctor) + '</td>'
+              + '<td>' + escapeHtml(a['院區'] || '') + '</td>'
+              + '<td><span class="appt-status ' + statusClass + '">' + escapeHtml(status || '已預約') + '</span></td>'
+              + '</tr>';
+          });
+        }
+
+        html += '<div class="patient-result-card">'
+          + '<div class="patient-result-header">'
+          +   '<div>'
+          +     '<div class="patient-result-name">' + escapeHtml(p['姓名'] || '（無姓名）') + '</div>'
+          +     (p['病人ID'] ? '<div style="font-size:12px; color:#64748b;">病人 ID: ' + escapeHtml(p['病人ID']) + '</div>' : '')
+          +   '</div>'
+          +   '<div class="patient-result-meta">'
+          +     (p['病例號'] ? '<span>📋 病例號 <strong>' + escapeHtml(p['病例號']) + '</strong></span>' : '')
+          +     (p['院區'] ? '<span>🏥 <strong>' + escapeHtml(p['院區']) + '</strong></span>' : '')
+          +     (p['電話'] ? '<span>📞 <strong>' + escapeHtml(p['電話']) + '</strong></span>' : '')
+          +     (p['生日'] ? '<span>🎂 ' + escapeHtml(p['生日']) + '</span>' : '')
+          +     (p['身分證'] ? '<span>🆔 ' + escapeHtml(p['身分證']) + '</span>' : '')
+          +   '</div>'
+          +   '<div style="margin-left:auto;">' + lineBadge + '</div>'
+          + '</div>'
+          + '<div class="patient-result-body">'
+          +   '<div style="font-size:13px; font-weight:600; color:#0f172a; margin-bottom:8px;">📅 未來預約（' + apps.length + ' 筆）</div>'
+          +   '<table>'
+          +     '<thead><tr><th>日期</th><th>時段</th><th>類型</th><th>醫師</th><th>院區</th><th>狀態</th></tr></thead>'
+          +     '<tbody>' + apptRows + '</tbody>'
+          +   '</table>'
+          + '</div>'
+          + '</div>';
+      });
+      out.innerHTML = html;
+    }
+
+    console.log('[KW v8.6] ✓ 減重預約查詢改接雲端（僅顯示未來預約）');
+  });
+})();
+</script>
+<!-- ===== [v8.6] 減重預約查詢改接雲端 結束 ===== -->
+
+<!-- ===== [v8.7] 當日報表模組 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 80;
+    if (typeof state !== 'undefined' && typeof window.setCounterMenu === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    }
+  }
+  waitReady(function() {
+    function fmtD(d) {
+      if (typeof fmtIsoDate === 'function') return fmtIsoDate(d);
+      var dt = (d instanceof Date) ? d : new Date(d);
+      return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    // 在 counter-main 內動態插入「當日報表」子畫面
+    function ensureReportSubview() {
+      var main = document.querySelector('#counter-content .counter-main');
+      if (!main) return null;
+      var sv = document.getElementById('counter-subview-report');
+      if (sv) return sv;
+      sv = document.createElement('div');
+      sv.id = 'counter-subview-report';
+      sv.className = 'counter-subview';
+      sv.style.display = 'none';
+      sv.innerHTML = '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;">'
+        + '<div>'
+        + '<h3 style="margin:0;">📊 當日報表</h3>'
+        + '<div style="font-size:13px; color:#7f8c8d; margin-top:4px;">'
+        + '<strong id="report-date-label">—</strong> · '
+        + '<select id="report-clinic-select" style="border:none; background:transparent; color:#3498db; font-weight:600; cursor:pointer;" onchange="kwOnReportClinicChange()"></select>'
+        + '</div></div>'
+        + '<div style="display:flex; gap:6px; flex-wrap:wrap;">'
+        + '<button class="btn btn-outline btn-sm" onclick="kwReportShiftDate(-1)">← 昨日</button>'
+        + '<button class="btn btn-primary btn-sm" onclick="kwReportGoToday()">今日</button>'
+        + '<button class="btn btn-outline btn-sm" onclick="kwReportShiftDate(1)">明日 →</button>'
+        + '<button class="btn btn-outline btn-sm" onclick="kwReportRefresh()">🔄 重新整理</button>'
+        + '</div></div>'
+        + '<div id="report-content"></div>';
+      main.appendChild(sv);
+      // 填院區下拉
+      var sel = document.getElementById('report-clinic-select');
+      if (sel && typeof CLINICS !== 'undefined') {
+        CLINICS.forEach(function(c) {
+          var opt = document.createElement('option');
+          opt.value = c.name;
+          opt.textContent = c.name;
+          sel.appendChild(opt);
+        });
+      }
+      return sv;
+    }
+
+    // 內部狀態
+    state.reportDate = state.reportDate || new Date();
+    state.reportClinic = null;
+
+    window.kwOnReportClinicChange = function() {
+      var sel = document.getElementById('report-clinic-select');
+      if (!sel) return;
+      state.reportClinic = sel.value;
+      kwReportRefresh();
+    };
+    window.kwReportShiftDate = function(d) {
+      var dt = new Date(state.reportDate);
+      dt.setDate(dt.getDate() + d);
+      state.reportDate = dt;
+      kwReportRefresh();
+    };
+    window.kwReportGoToday = function() {
+      state.reportDate = new Date();
+      kwReportRefresh();
+    };
+    window.kwReportRefresh = function() {
+      var labelEl = document.getElementById('report-date-label');
+      if (labelEl) {
+        var d = state.reportDate;
+        var wd = ['日','一','二','三','四','五','六'][d.getDay()];
+        labelEl.textContent = d.getFullYear() + ' 年 ' + (d.getMonth()+1) + ' 月 ' + d.getDate() + ' 日（週' + wd + '）';
+      }
+      var content = document.getElementById('report-content');
+      if (!content) return;
+      if (!state.reportClinic) {
+        var sel = document.getElementById('report-clinic-select');
+        state.reportClinic = (sel && sel.value) || (typeof CLINICS !== 'undefined' && CLINICS[0] && CLINICS[0].name) || '';
+      }
+      content.innerHTML = '<div style="text-align:center; padding:30px; color:#94a3b8;">⏳ 載入報表中...</div>';
+      KW.api._post('getDailyReport', { clinic: state.reportClinic, date: fmtD(state.reportDate) }, true).then(function(res) {
+        if (res && res.ok && res.data) {
+          renderReport(res.data);
+        } else if (res && res.error && res.error.indexOf('unknown_action') === 0) {
+          content.innerHTML = '<div style="text-align:center; padding:30px; color:#dc2626;">⚠ 後端 v8.7 endpoint 未就緒<br><span style="font-size:12px; color:#94a3b8;">請更新 Apps Script Code.gs（加入 getDailyReport 函數）</span></div>';
+        } else {
+          content.innerHTML = '<div style="text-align:center; padding:30px; color:#dc2626;">⚠ 載入失敗：' + escapeHtml(res && res.error || '未知錯誤') + '</div>';
+        }
+      }).catch(function(e) {
+        content.innerHTML = '<div style="text-align:center; padding:30px; color:#dc2626;">⚠ ' + escapeHtml(String(e)) + '</div>';
+      });
+    };
+
+    function statCard(label, value, color) {
+      return '<div style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px; text-align:center;">'
+        + '<div style="font-size:11px; color:#64748b;">' + label + '</div>'
+        + '<div style="font-size:22px; font-weight:700; margin-top:4px; color:' + (color || '#0f172a') + ';">' + value + '</div>'
+        + '</div>';
+    }
+
+    function doctorBlock(d, isSubtotal) {
+      var title = isSubtotal ? '🏥 ' + (state.reportClinic || '') + ' · 院區小計' : '👨‍⚕️ ' + escapeHtml(d.doctor) + (d.doctor.indexOf('醫師') === -1 ? ' 醫師' : '');
+      var tt = d.total.initial + d.total.followup;
+      var cc = d.checked.initial + d.checked.followup;
+      var rate = (cc + (d.reschedule.medsNoBook + d.reschedule.nothing)) > 0
+        ? Math.round(cc * 1000 / (cc + d.reschedule.medsNoBook + d.reschedule.nothing)) / 10 + '%'
+        : '—';
+
+      var headBg = isSubtotal ? 'background:linear-gradient(90deg,#dbeafe,#eff6ff); color:#1e40af; font-weight:700;' : 'background:linear-gradient(90deg,#f1f5f9,#fafbfc);';
+      var html = '<div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; margin-bottom:14px; overflow:hidden;">'
+        + '<div style="padding:10px 14px; ' + headBg + ' border-bottom:1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">'
+        + '<div style="font-size:14px;">' + title + '</div>'
+        + '<div style="font-size:12px; color:#475569;">總 ' + tt + ' / 到診 ' + cc + ' / 出席率 ' + rate + '</div>'
+        + '</div>'
+        + '<div style="padding:12px 14px;">';
+
+      // 總預約 + 到診（4 卡）
+      html += '<div style="font-size:11px; color:#64748b; margin-bottom:6px;">📋 預約 / 到診</div>'
+        + '<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px;">'
+        +   statCard('總預約 · 初診', d.total.initial, '#9b59b6')
+        +   statCard('總預約 · 複診', d.total.followup, '#3498db')
+        +   statCard('到診 · 初診', d.checked.initial, '#27ae60')
+        +   statCard('到診 · 複診', d.checked.followup, '#16a34a')
+        + '</div>';
+
+      // 改約 4 分類
+      html += '<div style="font-size:11px; color:#64748b; margin-bottom:6px;">↔ 改約 / 取消（拿藥 + 預約狀態）</div>'
+        + '<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">'
+        +   statCard('改期有拿藥', d.reschedule.changedWithMeds, '#d97706')
+        +   statCard('改期未拿藥', d.reschedule.changedNoMeds, '#92400e')
+        +   statCard('有拿藥未預約', d.reschedule.medsNoBook, '#be185d')
+        +   statCard('都沒有', d.reschedule.nothing, '#94a3b8')
+        + '</div>';
+
+      // 個別預約明細（醫師欄才顯示，含 拿藥週數）
+      if (!isSubtotal && d.details && d.details.length > 0) {
+        var rows = d.details.slice().sort(function(a,b) { return String(a.time).localeCompare(String(b.time)); }).map(function(r) {
+          var statusColor = '#475569';
+          if (r.status === '已報到') statusColor = '#16a34a';
+          else if (r.status === '已改約') statusColor = '#d97706';
+          else if (r.status === '已取消') statusColor = '#94a3b8';
+          else if (r.status === '未到診') statusColor = '#be185d';
+          var medsTxt = r.meds > 0 ? '<span style="background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:8px; font-size:10px; font-weight:600;">💊 ' + r.meds + ' 週</span>' : '<span style="color:#cbd5e1;">—</span>';
+          var newTxt = (r.newDate || r.newTime) ? ('<span style="color:#1d4ed8; font-size:10px;">→ ' + r.newDate + ' ' + r.newTime + '</span>') : '<span style="color:#cbd5e1;">—</span>';
+          return '<tr><td>' + escapeHtml(r.time) + '</td>'
+            + '<td><strong>' + escapeHtml(r.name) + '</strong></td>'
+            + '<td>' + escapeHtml(r.type) + '</td>'
+            + '<td style="color:' + statusColor + '; font-weight:600;">' + escapeHtml(r.status) + '</td>'
+            + '<td>' + medsTxt + '</td>'
+            + '<td>' + newTxt + '</td></tr>';
+        }).join('');
+        html += '<details style="margin-top:12px;"><summary style="cursor:pointer; font-size:11px; color:#3498db;">▾ 展開明細（' + d.details.length + ' 筆）</summary>'
+          + '<table style="width:100%; font-size:11px; border-collapse:collapse; margin-top:6px;">'
+          + '<thead><tr style="color:#64748b; border-bottom:1px solid #e5e7eb;">'
+          + '<th style="text-align:left; padding:4px 6px;">時段</th><th style="text-align:left; padding:4px 6px;">病人</th>'
+          + '<th style="text-align:left; padding:4px 6px;">類型</th><th style="text-align:left; padding:4px 6px;">狀態</th>'
+          + '<th style="text-align:left; padding:4px 6px;">拿藥</th><th style="text-align:left; padding:4px 6px;">改至</th>'
+          + '</tr></thead><tbody>' + rows + '</tbody></table></details>';
+      }
+
+      html += '</div></div>';
+      return html;
+    }
+
+    function renderReport(data) {
+      var content = document.getElementById('report-content');
+      if (!content) return;
+      if (!data.doctors || data.doctors.length === 0) {
+        content.innerHTML = '<div class="empty-state"><div class="icon-big">📭</div><div style="font-weight:600;color:#475569;">' + data.clinic + ' 在 ' + data.date + ' 無預約紀錄</div></div>';
+        return;
+      }
+      var html = '';
+      // 小計放最上面
+      html += doctorBlock({ doctor: '院區小計', total: data.subtotal.total, checked: data.subtotal.checked, reschedule: data.subtotal.reschedule, details: [] }, true);
+      // 各醫師
+      data.doctors.forEach(function(d) {
+        html += doctorBlock(d, false);
+      });
+      content.innerHTML = html;
+    }
+
+    // 攔截 setCounterMenu 以支援 'report' 選單
+    var _origSetMenu = window.setCounterMenu;
+    window.setCounterMenu = function(menu, el) {
+      if (menu === 'report') {
+        document.querySelectorAll('#counter-sidebar-menu li').forEach(function(li){ li.classList.remove('active'); });
+        if (el) el.classList.add('active');
+        document.querySelectorAll('.counter-subview').forEach(function(s){ s.style.display = 'none'; });
+        var sv = ensureReportSubview();
+        if (sv) sv.style.display = '';
+        kwReportRefresh();
+        return;
+      }
+      return _origSetMenu.apply(this, arguments);
+    };
+
+    // 修正 sidebar 的「📊 當日報表」按鈕（原本 onclick 是 showToast 開發中）
+    setTimeout(function() {
+      var li = document.querySelector('#counter-sidebar-menu li[data-menu="report"]');
+      if (li) {
+        li.onclick = function() { setCounterMenu('report', li); };
+      }
+    }, 300);
+
+    console.log('[KW v8.7] ✓ 當日報表模組啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.7] 當日報表模組 結束 ===== -->
+
+<!-- ===== [v8.8] 服務項目 CRUD 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 80;
+    if (typeof state !== 'undefined' && typeof window.switchAdminTab === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    }
+  }
+  waitReady(function() {
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function categoryBadge(cat) {
+      if (cat === '健保') return '<span style="background:#e3f2fd; color:#1976d2; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600;">健保</span>';
+      if (cat === '自費') return '<span style="background:#f3e5f5; color:#8e24aa; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600;">自費</span>';
+      return '<span style="background:#f1f5f9; color:#475569; padding:2px 8px; border-radius:10px; font-size:11px;">' + escapeHtml(cat || '其他') + '</span>';
+    }
+    function activeBadge(v) {
+      var on = String(v).toUpperCase() === 'TRUE' || v === true;
+      return on
+        ? '<span style="background:#dcfce7; color:#166534; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600;">啟用</span>'
+        : '<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:10px; font-size:11px;">停用</span>';
+    }
+
+    state.servicesCache = state.servicesCache || null;
+
+    window.kwLoadServices = function(forceReload) {
+      var tbody = document.querySelector('#admin-services table.data-table tbody');
+      if (!tbody) return;
+      if (!forceReload && state.servicesCache) {
+        renderServices(state.servicesCache);
+        return;
+      }
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#94a3b8;">⏳ 載入中...</td></tr>';
+      KW.api._post('getServices', {}, true).then(function(res) {
+        if (res && res.ok && Array.isArray(res.data)) {
+          state.servicesCache = res.data;
+          renderServices(res.data);
+        } else if (res && res.error && res.error.indexOf('unknown_action') === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#dc2626;">⚠ 後端 v8.8 endpoint 未就緒，請更新 Apps Script Code.gs</td></tr>';
+        } else {
+          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#dc2626;">⚠ 載入失敗</td></tr>';
+        }
+      }).catch(function(e) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:20px; color:#dc2626;">⚠ ' + escapeHtml(String(e)) + '</td></tr>';
+      });
+    };
+
+    function renderServices(services) {
+      var tbody = document.querySelector('#admin-services table.data-table tbody');
+      if (!tbody) return;
+      if (!services || services.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#94a3b8;">尚無服務項目，請點上方「+ 新增服務項目」</td></tr>';
+        return;
+      }
+      var html = '';
+      services.forEach(function(s) {
+        var minutes = Number(s['佔用時段'] || 1) * 10;
+        var price = Number(s['費用'] || 0);
+        var priceTxt = price === 0 ? '—' : 'NT$ ' + price.toLocaleString();
+        var onlineTxt = String(s['可線上預約']).toUpperCase() === 'TRUE' ? '<span style="color:#16a34a;">✓</span>' : '<span style="color:#dc2626;">✕</span>';
+        var codeSafe = String(s['項目代碼']).replace(/'/g, "\\'");
+        html += '<tr>'
+          + '<td><strong>' + escapeHtml(s['項目代碼']) + '</strong></td>'
+          + '<td>' + escapeHtml(s['項目名稱']) + (s['備註'] ? '<div style="font-size:11px; color:#94a3b8;">' + escapeHtml(s['備註']) + '</div>' : '') + '</td>'
+          + '<td>' + categoryBadge(s['類別']) + '</td>'
+          + '<td>' + s['佔用時段'] + ' 格 (' + minutes + ' 分)</td>'
+          + '<td>' + priceTxt + '</td>'
+          + '<td style="text-align:center;">' + onlineTxt + ' / ' + activeBadge(s['啟用']) + '</td>'
+          + '<td>'
+          +   '<button class="btn btn-outline btn-sm" onclick="kwEditService(\'' + codeSafe + '\')">編輯</button> '
+          +   '<button class="btn btn-danger btn-sm" onclick="kwDeleteService(\'' + codeSafe + '\')">刪除</button>'
+          + '</td>'
+          + '</tr>';
+      });
+      tbody.innerHTML = html;
+    }
+
+    function ensureServiceModal() {
+      if (document.getElementById('kw-svc-modal-bd')) return;
+      var bd = document.createElement('div');
+      bd.id = 'kw-svc-modal-bd';
+      bd.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:10001; display:none; align-items:center; justify-content:center;';
+      bd.onclick = function(e) { if (e.target === bd) kwCloseServiceModal(); };
+      bd.innerHTML = '<div style="background:#fff; border-radius:12px; padding:20px 24px; width:90%; max-width:520px; max-height:85vh; overflow:auto;">'
+        + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">'
+        + '<h3 id="kw-svc-title" style="margin:0;">新增服務項目</h3>'
+        + '<button onclick="kwCloseServiceModal()" style="background:none; border:none; font-size:22px; cursor:pointer; color:#64748b;">✕</button>'
+        + '</div>'
+        + '<div class="form-group"><label>項目代碼 <span style="color:#dc2626;">*</span></label><input type="text" id="kw-svc-code" class="form-control" placeholder="例：S006"></div>'
+        + '<div class="form-group"><label>項目名稱 <span style="color:#dc2626;">*</span></label><input type="text" id="kw-svc-name" class="form-control"></div>'
+        + '<div class="form-group"><label>類別</label><select id="kw-svc-cat" class="form-control"><option>健保</option><option>自費</option><option>其他</option></select></div>'
+        + '<div class="form-group" style="display:flex; gap:8px;">'
+        +   '<div style="flex:1;"><label>佔用時段（10 分鐘 / 格）</label><input type="number" id="kw-svc-slots" class="form-control" min="1" max="20" value="1"></div>'
+        +   '<div style="flex:1;"><label>費用（NT$）</label><input type="number" id="kw-svc-price" class="form-control" min="0" value="0"></div>'
+        + '</div>'
+        + '<div class="form-group" style="display:flex; gap:14px;">'
+        +   '<label style="display:flex; align-items:center; gap:6px; font-weight:normal;"><input type="checkbox" id="kw-svc-online" checked> 可線上預約</label>'
+        +   '<label style="display:flex; align-items:center; gap:6px; font-weight:normal;"><input type="checkbox" id="kw-svc-active" checked> 啟用</label>'
+        + '</div>'
+        + '<div class="form-group"><label>備註</label><textarea id="kw-svc-note" class="form-control" rows="2"></textarea></div>'
+        + '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">'
+        +   '<button onclick="kwCloseServiceModal()" class="btn btn-outline">取消</button>'
+        +   '<button onclick="kwSaveService()" class="btn btn-success" id="kw-svc-save-btn">✓ 儲存</button>'
+        + '</div>'
+        + '</div>';
+      document.body.appendChild(bd);
+    }
+
+    window.kwOpenNewService = function() {
+      ensureServiceModal();
+      document.getElementById('kw-svc-title').textContent = '新增服務項目';
+      document.getElementById('kw-svc-code').value = '';
+      document.getElementById('kw-svc-code').disabled = false;
+      document.getElementById('kw-svc-name').value = '';
+      document.getElementById('kw-svc-cat').value = '健保';
+      document.getElementById('kw-svc-slots').value = 1;
+      document.getElementById('kw-svc-price').value = 0;
+      document.getElementById('kw-svc-online').checked = true;
+      document.getElementById('kw-svc-active').checked = true;
+      document.getElementById('kw-svc-note').value = '';
+      document.getElementById('kw-svc-modal-bd').style.display = 'flex';
+    };
+
+    window.kwEditService = function(code) {
+      ensureServiceModal();
+      var svc = (state.servicesCache || []).find(function(s) { return s['項目代碼'] === code; });
+      if (!svc) { if (typeof showToast === 'function') showToast('找不到該項目', 'warn'); return; }
+      document.getElementById('kw-svc-title').textContent = '編輯服務項目 — ' + code;
+      document.getElementById('kw-svc-code').value = svc['項目代碼'];
+      document.getElementById('kw-svc-code').disabled = true;
+      document.getElementById('kw-svc-name').value = svc['項目名稱'] || '';
+      document.getElementById('kw-svc-cat').value = svc['類別'] || '健保';
+      document.getElementById('kw-svc-slots').value = svc['佔用時段'] || 1;
+      document.getElementById('kw-svc-price').value = svc['費用'] || 0;
+      document.getElementById('kw-svc-online').checked = String(svc['可線上預約']).toUpperCase() === 'TRUE';
+      document.getElementById('kw-svc-active').checked = String(svc['啟用']).toUpperCase() === 'TRUE';
+      document.getElementById('kw-svc-note').value = svc['備註'] || '';
+      document.getElementById('kw-svc-modal-bd').style.display = 'flex';
+    };
+
+    window.kwCloseServiceModal = function() {
+      var bd = document.getElementById('kw-svc-modal-bd');
+      if (bd) bd.style.display = 'none';
+    };
+
+    window.kwSaveService = function() {
+      var code = document.getElementById('kw-svc-code').value.trim();
+      var name = document.getElementById('kw-svc-name').value.trim();
+      if (!code || !name) {
+        if (typeof showToast === 'function') showToast('項目代碼和名稱為必填', 'warn');
+        return;
+      }
+      var btn = document.getElementById('kw-svc-save-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '儲存中...'; }
+      var payload = {
+        '項目代碼':   code,
+        '項目名稱':   name,
+        '類別':       document.getElementById('kw-svc-cat').value,
+        '佔用時段':   Number(document.getElementById('kw-svc-slots').value) || 1,
+        '費用':       Number(document.getElementById('kw-svc-price').value) || 0,
+        '可線上預約': document.getElementById('kw-svc-online').checked ? 'TRUE' : 'FALSE',
+        '啟用':       document.getElementById('kw-svc-active').checked ? 'TRUE' : 'FALSE',
+        '備註':       document.getElementById('kw-svc-note').value.trim(),
+      };
+      KW.api._post('saveService', payload, true).then(function(res) {
+        if (btn) { btn.disabled = false; btn.textContent = '✓ 儲存'; }
+        if (res && res.ok) {
+          if (typeof showToast === 'function') showToast('✅ ' + (res.mode === 'added' ? '新增' : '更新') + '成功');
+          kwCloseServiceModal();
+          kwLoadServices(true);
+        } else {
+          if (typeof showToast === 'function') showToast('⚠ 儲存失敗：' + (res && res.error || '未知'), 'warn');
+        }
+      }).catch(function(e) {
+        if (btn) { btn.disabled = false; btn.textContent = '✓ 儲存'; }
+        if (typeof showToast === 'function') showToast('⚠ ' + String(e), 'warn');
+      });
+    };
+
+    window.kwDeleteService = function(code) {
+      if (!confirm('確定刪除「' + code + '」？此動作無法復原')) return;
+      KW.api._post('deleteService', { '項目代碼': code }, true).then(function(res) {
+        if (res && res.ok) {
+          if (typeof showToast === 'function') showToast('✅ 已刪除「' + code + '」');
+          kwLoadServices(true);
+        } else {
+          if (typeof showToast === 'function') showToast('⚠ 刪除失敗：' + (res && res.error || '未知'), 'warn');
+        }
+      });
+    };
+
+    // 攔截 switchAdminTab：切到 services 時自動載入
+    var _origSwitch = window.switchAdminTab;
+    window.switchAdminTab = function(name, tabEl) {
+      var ret = _origSwitch.apply(this, arguments);
+      if (name === 'services') {
+        // 把原本「+ 新增服務項目」按鈕的 onclick 設好
+        setTimeout(function() {
+          var btn = document.querySelector('#admin-services button.btn.btn-primary');
+          if (btn && !btn.dataset.kwBound) {
+            btn.onclick = kwOpenNewService;
+            btn.dataset.kwBound = '1';
+          }
+          kwLoadServices(false);
+        }, 50);
+      }
+      return ret;
+    };
+
+    console.log('[KW v8.8] ✓ 服務項目 CRUD 啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.8] 服務項目 CRUD 結束 ===== -->
+
+<!-- ===== [v8.9] 通知範本 CRUD 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 80;
+    if (typeof state !== 'undefined' && typeof window.switchAdminTab === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    }
+  }
+  waitReady(function() {
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function activeBadge(v) {
+      var on = String(v).toUpperCase() === 'TRUE';
+      return on
+        ? '<span style="background:#dcfce7; color:#166534; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600;">啟用</span>'
+        : '<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:10px; font-size:11px;">停用</span>';
+    }
+
+    state.notifyTemplatesCache = state.notifyTemplatesCache || null;
+
+    window.kwLoadNotifyTemplates = function(forceReload) {
+      var tbody = document.querySelector('#admin-notify table.data-table tbody');
+      if (!tbody) return;
+      if (!forceReload && state.notifyTemplatesCache) {
+        renderNotifyTemplates(state.notifyTemplatesCache);
+        return;
+      }
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#94a3b8;">⏳ 載入中...</td></tr>';
+      KW.api._post('getNotifyTemplates', {}, true).then(function(res) {
+        if (res && res.ok && Array.isArray(res.data)) {
+          state.notifyTemplatesCache = res.data;
+          renderNotifyTemplates(res.data);
+        } else if (res && res.error && res.error.indexOf('unknown_action') === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#dc2626;">⚠ 後端 v8.9 endpoint 未就緒，請更新 Apps Script Code.gs</td></tr>';
+        } else {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#dc2626;">⚠ 載入失敗</td></tr>';
+        }
+      }).catch(function(e) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:20px; color:#dc2626;">⚠ ' + escapeHtml(String(e)) + '</td></tr>';
+      });
+    };
+
+    function ensureNotifyTableHeader() {
+      // 原本 table 是 6 欄（事件/LINE/簡訊/時機/啟用/操作）
+      // 我們重新替換 header 為 7 欄含「範本代碼」+ 加上新增按鈕
+      var table = document.querySelector('#admin-notify table.data-table');
+      if (!table) return;
+      var infoBanner = document.querySelector('#admin-notify .info-banner');
+      if (infoBanner && !document.getElementById('kw-tmpl-new-btn-wrap')) {
+        var w = document.createElement('div');
+        w.id = 'kw-tmpl-new-btn-wrap';
+        w.style.cssText = 'display:flex; justify-content:flex-end; margin-bottom:12px;';
+        w.innerHTML = '<button class="btn btn-primary" onclick="kwOpenNewNotifyTemplate()">+ 新增通知範本</button>';
+        infoBanner.parentNode.insertBefore(w, infoBanner.nextSibling);
+      }
+      // 替換 thead
+      var thead = table.querySelector('thead');
+      if (thead && !thead.dataset.kwUpdated) {
+        thead.innerHTML = '<tr>'
+          + '<th style="width:80px;">代碼</th>'
+          + '<th>事件</th>'
+          + '<th>LINE 範本</th>'
+          + '<th>簡訊範本</th>'
+          + '<th style="width:120px;">發送時機</th>'
+          + '<th style="width:60px;">啟用</th>'
+          + '<th style="width:140px;">操作</th>'
+          + '</tr>';
+        thead.dataset.kwUpdated = '1';
+      }
+    }
+
+    function renderNotifyTemplates(rows) {
+      var tbody = document.querySelector('#admin-notify table.data-table tbody');
+      if (!tbody) return;
+      ensureNotifyTableHeader();
+      if (!rows || rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:#94a3b8;">尚無通知範本，請點上方「+ 新增通知範本」</td></tr>';
+        return;
+      }
+      var html = '';
+      rows.forEach(function(r) {
+        var codeSafe = String(r['範本代碼']).replace(/'/g, "\\'");
+        html += '<tr>'
+          + '<td><strong>' + escapeHtml(r['範本代碼']) + '</strong></td>'
+          + '<td>' + escapeHtml(r['事件名稱']) + '</td>'
+          + '<td style="font-size:11px; color:#475569; max-width:240px;">' + escapeHtml(r['LINE內容'] || '—') + '</td>'
+          + '<td style="font-size:11px; color:#475569; max-width:240px;">' + escapeHtml(r['簡訊內容'] || '—') + '</td>'
+          + '<td style="font-size:11px;">' + escapeHtml(r['發送時機'] || '即時') + '</td>'
+          + '<td>' + activeBadge(r['啟用']) + '</td>'
+          + '<td>'
+          +   '<button class="btn btn-outline btn-sm" onclick="kwEditNotifyTemplate(\'' + codeSafe + '\')">編輯</button> '
+          +   '<button class="btn btn-danger btn-sm" onclick="kwDeleteNotifyTemplate(\'' + codeSafe + '\')">刪除</button>'
+          + '</td>'
+          + '</tr>';
+      });
+      tbody.innerHTML = html;
+    }
+
+    function ensureTmplModal() {
+      if (document.getElementById('kw-tmpl-modal-bd')) return;
+      var bd = document.createElement('div');
+      bd.id = 'kw-tmpl-modal-bd';
+      bd.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:10001; display:none; align-items:center; justify-content:center;';
+      bd.onclick = function(e) { if (e.target === bd) kwCloseTmplModal(); };
+      bd.innerHTML = '<div style="background:#fff; border-radius:12px; padding:20px 24px; width:92%; max-width:600px; max-height:90vh; overflow:auto;">'
+        + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">'
+        + '<h3 id="kw-tmpl-title" style="margin:0;">新增通知範本</h3>'
+        + '<button onclick="kwCloseTmplModal()" style="background:none; border:none; font-size:22px; cursor:pointer; color:#64748b;">✕</button>'
+        + '</div>'
+        + '<div class="form-group" style="display:flex; gap:8px;">'
+        +   '<div style="flex:1;"><label>範本代碼 <span style="color:#dc2626;">*</span></label><input type="text" id="kw-tmpl-code" class="form-control" placeholder="例：T06"></div>'
+        +   '<div style="flex:2;"><label>事件名稱 <span style="color:#dc2626;">*</span></label><input type="text" id="kw-tmpl-event" class="form-control" placeholder="例：回診提醒"></div>'
+        + '</div>'
+        + '<div class="form-group"><label>LINE 範本內容</label><textarea id="kw-tmpl-line" class="form-control" rows="2" placeholder="支援變數：{姓名} {院區} {醫師} {日期時間} {電話} {天數}"></textarea></div>'
+        + '<div class="form-group"><label>簡訊範本內容</label><textarea id="kw-tmpl-sms" class="form-control" rows="2" placeholder="支援同樣變數，建議 70 字內以省一則簡訊"></textarea></div>'
+        + '<div class="form-group" style="display:flex; gap:8px;">'
+        +   '<div style="flex:2;"><label>發送時機</label><input type="text" id="kw-tmpl-when" class="form-control" placeholder="例：即時 / D-1 18:00 / 距上次看診 28 天"></div>'
+        +   '<div style="flex:1; display:flex; align-items:flex-end;"><label style="display:flex; align-items:center; gap:6px; font-weight:normal;"><input type="checkbox" id="kw-tmpl-active" checked> 啟用</label></div>'
+        + '</div>'
+        + '<div class="form-group"><label>備註</label><input type="text" id="kw-tmpl-note" class="form-control"></div>'
+        + '<div style="background:#fef9c3; border:1px solid #fde68a; border-radius:8px; padding:8px 12px; font-size:11px; color:#854d0e; margin-bottom:14px;">'
+        +   '💡 可用變數：{姓名} {院區} {醫師} {日期} {時間} {日期時間} {電話} {天數}（系統發送時自動代入）'
+        + '</div>'
+        + '<div style="display:flex; gap:8px; justify-content:flex-end;">'
+        +   '<button onclick="kwCloseTmplModal()" class="btn btn-outline">取消</button>'
+        +   '<button onclick="kwSaveNotifyTemplate()" class="btn btn-success" id="kw-tmpl-save-btn">✓ 儲存</button>'
+        + '</div>'
+        + '</div>';
+      document.body.appendChild(bd);
+    }
+
+    window.kwOpenNewNotifyTemplate = function() {
+      ensureTmplModal();
+      document.getElementById('kw-tmpl-title').textContent = '新增通知範本';
+      document.getElementById('kw-tmpl-code').value = '';
+      document.getElementById('kw-tmpl-code').disabled = false;
+      document.getElementById('kw-tmpl-event').value = '';
+      document.getElementById('kw-tmpl-line').value = '';
+      document.getElementById('kw-tmpl-sms').value = '';
+      document.getElementById('kw-tmpl-when').value = '即時';
+      document.getElementById('kw-tmpl-active').checked = true;
+      document.getElementById('kw-tmpl-note').value = '';
+      document.getElementById('kw-tmpl-modal-bd').style.display = 'flex';
+    };
+
+    window.kwEditNotifyTemplate = function(code) {
+      ensureTmplModal();
+      var r = (state.notifyTemplatesCache || []).find(function(x) { return x['範本代碼'] === code; });
+      if (!r) { if (typeof showToast === 'function') showToast('找不到該範本', 'warn'); return; }
+      document.getElementById('kw-tmpl-title').textContent = '編輯範本 — ' + code;
+      document.getElementById('kw-tmpl-code').value = r['範本代碼'];
+      document.getElementById('kw-tmpl-code').disabled = true;
+      document.getElementById('kw-tmpl-event').value = r['事件名稱'] || '';
+      document.getElementById('kw-tmpl-line').value = r['LINE內容'] || '';
+      document.getElementById('kw-tmpl-sms').value = r['簡訊內容'] || '';
+      document.getElementById('kw-tmpl-when').value = r['發送時機'] || '即時';
+      document.getElementById('kw-tmpl-active').checked = String(r['啟用']).toUpperCase() === 'TRUE';
+      document.getElementById('kw-tmpl-note').value = r['備註'] || '';
+      document.getElementById('kw-tmpl-modal-bd').style.display = 'flex';
+    };
+
+    window.kwCloseTmplModal = function() {
+      var bd = document.getElementById('kw-tmpl-modal-bd');
+      if (bd) bd.style.display = 'none';
+    };
+
+    window.kwSaveNotifyTemplate = function() {
+      var code = document.getElementById('kw-tmpl-code').value.trim();
+      var ev   = document.getElementById('kw-tmpl-event').value.trim();
+      if (!code || !ev) {
+        if (typeof showToast === 'function') showToast('範本代碼和事件名稱為必填', 'warn');
+        return;
+      }
+      var btn = document.getElementById('kw-tmpl-save-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '儲存中...'; }
+      var payload = {
+        '範本代碼': code,
+        '事件名稱': ev,
+        'LINE內容': document.getElementById('kw-tmpl-line').value,
+        '簡訊內容': document.getElementById('kw-tmpl-sms').value,
+        '發送時機': document.getElementById('kw-tmpl-when').value.trim() || '即時',
+        '啟用':     document.getElementById('kw-tmpl-active').checked ? 'TRUE' : 'FALSE',
+        '備註':     document.getElementById('kw-tmpl-note').value.trim(),
+      };
+      KW.api._post('saveNotifyTemplate', payload, true).then(function(res) {
+        if (btn) { btn.disabled = false; btn.textContent = '✓ 儲存'; }
+        if (res && res.ok) {
+          if (typeof showToast === 'function') showToast('✅ ' + (res.mode === 'added' ? '新增' : '更新') + '成功');
+          kwCloseTmplModal();
+          kwLoadNotifyTemplates(true);
+        } else {
+          if (typeof showToast === 'function') showToast('⚠ 儲存失敗：' + (res && res.error || '未知'), 'warn');
+        }
+      }).catch(function(e) {
+        if (btn) { btn.disabled = false; btn.textContent = '✓ 儲存'; }
+        if (typeof showToast === 'function') showToast('⚠ ' + String(e), 'warn');
+      });
+    };
+
+    window.kwDeleteNotifyTemplate = function(code) {
+      if (!confirm('確定刪除範本「' + code + '」？此動作無法復原')) return;
+      KW.api._post('deleteNotifyTemplate', { '範本代碼': code }, true).then(function(res) {
+        if (res && res.ok) {
+          if (typeof showToast === 'function') showToast('✅ 已刪除「' + code + '」');
+          kwLoadNotifyTemplates(true);
+        } else {
+          if (typeof showToast === 'function') showToast('⚠ 刪除失敗：' + (res && res.error || '未知'), 'warn');
+        }
+      });
+    };
+
+    var _origSwitch = window.switchAdminTab;
+    window.switchAdminTab = function(name, tabEl) {
+      var ret = _origSwitch.apply(this, arguments);
+      if (name === 'notify') {
+        setTimeout(function() {
+          kwLoadNotifyTemplates(false);
+        }, 50);
+      }
+      return ret;
+    };
+
+    console.log('[KW v8.9] ✓ 通知範本 CRUD 啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.9] 通知範本 CRUD 結束 ===== -->
+
+<!-- ===== [v8.10] 報表區間檢視 + Excel 匯出 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 80;
+    if (typeof state !== 'undefined' && typeof window.kwReportRefresh === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    }
+  }
+  waitReady(function() {
+    function fmtD(d) {
+      if (typeof fmtIsoDate === 'function') return fmtIsoDate(d);
+      var dt = (d instanceof Date) ? d : new Date(d);
+      return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+    }
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    state.reportView = state.reportView || 'day';  // 'day' | 'week' | 'month'
+    state.reportData = state.reportData || null;
+
+    // 計算 from / to 依當前 view + state.reportDate
+    function computeRange() {
+      var d = state.reportDate ? new Date(state.reportDate) : new Date();
+      d.setHours(0,0,0,0);
+      if (state.reportView === 'week') {
+        var wd = d.getDay(); // 0=Sun
+        var monday = new Date(d);
+        monday.setDate(d.getDate() - (wd === 0 ? 6 : wd - 1));
+        var sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        return { from: fmtD(monday), to: fmtD(sunday), label: fmtD(monday) + ' ~ ' + fmtD(sunday) + '（週）' };
+      }
+      if (state.reportView === 'month') {
+        var first = new Date(d.getFullYear(), d.getMonth(), 1);
+        var last  = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+        return { from: fmtD(first), to: fmtD(last), label: d.getFullYear() + ' 年 ' + (d.getMonth()+1) + ' 月（' + last.getDate() + ' 天）' };
+      }
+      // day
+      var ws = ['日','一','二','三','四','五','六'][d.getDay()];
+      return { from: fmtD(d), to: fmtD(d), label: d.getFullYear() + ' 年 ' + (d.getMonth()+1) + ' 月 ' + d.getDate() + ' 日（週' + ws + '）' };
+    }
+
+    // 在 report 區加 view toggle + 匯出按鈕（首次切到 report 時生效）
+    function injectViewControls() {
+      var sv = document.getElementById('counter-subview-report');
+      if (!sv) return;
+      if (document.getElementById('kw-report-view-toggle')) return;
+      var navWrap = sv.querySelector('div[style*="justify-content:space-between"]');
+      if (!navWrap) return;
+      // 找 nav 按鈕區
+      var navButtons = navWrap.children[1];
+      if (!navButtons) return;
+      // 插入 view toggle + 匯出
+      var toggle = document.createElement('div');
+      toggle.id = 'kw-report-view-toggle';
+      toggle.style.cssText = 'display:inline-flex; background:#eef2f7; border-radius:8px; padding:3px; gap:2px; margin-right:6px;';
+      toggle.innerHTML = ''
+        + '<button class="kw-rv-btn active" data-view="day" onclick="kwSetReportView(\'day\')" style="padding:5px 12px; border:none; background:#fff; border-radius:6px; cursor:pointer; font-size:12px; color:#1e3a5f; font-weight:600;">日</button>'
+        + '<button class="kw-rv-btn" data-view="week" onclick="kwSetReportView(\'week\')" style="padding:5px 12px; border:none; background:transparent; border-radius:6px; cursor:pointer; font-size:12px; color:#5a6a7a;">週</button>'
+        + '<button class="kw-rv-btn" data-view="month" onclick="kwSetReportView(\'month\')" style="padding:5px 12px; border:none; background:transparent; border-radius:6px; cursor:pointer; font-size:12px; color:#5a6a7a;">月</button>';
+      navButtons.insertBefore(toggle, navButtons.firstChild);
+
+      var exportBtn = document.createElement('button');
+      exportBtn.id = 'kw-report-export-btn';
+      exportBtn.className = 'btn btn-success btn-sm';
+      exportBtn.style.cssText = 'background:#16a34a; color:#fff; border:none; padding:5px 12px; border-radius:6px; font-size:12px; cursor:pointer; margin-left:6px;';
+      exportBtn.textContent = '📥 匯出 Excel';
+      exportBtn.onclick = kwExportReport;
+      navButtons.appendChild(exportBtn);
+    }
+
+    window.kwSetReportView = function(view) {
+      state.reportView = view;
+      // 更新 toggle 樣式
+      document.querySelectorAll('.kw-rv-btn').forEach(function(b) {
+        if (b.dataset.view === view) {
+          b.classList.add('active');
+          b.style.background = '#fff';
+          b.style.color = '#1e3a5f';
+          b.style.fontWeight = '600';
+        } else {
+          b.classList.remove('active');
+          b.style.background = 'transparent';
+          b.style.color = '#5a6a7a';
+          b.style.fontWeight = 'normal';
+        }
+      });
+      // 更新 nav 按鈕 label
+      var btns = document.querySelectorAll('#counter-subview-report button.btn-outline.btn-sm, #counter-subview-report button.btn-primary.btn-sm');
+      var prev = null, today = null, next = null;
+      btns.forEach(function(b) {
+        var t = (b.textContent || '').trim();
+        if (t.indexOf('←') === 0) prev = b;
+        else if (t.indexOf('→') !== -1) next = b;
+        else if (b.classList.contains('btn-primary')) today = b;
+      });
+      if (view === 'week') {
+        if (prev) prev.textContent = '← 上週';
+        if (today) today.textContent = '本週';
+        if (next) next.textContent = '下週 →';
+      } else if (view === 'month') {
+        if (prev) prev.textContent = '← 上月';
+        if (today) today.textContent = '本月';
+        if (next) next.textContent = '下月 →';
+      } else {
+        if (prev) prev.textContent = '← 昨日';
+        if (today) today.textContent = '今日';
+        if (next) next.textContent = '明日 →';
+      }
+      kwReportRefresh();
+    };
+
+    // 覆寫 kwReportShiftDate 支援 week/month 單位
+    var _origShift = window.kwReportShiftDate;
+    window.kwReportShiftDate = function(d) {
+      if (!state.reportDate) state.reportDate = new Date();
+      var dt = new Date(state.reportDate);
+      if (state.reportView === 'week') dt.setDate(dt.getDate() + d * 7);
+      else if (state.reportView === 'month') dt.setMonth(dt.getMonth() + d);
+      else dt.setDate(dt.getDate() + d);
+      state.reportDate = dt;
+      kwReportRefresh();
+    };
+
+    // 覆寫 kwReportRefresh 改用 getReportByRange
+    window.kwReportRefresh = function() {
+      injectViewControls();
+      var range = computeRange();
+      var labelEl = document.getElementById('report-date-label');
+      if (labelEl) labelEl.textContent = range.label;
+      var content = document.getElementById('report-content');
+      if (!content) return;
+      if (!state.reportClinic) {
+        var sel = document.getElementById('report-clinic-select');
+        state.reportClinic = (sel && sel.value) || (typeof CLINICS !== 'undefined' && CLINICS[0] && CLINICS[0].name) || '';
+      }
+      content.innerHTML = '<div style="text-align:center; padding:30px; color:#94a3b8;">⏳ 載入報表中...</div>';
+      KW.api._post('getReportByRange', { clinic: state.reportClinic, from: range.from, to: range.to }, true).then(function(res) {
+        if (res && res.ok && res.data) {
+          state.reportData = res.data;
+          renderReportV810(res.data, range);
+        } else if (res && res.error && res.error.indexOf('unknown_action') === 0) {
+          content.innerHTML = '<div style="text-align:center; padding:30px; color:#dc2626;">⚠ 後端 v8.10 endpoint 未就緒，請更新 Apps Script</div>';
+        } else {
+          content.innerHTML = '<div style="text-align:center; padding:30px; color:#dc2626;">⚠ 載入失敗：' + escapeHtml(res && res.error || '未知') + '</div>';
+        }
+      }).catch(function(e) {
+        content.innerHTML = '<div style="text-align:center; padding:30px; color:#dc2626;">⚠ ' + escapeHtml(String(e)) + '</div>';
+      });
+    };
+
+    function statCard(label, value, color) {
+      return '<div style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px; text-align:center;">'
+        + '<div style="font-size:11px; color:#64748b;">' + label + '</div>'
+        + '<div style="font-size:22px; font-weight:700; margin-top:4px; color:' + (color || '#0f172a') + ';">' + value + '</div>'
+        + '</div>';
+    }
+    function doctorBlock(d, isSubtotal, clinic) {
+      var title = isSubtotal ? '🏥 ' + (clinic || '') + ' · 院區小計' : '👨‍⚕️ ' + escapeHtml(d.doctor) + (d.doctor.indexOf('醫師') === -1 ? ' 醫師' : '');
+      var tt = d.total.initial + d.total.followup;
+      var cc = d.checked.initial + d.checked.followup;
+      var rate = (cc + d.reschedule.medsNoBook + d.reschedule.nothing) > 0
+        ? Math.round(cc * 1000 / (cc + d.reschedule.medsNoBook + d.reschedule.nothing)) / 10 + '%' : '—';
+      var headBg = isSubtotal ? 'background:linear-gradient(90deg,#dbeafe,#eff6ff); color:#1e40af; font-weight:700;' : 'background:linear-gradient(90deg,#f1f5f9,#fafbfc);';
+      var html = '<div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; margin-bottom:14px; overflow:hidden;">'
+        + '<div style="padding:10px 14px; ' + headBg + ' border-bottom:1px solid #e5e7eb; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">'
+        + '<div style="font-size:14px;">' + title + '</div>'
+        + '<div style="font-size:12px; color:#475569;">總 ' + tt + ' / 到診 ' + cc + ' / 出席率 ' + rate + '</div>'
+        + '</div><div style="padding:12px 14px;">'
+        + '<div style="font-size:11px; color:#64748b; margin-bottom:6px;">📋 預約 / 到診</div>'
+        + '<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:14px;">'
+        + statCard('總預約 · 初診', d.total.initial, '#9b59b6')
+        + statCard('總預約 · 複診', d.total.followup, '#3498db')
+        + statCard('到診 · 初診', d.checked.initial, '#27ae60')
+        + statCard('到診 · 複診', d.checked.followup, '#16a34a')
+        + '</div>'
+        + '<div style="font-size:11px; color:#64748b; margin-bottom:6px;">↔ 改約 4 分類</div>'
+        + '<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px;">'
+        + statCard('改期有拿藥', d.reschedule.changedWithMeds, '#d97706')
+        + statCard('改期未拿藥', d.reschedule.changedNoMeds, '#92400e')
+        + statCard('有拿藥未預約', d.reschedule.medsNoBook, '#be185d')
+        + statCard('都沒有', d.reschedule.nothing, '#94a3b8')
+        + '</div></div></div>';
+      return html;
+    }
+    function renderReportV810(data, range) {
+      var content = document.getElementById('report-content');
+      if (!content) return;
+      var noData = !data.doctors || data.doctors.length === 0;
+      if (noData) {
+        content.innerHTML = '<div class="empty-state"><div class="icon-big">📭</div><div style="font-weight:600;color:#475569;">' + data.clinic + ' 在 ' + data.from + ' ~ ' + data.to + ' 無預約紀錄</div></div>';
+        return;
+      }
+      var html = '<div style="background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; padding:8px 12px; margin-bottom:14px; font-size:12px; color:#92400e;">'
+        + '📅 區間 <strong>' + data.from + ' → ' + data.to + '</strong>（' + data.days + ' 天） · 院區 <strong>' + data.clinic + '</strong></div>';
+      html += doctorBlock({ doctor: '院區小計', total: data.subtotal.total, checked: data.subtotal.checked, reschedule: data.subtotal.reschedule }, true, data.clinic);
+      data.doctors.forEach(function(d) { html += doctorBlock(d, false, data.clinic); });
+      content.innerHTML = html;
+    }
+
+    // ===== Excel 匯出 =====
+    window.kwExportReport = function() {
+      var data = state.reportData;
+      if (!data) {
+        if (typeof showToast === 'function') showToast('還沒有報表資料可匯出', 'warn');
+        return;
+      }
+      if (typeof XLSX === 'undefined') {
+        if (typeof showToast === 'function') showToast('XLSX 函式庫未載入，請重新整理', 'warn');
+        return;
+      }
+      // === Sheet 1: 摘要 ===
+      var summary = [
+        ['金鶯減重診所 · 預約報表'],
+        ['院區', data.clinic],
+        ['區間', data.from + ' ~ ' + data.to + '（' + data.days + ' 天）'],
+        ['匯出時間', new Date().toLocaleString('zh-TW')],
+        [],
+        ['醫師', '總預約·初診', '總預約·複診', '到診·初診', '到診·複診', '改期有拿藥', '改期未拿藥', '有拿藥未預約', '都沒有', '出席率'],
+      ];
+      function rateStr(c, n) {
+        var denom = c + n;
+        return denom > 0 ? (Math.round(c * 1000 / denom) / 10) + '%' : '—';
+      }
+      data.doctors.forEach(function(d) {
+        summary.push([
+          d.doctor,
+          d.total.initial,
+          d.total.followup,
+          d.checked.initial,
+          d.checked.followup,
+          d.reschedule.changedWithMeds,
+          d.reschedule.changedNoMeds,
+          d.reschedule.medsNoBook,
+          d.reschedule.nothing,
+          rateStr(d.checked.initial + d.checked.followup, d.reschedule.medsNoBook + d.reschedule.nothing),
+        ]);
+      });
+      // 小計列
+      var sub = data.subtotal;
+      summary.push([
+        '【院區小計】',
+        sub.total.initial,
+        sub.total.followup,
+        sub.checked.initial,
+        sub.checked.followup,
+        sub.reschedule.changedWithMeds,
+        sub.reschedule.changedNoMeds,
+        sub.reschedule.medsNoBook,
+        sub.reschedule.nothing,
+        rateStr(sub.checked.initial + sub.checked.followup, sub.reschedule.medsNoBook + sub.reschedule.nothing),
+      ]);
+
+      // === Sheet 2: 明細 ===
+      var details = [
+        ['日期', '時段', '醫師', '病人', '電話', '類型', '狀態', '拿藥週數', '改至日期', '改至時段', '預約編號'],
+      ];
+      data.doctors.forEach(function(d) {
+        d.details.forEach(function(r) {
+          details.push([
+            r.date,
+            r.time,
+            d.doctor,
+            r.name,
+            r.phone,
+            r.type,
+            r.status,
+            r.meds || '',
+            r.newDate || '',
+            r.newTime || '',
+            r.apptId,
+          ]);
+        });
+      });
+      // 明細依日期+時段排序
+      var header = details[0];
+      var rows = details.slice(1).sort(function(a, b) {
+        var c = String(a[0]).localeCompare(String(b[0]));
+        if (c !== 0) return c;
+        return String(a[1]).localeCompare(String(b[1]));
+      });
+      details = [header].concat(rows);
+
+      // 建立 workbook
+      var wb = XLSX.utils.book_new();
+      var ws1 = XLSX.utils.aoa_to_sheet(summary);
+      var ws2 = XLSX.utils.aoa_to_sheet(details);
+      // 欄寬
+      ws1['!cols'] = [{wch:14},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:14},{wch:10},{wch:10}];
+      ws2['!cols'] = [{wch:12},{wch:8},{wch:10},{wch:10},{wch:12},{wch:6},{wch:8},{wch:8},{wch:12},{wch:8},{wch:24}];
+      XLSX.utils.book_append_sheet(wb, ws1, '摘要');
+      XLSX.utils.book_append_sheet(wb, ws2, '明細');
+      // 檔名：院區_區間.xlsx
+      var fname = '金鶯_' + data.clinic + '_' + data.from + '_' + data.to + '.xlsx';
+      XLSX.writeFile(wb, fname);
+      if (typeof showToast === 'function') showToast('✅ 已下載：' + fname);
+    };
+
+    // 切到報表 tab 時自動注入 view 控制
+    var _origSetMenu = window.setCounterMenu;
+    window.setCounterMenu = function(menu, el) {
+      var ret = _origSetMenu.apply(this, arguments);
+      if (menu === 'report') {
+        setTimeout(injectViewControls, 100);
+      }
+      return ret;
+    };
+
+    console.log('[KW v8.10] ✓ 報表區間檢視 + Excel 匯出啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.10] 報表區間檢視 + Excel 匯出 結束 ===== -->
+
+<!-- ===== [v8.11] 員工職位擴充 → 3 層權限 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 80;
+    if (typeof state !== 'undefined' && typeof window.normalizeRole === 'function' && typeof window.fmtRoleBadge === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    }
+  }
+  waitReady(function() {
+    // === 職位 → 3 個內部 role + 顯示色 ===
+    var ROLE_MAP = [
+      // 醫師類（含院長、股東 → 都歸 doctor，先判免得被搶）
+      { re: /醫師|doctor|院長|股東/i, role: 'doctor' },
+      // 全權限 admin（含執行長、督導）
+      { re: /執行長|減重櫃檯|總經理|副總經理|副總|特助|策略長|督導|系統管理員|admin/i, role: 'admin' },
+      // 多院區 manager
+      { re: /院區經理|區經理|院區主管|區主管|manager/i, role: 'manager' },
+      // 單院區 counter
+      { re: /院區櫃檯|院區護理師|院區護士|護理師|護士|櫃台|櫃檯|counter|reception/i, role: 'counter' },
+      // 兼容舊資料
+      { re: /管理員/i, role: 'admin' },
+      { re: /主管/i, role: 'manager' },
+    ];
+
+    // 覆寫 frontend normalizeRole（用於 Excel 匯入）
+    window.normalizeRole = function(s) {
+      s = String(s || '').trim();
+      for (var i = 0; i < ROLE_MAP.length; i++) {
+        if (ROLE_MAP[i].re.test(s)) return ROLE_MAP[i].role;
+      }
+      return 'other';
+    };
+
+    // 內部 role → badge 配色 + 預設標籤
+    var ROLE_DISPLAY = {
+      admin:   { cls: 'badge-danger',  defaultLabel: '系統管理員' },
+      manager: { cls: 'badge-warning', defaultLabel: '院區主管' },
+      counter: { cls: 'badge-primary', defaultLabel: '櫃台人員' },
+      doctor:  { cls: 'badge-primary', defaultLabel: '醫師' },
+      other:   { cls: 'badge-info',    defaultLabel: '其他' },
+    };
+
+    // 覆寫 fmtRoleBadge：用「員工」原始職位文字 + 內部 role 配色
+    // 原始程式碼簽名是 fmtRoleBadge(role)，新版加第二參數 emp 取得原始職位
+    window.fmtRoleBadge = function(role, emp) {
+      var disp = ROLE_DISPLAY[role] || ROLE_DISPLAY.other;
+      // 優先用原始職位文字（從 employee record 拿 'roleLabel' 或 'note' 中的職位）
+      var label = (emp && (emp.roleLabel || emp.職位)) || disp.defaultLabel;
+      return '<span class="badge ' + disp.cls + '">' + String(label).replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</span>';
+    };
+
+    // 覆寫 renderAdminUsers：傳遞整個 emp 物件給 fmtRoleBadge
+    var _origRenderUsers = window.renderAdminUsers;
+    if (_origRenderUsers) {
+      window.renderAdminUsers = function() {
+        var ret = _origRenderUsers.apply(this, arguments);
+        // 後處理：把 badge 改成包含原始職位
+        var tbody = document.getElementById('admin-users-rows');
+        if (!tbody) return ret;
+        var rows = tbody.querySelectorAll('tr');
+        if (rows.length === 0 || typeof EMPLOYEES === 'undefined') return ret;
+        rows.forEach(function(tr) {
+          var firstTd = tr.querySelector('td');
+          if (!firstTd) return;
+          var empIdEl = firstTd.querySelector('strong');
+          if (!empIdEl) return;
+          var empId = empIdEl.textContent.trim();
+          var emp = EMPLOYEES.find(function(e) { return String(e.employeeId) === empId; });
+          if (!emp) return;
+          // 職位欄是第 3 個 td（index 2）
+          var roleTd = tr.children[2];
+          if (roleTd) {
+            roleTd.innerHTML = fmtRoleBadge(emp.role, emp);
+          }
+        });
+        return ret;
+      };
+    }
+
+    // 覆寫 roleLabelInner：用於 toast 訊息中的「(櫃台人員)」「(總經理)」等
+    window.roleLabelInner = function(r, raw) {
+      if (raw) return raw;
+      return (ROLE_DISPLAY[r] && ROLE_DISPLAY[r].defaultLabel) || '其他';
+    };
+
+    // 登入時把 roleLabel 存到 state.counterUser
+    var _origLogin = window.counterLogin;
+    if (_origLogin) {
+      window.counterLogin = function() {
+        var ret = _origLogin.apply(this, arguments);
+        // 監看 state.counterUser 被設定後補 roleLabel
+        var checks = 0;
+        var iv = setInterval(function() {
+          checks++;
+          if (state.counterUser && !state.counterUser.roleLabel) {
+            // 嘗試從 EMPLOYEES 找 raw 職位文字（若是雲端回來的 user，可能 roleLabel 已在 res.data 內）
+            // 但 verifyEmployee v8.11 已直接回傳 roleLabel，所以這邊只是 fallback
+            if (typeof EMPLOYEES !== 'undefined') {
+              var emp = EMPLOYEES.find(function(e) { return e.employeeId === state.counterUser.employeeId; });
+              if (emp && emp.note) state.counterUser.roleLabel = emp.note;
+            }
+          }
+          if (checks > 10 || (state.counterUser && state.counterUser.roleLabel)) clearInterval(iv);
+        }, 200);
+        return ret;
+      };
+    }
+
+    // 系統管理 → 使用者權限 → Excel 匯入 modal 加新職位提示
+    setTimeout(function() {
+      var importSample = document.querySelector('#usersImportModal .import-sample table tbody');
+      if (importSample && !importSample.dataset.kwV811Updated) {
+        // 加 6 個範例行（涵蓋新職位）
+        var extraRows = [
+          ['7770', '黃總經理',      '總經理',      '全院區',                              'admin2024', '管理層'],
+          ['7771', '陳副總',        '副總',        '全院區',                              'vp2024',    '管理層'],
+          ['7772', '林策略長',      '策略長',      '全院區',                              'cso2024',   '策略部門'],
+          ['7773', '王區經理',      '區經理',      '桃園院區、八德院區、大湳院區',         'rm2024',    '北桃園區'],
+          ['7774', '李院區護理師',  '院區護理師',   '鶯歌院區',                            'rn2024',    '護理組'],
+          ['7775', '吳特助',        '特助',        '全院區',                              'aa2024',    'CEO 辦公室'],
+        ];
+        extraRows.forEach(function(cols) {
+          var tr = document.createElement('tr');
+          cols.forEach(function(c) {
+            var td = document.createElement('td');
+            td.textContent = c;
+            tr.appendChild(td);
+          });
+          importSample.appendChild(tr);
+        });
+        importSample.dataset.kwV811Updated = '1';
+        // 加說明文字
+        var note = document.querySelector('#usersImportModal .import-sample').nextElementSibling;
+        if (note) {
+          note.innerHTML += '<br>🔎 <strong>v8.11 擴充職位</strong>：全權限（admin）→ 減重櫃檯/總經理/副總/特助/策略長/系統管理員；多院區（manager）→ 院區經理/區經理/院區主管；單院區（counter）→ 院區櫃檯/院區護理師。';
+        }
+      }
+    }, 500);
+
+    console.log('[KW v8.11] ✓ 員工職位擴充啟用（9 種 → 3 層權限）');
+  });
+})();
+</script>
+<!-- ===== [v8.11] 員工職位擴充 → 3 層權限 結束 ===== -->
+
+<!-- ===== [v8.12] 醫師照片批次上傳 + 雲端儲存 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 80;
+    if (typeof state !== 'undefined' && typeof DOCTORS !== 'undefined' && typeof window.renderDoctors === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    }
+  }
+  waitReady(function() {
+    function escapeHtml(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
+    // === 從檔名抽出醫師姓名 ===
+    // 蕭捷健.jpg → 蕭捷健
+    // 蕭捷健醫師.png → 蕭捷健
+    // 蕭捷健 醫師.webp → 蕭捷健
+    function parseDoctorNameFromFile(filename) {
+      var noExt = String(filename).replace(/\.[a-zA-Z0-9]+$/, '');
+      var noSuffix = noExt.replace(/\s*醫師\s*$/, '').trim();
+      return noSuffix;
+    }
+    function findDoctorByName(name) {
+      if (!name || typeof DOCTORS === 'undefined') return null;
+      return DOCTORS.find(function(d) {
+        return d.name.replace(/\s*醫師\s*$/, '') === name;
+      });
+    }
+
+    // === 圖片壓縮：縮到 maxSize 寬高、JPG 質量 0.8 ===
+    function compressImage(file, maxSize, quality) {
+      return new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          var img = new Image();
+          img.onload = function() {
+            var w = img.width, h = img.height;
+            if (w > h) {
+              if (w > maxSize) { h = Math.round(h * (maxSize / w)); w = maxSize; }
+            } else {
+              if (h > maxSize) { w = Math.round(w * (maxSize / h)); h = maxSize; }
+            }
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            var ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            // 嘗試先用 quality 壓，若還太大就降到 0.6
+            var url = canvas.toDataURL('image/jpeg', quality);
+            if (url.length > 48000) url = canvas.toDataURL('image/jpeg', 0.6);
+            if (url.length > 48000) url = canvas.toDataURL('image/jpeg', 0.5);
+            resolve(url);
+          };
+          img.onerror = function() { reject(new Error('img_load_failed')); };
+          img.src = e.target.result;
+        };
+        reader.onerror = function() { reject(new Error('read_failed')); };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    // === 載入雲端照片並套到 DOCTORS ===
+    state.doctorPhotosLoaded = false;
+    window.kwLoadDoctorPhotosFromCloud = function() {
+      return KW.api._get('getDoctorPhotos', {}).then(function(res) {
+        if (res && res.ok && Array.isArray(res.data)) {
+          res.data.forEach(function(p) {
+            var name = String(p['醫師姓名'] || '').replace(/\s*醫師\s*$/, '').trim();
+            var dr = findDoctorByName(name);
+            if (dr && p['照片資料URL']) {
+              dr.photo = String(p['照片資料URL']);
+            }
+          });
+          state.doctorPhotosLoaded = true;
+          // 重繪所有用到照片的畫面
+          if (typeof renderDoctors === 'function') renderDoctors();
+          if (typeof renderAdminDoctors === 'function') renderAdminDoctors();
+          if (typeof renderDoctorOrder === 'function') renderDoctorOrder();
+          console.log('[KW v8.12] ✓ 已載入', res.data.length, '張醫師照片');
+        }
+      }).catch(function() {});
+    };
+
+    // === 批次上傳 modal ===
+    function ensureBatchModal() {
+      if (document.getElementById('kw-batch-photo-bd')) return;
+      var bd = document.createElement('div');
+      bd.id = 'kw-batch-photo-bd';
+      bd.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,0.55); z-index:10001; display:none; align-items:center; justify-content:center;';
+      bd.onclick = function(e) { if (e.target === bd) kwCloseBatchPhotoModal(); };
+      bd.innerHTML = '<div style="background:#fff; border-radius:12px; padding:20px 24px; width:92%; max-width:640px; max-height:90vh; overflow:auto;">'
+        + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">'
+        +   '<h3 style="margin:0;">📤 批次上傳醫師照片</h3>'
+        +   '<button onclick="kwCloseBatchPhotoModal()" style="background:none; border:none; font-size:22px; cursor:pointer; color:#64748b;">✕</button>'
+        + '</div>'
+        + '<div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:12.5px; color:#0369a1; line-height:1.7;">'
+        +   '💡 <strong>檔名 = 醫師姓名</strong>（可加「醫師」二字）<br>'
+        +   '範例：蕭捷健.jpg、蕭捷健醫師.png、蕭捷健 醫師.webp、陳信安.jpeg<br>'
+        +   '系統會自動壓縮至約 240×240px 以節省空間（< 50KB）'
+        + '</div>'
+        + '<div id="kw-batch-dropzone" style="border:2px dashed #b0bec5; border-radius:10px; padding:24px; text-align:center; background:#f8fafc; color:#607d8b; cursor:pointer; transition:all 0.2s;" onclick="document.getElementById(\'kw-batch-photo-input\').click()">'
+        +   '📂 點此選擇多張照片（或拖曳到這裡）'
+        +   '<div style="font-size:11px; color:#90a4ae; margin-top:6px;">支援 .jpg / .jpeg / .png / .webp / .gif</div>'
+        + '</div>'
+        + '<input type="file" id="kw-batch-photo-input" accept="image/*" multiple style="display:none;" onchange="kwOnBatchPhotoSelect(this.files)">'
+        + '<div id="kw-batch-preview" style="margin-top:14px;"></div>'
+        + '<div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">'
+        +   '<button onclick="kwCloseBatchPhotoModal()" class="btn btn-outline">取消</button>'
+        +   '<button onclick="kwUploadBatchPhotos()" class="btn btn-success" id="kw-batch-upload-btn" disabled>✓ 上傳</button>'
+        + '</div>'
+        + '</div>';
+      document.body.appendChild(bd);
+      // 拖曳支援
+      var dz = document.getElementById('kw-batch-dropzone');
+      dz.addEventListener('dragover', function(e) {
+        e.preventDefault(); dz.style.borderColor = '#3498db'; dz.style.background = '#ecf6fc';
+      });
+      dz.addEventListener('dragleave', function() {
+        dz.style.borderColor = '#b0bec5'; dz.style.background = '#f8fafc';
+      });
+      dz.addEventListener('drop', function(e) {
+        e.preventDefault(); dz.style.borderColor = '#b0bec5'; dz.style.background = '#f8fafc';
+        kwOnBatchPhotoSelect(e.dataTransfer.files);
+      });
+    }
+
+    state.batchPhotoQueue = [];
+
+    window.kwOpenBatchPhotoModal = function() {
+      ensureBatchModal();
+      state.batchPhotoQueue = [];
+      document.getElementById('kw-batch-preview').innerHTML = '';
+      document.getElementById('kw-batch-upload-btn').disabled = true;
+      document.getElementById('kw-batch-photo-input').value = '';
+      document.getElementById('kw-batch-photo-bd').style.display = 'flex';
+    };
+
+    window.kwCloseBatchPhotoModal = function() {
+      var bd = document.getElementById('kw-batch-photo-bd');
+      if (bd) bd.style.display = 'none';
+      state.batchPhotoQueue = [];
+    };
+
+    window.kwOnBatchPhotoSelect = function(fileList) {
+      if (!fileList || fileList.length === 0) return;
+      var files = Array.from(fileList).filter(function(f) {
+        return /^image\//.test(f.type);
+      });
+      var queue = [];
+      files.forEach(function(f) {
+        var name = parseDoctorNameFromFile(f.name);
+        var dr = findDoctorByName(name);
+        queue.push({
+          file: f,
+          parsedName: name,
+          doctor: dr,
+          status: dr ? 'matched' : 'unmatched',
+        });
+      });
+      state.batchPhotoQueue = queue;
+      renderBatchPreview();
+    };
+
+    function renderBatchPreview() {
+      var prev = document.getElementById('kw-batch-preview');
+      if (!prev) return;
+      var q = state.batchPhotoQueue || [];
+      if (q.length === 0) { prev.innerHTML = ''; return; }
+      var matched = q.filter(function(x) { return x.status === 'matched'; }).length;
+      var html = '<div style="font-size:13px; color:#475569; margin-bottom:8px;">已選 <strong>' + q.length + '</strong> 個檔案 · 配對成功 <strong style="color:#16a34a;">' + matched + '</strong> · 找不到 <strong style="color:#dc2626;">' + (q.length - matched) + '</strong></div>';
+      html += '<div style="border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; max-height:300px; overflow-y:auto;"><table style="width:100%; font-size:12px; border-collapse:collapse;">';
+      html += '<thead><tr style="background:#f8fafc; color:#475569;">'
+        + '<th style="text-align:left; padding:6px 8px;">檔名</th>'
+        + '<th style="text-align:left; padding:6px 8px;">解析姓名</th>'
+        + '<th style="text-align:left; padding:6px 8px;">配對結果</th>'
+        + '<th style="text-align:left; padding:6px 8px;">狀態</th>'
+        + '</tr></thead><tbody>';
+      q.forEach(function(item) {
+        var statusHtml;
+        if (item.status === 'matched') {
+          statusHtml = '<span style="background:#dcfce7; color:#166534; padding:2px 8px; border-radius:10px; font-weight:600;">✓ 已配對</span>';
+        } else if (item.status === 'unmatched') {
+          statusHtml = '<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:10px;">✗ 找不到</span>';
+        } else if (item.status === 'uploading') {
+          statusHtml = '<span style="background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:10px;">⏳ 上傳中</span>';
+        } else if (item.status === 'success') {
+          statusHtml = '<span style="background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:10px;">✓ 完成</span>';
+        } else if (item.status === 'error') {
+          statusHtml = '<span style="background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:10px;" title="' + escapeHtml(item.error || '') + '">⚠ 失敗</span>';
+        }
+        html += '<tr style="border-top:1px solid #f1f5f9;">'
+          + '<td style="padding:6px 8px;">' + escapeHtml(item.file.name) + '</td>'
+          + '<td style="padding:6px 8px;">' + escapeHtml(item.parsedName) + '</td>'
+          + '<td style="padding:6px 8px;">' + (item.doctor ? '<strong>' + escapeHtml(item.doctor.name) + '</strong>' : '<span style="color:#94a3b8;">—</span>') + '</td>'
+          + '<td style="padding:6px 8px;">' + statusHtml + '</td>'
+          + '</tr>';
+      });
+      html += '</tbody></table></div>';
+      prev.innerHTML = html;
+      document.getElementById('kw-batch-upload-btn').disabled = matched === 0;
+      document.getElementById('kw-batch-upload-btn').textContent = '✓ 上傳 ' + matched + ' 張';
+    }
+
+    window.kwUploadBatchPhotos = function() {
+      var q = state.batchPhotoQueue || [];
+      var matched = q.filter(function(x) { return x.status === 'matched'; });
+      if (matched.length === 0) return;
+      var btn = document.getElementById('kw-batch-upload-btn');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ 處理中...'; }
+
+      var uploader = (state.counterUser && state.counterUser.name) || '櫃台';
+      var done = 0, success = 0, failed = 0;
+
+      // 一個一個上傳（並非並行，避免 GAS overwhelm）
+      function next(idx) {
+        if (idx >= matched.length) {
+          // 全部完成
+          if (btn) { btn.disabled = false; btn.textContent = '✓ 上傳 ' + matched.length + ' 張'; }
+          if (typeof showToast === 'function') showToast('✅ 完成：成功 ' + success + ' 張，失敗 ' + failed + ' 張');
+          // 重抓雲端 + 重繪
+          kwLoadDoctorPhotosFromCloud();
+          return;
+        }
+        var item = matched[idx];
+        item.status = 'uploading';
+        renderBatchPreview();
+        compressImage(item.file, 240, 0.8).then(function(dataUrl) {
+          return KW.api._post('saveDoctorPhoto', {
+            '醫師姓名':    item.doctor.name.replace(/\s*醫師\s*$/, ''),
+            '照片資料URL': dataUrl,
+            '上傳者':      uploader,
+          }, true);
+        }).then(function(res) {
+          if (res && res.ok) {
+            item.status = 'success';
+            success++;
+            // 即時更新 DOCTORS in-memory
+            compressImage(item.file, 240, 0.8).then(function(d) { item.doctor.photo = d; });
+          } else {
+            item.status = 'error';
+            item.error = (res && res.error) || '未知';
+            failed++;
+          }
+          done++;
+          renderBatchPreview();
+          next(idx + 1);
+        }).catch(function(err) {
+          item.status = 'error';
+          item.error = String(err);
+          failed++;
+          done++;
+          renderBatchPreview();
+          next(idx + 1);
+        });
+      }
+      next(0);
+    };
+
+    // === 把「+ 新增醫師」按鈕旁邊加「📤 批次上傳照片」按鈕 ===
+    function injectBatchButton() {
+      var newBtn = document.querySelector('#admin-doctors button.btn.btn-primary');
+      if (!newBtn || document.getElementById('kw-batch-photo-btn')) return;
+      var batchBtn = document.createElement('button');
+      batchBtn.id = 'kw-batch-photo-btn';
+      batchBtn.className = 'btn btn-success';
+      batchBtn.style.marginRight = '6px';
+      batchBtn.textContent = '📤 批次上傳照片';
+      batchBtn.onclick = kwOpenBatchPhotoModal;
+      newBtn.parentNode.insertBefore(batchBtn, newBtn);
+    }
+    // 切到 doctors tab 時注入
+    var _origAdminSwitch = window.switchAdminTab;
+    window.switchAdminTab = function(name, tabEl) {
+      var ret = _origAdminSwitch.apply(this, arguments);
+      if (name === 'doctors') {
+        setTimeout(injectBatchButton, 50);
+      }
+      return ret;
+    };
+
+    // === 既有單張上傳也加雲端同步 ===
+    var _origTrigger = window.triggerDoctorPhotoUpload;
+    if (_origTrigger) {
+      window.triggerDoctorPhotoUpload = function(doctorId) {
+        var input = document.getElementById('_doctor-photo-input');
+        if (!input) {
+          input = document.createElement('input');
+          input.type = 'file';
+          input.accept = 'image/*';
+          input.id = '_doctor-photo-input';
+          input.style.display = 'none';
+          document.body.appendChild(input);
+        }
+        input.value = '';
+        input.onchange = function() {
+          var file = input.files && input.files[0];
+          if (!file) return;
+          var dr = DOCTORS.find(function(d) { return d.id === doctorId; });
+          if (!dr) return;
+          if (typeof showToast === 'function') showToast('壓縮中...');
+          compressImage(file, 240, 0.8).then(function(dataUrl) {
+            dr.photo = dataUrl;
+            // 即時重繪
+            if (typeof renderAdminDoctors === 'function') renderAdminDoctors();
+            if (typeof renderDoctors === 'function') renderDoctors();
+            if (typeof renderDoctorOrder === 'function') renderDoctorOrder();
+            // 雲端同步
+            var uploader = (state.counterUser && state.counterUser.name) || '櫃台';
+            return KW.api._post('saveDoctorPhoto', {
+              '醫師姓名':    dr.name.replace(/\s*醫師\s*$/, ''),
+              '照片資料URL': dataUrl,
+              '上傳者':      uploader,
+            }, true);
+          }).then(function(res) {
+            if (res && res.ok) {
+              if (typeof showToast === 'function') showToast('✅ 已雲端同步：' + dr.name);
+            } else {
+              if (typeof showToast === 'function') showToast('⚠ 雲端儲存失敗：' + (res && res.error || '未知'), 'warn');
+            }
+          }).catch(function(e) {
+            if (typeof showToast === 'function') showToast('⚠ ' + String(e), 'warn');
+          });
+        };
+        input.click();
+      };
+    }
+
+    // === 既有移除照片也加雲端刪除 ===
+    var _origRemove = window.removeDoctorPhoto;
+    if (_origRemove) {
+      window.removeDoctorPhoto = function(doctorId) {
+        var dr = DOCTORS.find(function(d) { return d.id === doctorId; });
+        if (!dr || !dr.photo) return;
+        if (!confirm('確定要移除 ' + dr.name + ' 的肖像照？（雲端也會刪除）')) return;
+        delete dr.photo;
+        if (typeof renderAdminDoctors === 'function') renderAdminDoctors();
+        if (typeof renderDoctors === 'function') renderDoctors();
+        if (typeof renderDoctorOrder === 'function') renderDoctorOrder();
+        KW.api._post('deleteDoctorPhoto', {
+          '醫師姓名': dr.name.replace(/\s*醫師\s*$/, ''),
+        }, true).then(function(res) {
+          if (res && res.ok) {
+            if (typeof showToast === 'function') showToast('✅ 已從雲端刪除：' + dr.name);
+          }
+        });
+      };
+    }
+
+    // === 頁面載入時自動拉取雲端照片 ===
+    setTimeout(function() {
+      kwLoadDoctorPhotosFromCloud();
+    }, 1500);
+
+    console.log('[KW v8.12] ✓ 醫師照片批次上傳啟用（雲端同步）');
+  });
+})();
+</script>
+<!-- ===== [v8.12] 醫師照片批次上傳 結束 ===== -->
+
+<!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
