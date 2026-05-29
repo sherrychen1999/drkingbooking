@@ -8391,6 +8391,35 @@
        - ⚠ 需配合後端 v9（含 v8.17 getApptNotifyDetail / approveAndSendNotify / markApptNotified；
          建立預約改為線上即時發、櫃台待必填齊全自動發）
      ----------------------------------------------------------
+     [v8.18] 快速登錄自動帶入舊客資料（JS）
+       - 櫃台「電話預約快速登錄」打 電話/病例號/姓名 時自動查資料庫
+       - 命中 1 筆直接帶入姓名/電話/病例號；多筆顯示下拉清單點選
+       - 用既有後端 lookupPatient（免 token），純前端
+     ----------------------------------------------------------
+     [v8.19] 改約流程 + 拿藥記錄（JS）
+       - 接管預約詳情的「改約」按鈕，開自訂改約視窗
+       - 可重選 院區 / 醫師 / 日期 / 時段（預設帶入原預約）
+       - 記錄 有拿藥(填週數) / 未拿藥 → 對應報表「改期有拿藥 / 改期未拿藥」
+       - 送出呼叫既有 rescheduleAppointment：舊單轉「已改約」、開新單
+       - 新單走 v8.17 通知流程（指定到實際醫師 → 自動發）
+       - ⚠ 需配合後端 v9（getApptNotifyDetail 已擴充回傳預填欄位）
+     ----------------------------------------------------------
+     [v8.20] 取消併入改約 + 報到發候診號碼（JS）
+       - 預約詳情隱藏「取消預約」按鈕；取消改到「改約」視窗用切換鈕操作
+       - 改約視窗加「改約 / 取消預約」切換；取消也可記錄拿藥（→「有拿藥未預約」）
+       - 接管「報到」按鈕：跳視窗填候診號碼
+         · 簡訊客戶 → 自動發候診號碼簡訊
+         · LINE未串接 / 不收訊息 / 無電話 → 報到成功但提醒櫃台手寫紙本號碼單
+       - ⚠ 需配合後端 v9（含 v8.20 checkInWithQueue）
+     ----------------------------------------------------------
+     [v8.21] 通知優先序 LINE→簡訊→紙本（後端為主）
+       - 所有通知（預約成功/前一日提醒/候診號碼）統一走 notifyByPriority
+       - 客戶有綁 LINE 且後端已設 LINE_CHANNEL_TOKEN → 優先 LINE
+         否則退簡訊；都不行 → 提示紙本。一個事件只成功送一個渠道
+       - 前端文案改為通道中性（「已通知」），報到結果顯示實際渠道
+       - ⚠ LINE 啟用：後端 Script Properties 加 LINE_CHANNEL_TOKEN +
+         病人「LINE_USER_ID」需有值（綁定）
+     ----------------------------------------------------------
      [v8.13] 電話預約快速登錄預設值（JS）
        - 院區 預設規則（依登入角色）：
          · counter（院區櫃檯/院區護理師）→ 自己的院區（v6 lockClinicDropdown 已處理）
@@ -11102,7 +11131,7 @@
       if (d.notify === 'none' || b.status === 'none') return statusBadge('🔕 不通知', '#e2e8f0', '#475569');
       if (b.status === 'sent') {
         var t = b.sentAt ? ('<br><small style="color:#64748b; font-size:11px;">'+b.sentAt+'</small>') : '';
-        return statusBadge('📱 簡訊已發送 ✓', '#dcfce7', '#166534') + t;
+        return statusBadge('✅ 已通知 ✓', '#dcfce7', '#166534') + t;
       }
       if (b.status === 'failed') return statusBadge('⚠ 發送失敗', '#fee2e2', '#991b1b');
       // pending
@@ -11179,7 +11208,7 @@
             sendBtn.disabled = true; sendBtn.textContent = '發送中…';
             KW.api._post('approveAndSendNotify', { apptId: apptId, kind: 'booking', operator: (state.currentUser && (state.currentUser.name || state.currentUser.employeeId)) || 'counter' }, true).then(function(r) {
               if (r && r.ok) {
-                valueEl.innerHTML = statusBadge('📱 簡訊已發送 ✓', '#dcfce7', '#166534');
+                valueEl.innerHTML = statusBadge('✅ 已通知 ✓', '#dcfce7', '#166534');
                 sendBtn.textContent = '✓ 已發送';
                 if (typeof showToast === 'function') showToast('簡訊已發送', 'success');
               } else {
@@ -11259,6 +11288,560 @@
 })();
 </script>
 <!-- ===== [v8.17] 預約詳情 modal 通知狀態 結束 ===== -->
+
+<!-- ===== [v8.18] 快速登錄自動帶入舊客資料 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    } else {
+      console.warn('[KW v8.18] KW.api 未就緒，跳過');
+    }
+  }
+
+  waitReady(function() {
+    var DEBOUNCE = 350;
+    var esc = function(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) {
+        return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c];
+      });
+    };
+
+    // 用 placeholder 找快速登錄表單的欄位（原始 HTML 沒給 id）
+    function findQuickField(kind) {
+      // 先試 id（萬一原檔有給）
+      var byId = {
+        name: 'counter-quick-name', phone: 'counter-quick-phone', caseno: 'counter-quick-case'
+      }[kind];
+      if (byId && document.getElementById(byId)) return document.getElementById(byId);
+      var inputs = document.querySelectorAll('input');
+      for (var i = 0; i < inputs.length; i++) {
+        var ph = (inputs[i].getAttribute('placeholder') || '');
+        if (kind === 'name'  && ph.indexOf('姓名') >= 0) return inputs[i];
+        if (kind === 'phone' && ph.indexOf('電話') >= 0 && inputs[i].type !== 'time') return inputs[i];
+        if (kind === 'caseno'&& ph.indexOf('病例') >= 0) return inputs[i];
+      }
+      return null;
+    }
+
+    // 下拉清單元素（共用一個）
+    var dd = null;
+    function closeDropdown() { if (dd) { dd.remove(); dd = null; } }
+    document.addEventListener('click', function(e) {
+      if (dd && !dd.contains(e.target)) closeDropdown();
+    }, true);
+
+    function showDropdown(anchorInput, list) {
+      closeDropdown();
+      if (!list || !list.length) return;
+      var r = anchorInput.getBoundingClientRect();
+      dd = document.createElement('div');
+      dd.style.cssText = 'position:fixed; z-index:99999; background:#fff; border:1px solid #cbd5e1; '
+        + 'border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.15); max-height:260px; overflow:auto; '
+        + 'font-size:13px; min-width:' + Math.max(r.width, 260) + 'px;';
+      dd.style.left = r.left + 'px';
+      dd.style.top  = (r.bottom + 4) + 'px';
+      var head = document.createElement('div');
+      head.style.cssText = 'padding:6px 10px; background:#f1f5f9; color:#475569; font-size:11.5px; border-bottom:1px solid #e2e8f0;';
+      head.textContent = '資料庫找到 ' + list.length + ' 筆，點選帶入';
+      dd.appendChild(head);
+      list.slice(0, 20).forEach(function(p) {
+        var row = document.createElement('div');
+        row.style.cssText = 'padding:8px 10px; cursor:pointer; border-bottom:1px solid #f1f5f9;';
+        row.onmouseenter = function(){ row.style.background = '#eff6ff'; };
+        row.onmouseleave = function(){ row.style.background = '#fff'; };
+        row.innerHTML = '<strong>' + esc(p['姓名'] || '（未填名）') + '</strong>'
+          + '<span style="color:#64748b;"> ｜ ' + esc(p['電話'] || '—') + '</span>'
+          + (p['病例號'] ? '<span style="color:#64748b;"> ｜ ' + esc(p['病例號']) + '</span>' : '')
+          + (p['院區'] ? '<span style="color:#94a3b8; font-size:11px;"> ｜ ' + esc(p['院區']) + '</span>' : '');
+        row.onclick = function() { fillPatient(p); closeDropdown(); };
+        dd.appendChild(row);
+      });
+      document.body.appendChild(dd);
+    }
+
+    // 帶入病人資料到表單（僅填有值的欄位，使用者已輸入的就尊重，除非是空白）
+    function fillPatient(p) {
+      var nameI = findQuickField('name');
+      var phoneI = findQuickField('phone');
+      var caseI = findQuickField('caseno');
+      if (nameI && p['姓名']) { nameI.value = p['姓名']; flash(nameI); }
+      if (phoneI && p['電話']) { phoneI.value = p['電話']; flash(phoneI); }
+      if (caseI && p['病例號']) { caseI.value = p['病例號']; flash(caseI); }
+      if (typeof showToast === 'function') showToast('已帶入舊客資料：' + (p['姓名'] || ''), 'success');
+    }
+    function flash(el) {
+      var old = el.style.background;
+      el.style.transition = 'background .3s';
+      el.style.background = '#dcfce7';
+      setTimeout(function(){ el.style.background = old || ''; }, 700);
+    }
+
+    function doLookup(anchorInput, keyword, minLen) {
+      var kw = String(keyword || '').trim();
+      if (kw.length < (minLen || 2)) { closeDropdown(); return; }
+      KW.api._post('lookupPatient', { keyword: kw }, false).then(function(res) {
+        // route 不需 token，用 _get 也行；保險起見 _post 帶 keyword
+        if (!res || !res.ok || !Array.isArray(res.data) || !res.data.length) { closeDropdown(); return; }
+        // 若剛好 1 筆且電話/病例完全相符 → 直接帶入
+        if (res.data.length === 1) {
+          fillPatient(res.data[0]);
+          closeDropdown();
+        } else {
+          showDropdown(anchorInput, res.data);
+        }
+      })['catch'](function(){ closeDropdown(); });
+    }
+
+    function attach(input, kind, minLen) {
+      if (!input || input.__kwv818) return;
+      input.__kwv818 = true;
+      var timer = null;
+      input.addEventListener('input', function() {
+        clearTimeout(timer);
+        var v = input.value;
+        timer = setTimeout(function(){ doLookup(input, v, minLen); }, DEBOUNCE);
+      });
+      input.addEventListener('focus', function() {
+        if (input.value && input.value.trim().length >= (minLen || 2)) doLookup(input, input.value, minLen);
+      });
+    }
+
+    // 反覆嘗試掛載（表單可能在切到櫃台頁後才出現）
+    function tryAttach() {
+      attach(findQuickField('phone'), 'phone', 4);
+      attach(findQuickField('caseno'), 'caseno', 3);
+      attach(findQuickField('name'), 'name', 2);
+    }
+    tryAttach();
+    setInterval(tryAttach, 1500);
+
+    console.log('[KW v8.18] ✓ 快速登錄自動帶入舊客資料啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.18] 快速登錄自動帶入舊客資料 結束 ===== -->
+
+<!-- ===== [v8.19] 改約流程 + 拿藥記錄 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function'
+        && typeof CLINICS !== 'undefined' && typeof DOCTORS !== 'undefined') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    } else {
+      console.warn('[KW v8.19] 相依物件未就緒，跳過');
+    }
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+
+    function durationOf(type) { return /初診/.test(String(type||'')) ? 20 : 10; }
+    function addMin(hm, mins) {
+      var p = String(hm||'').split(':'); var h = parseInt(p[0],10)||0, m = parseInt(p[1],10)||0;
+      var t = h*60+m+mins; t = ((t%1440)+1440)%1440;
+      return String(Math.floor(t/60)).padStart(2,'0') + ':' + String(t%60).padStart(2,'0');
+    }
+
+    // 從 modal 撈預約編號
+    function extractApptId(modal) {
+      var btns = modal.querySelectorAll('button, a');
+      for (var i=0;i<btns.length;i++){ var m=(btns[i].getAttribute('onclick')||'').match(/['"](A[0-9A-Za-z]{3,})['"]/); if(m) return m[1]; }
+      for (var j=0;j<btns.length;j++){ var m2=(btns[j].getAttribute('onclick')||'').match(/['"]([A-Za-z0-9_-]{6,})['"]/); if(m2) return m2[1]; }
+      return null;
+    }
+    function findModalFrom(el) {
+      var cur = el;
+      for (var i=0;i<12 && cur;i++){ if ((cur.textContent||'').indexOf('預約詳情')>=0) return cur; cur = cur.parentElement; }
+      return null;
+    }
+
+    // ===== 攔截「改約」按鈕 =====
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var btn = (t.tagName === 'BUTTON' || t.tagName === 'A') ? t : (t.closest ? t.closest('button,a') : null);
+      if (!btn) return;
+      if ((btn.textContent || '').replace(/\s+/g,'') !== '改約') return;
+      var modal = findModalFrom(btn);
+      if (!modal) return;
+      var apptId = extractApptId(modal);
+      if (!apptId) return;
+      // 接管
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openReschedule(apptId, modal);
+    }, true);
+
+    function activeClinicList() {
+      // CLINICS 可能是 [{name,...}] 或字串陣列
+      return (CLINICS || []).map(function(c){ return (typeof c === 'string') ? c : c.name; }).filter(Boolean);
+    }
+    function doctorsForClinic(clinicName) {
+      return (DOCTORS || []).filter(function(d){
+        if (d.clinicStatus === '停診') return false;
+        if (!d.clinics || !d.clinics.length) return true; // 無排班資料就先全列
+        return d.clinics.indexOf(clinicName) >= 0;
+      });
+    }
+
+    function openReschedule(apptId, srcModal) {
+      KW.api._post('getApptNotifyDetail', { apptId: apptId }, true).then(function(d) {
+        if (!d || !d.ok) { alert('讀取預約資料失敗，無法改約'); return; }
+        buildModal(apptId, d, srcModal);
+      })['catch'](function(e){ alert('讀取預約資料失敗：' + e); });
+    }
+
+    function buildModal(apptId, d, srcModal) {
+      // 移除舊的
+      var old = document.getElementById('kw-resched-overlay'); if (old) old.remove();
+
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-resched-overlay';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:100000; display:flex; align-items:center; justify-content:center; padding:16px;';
+
+      var clinics = activeClinicList();
+      var curClinic = d.clinic || clinics[0] || '';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:440px; max-height:90vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.3);';
+      card.innerHTML =
+        '<div style="padding:16px 20px; border-bottom:1px solid #e2e8f0;">'
+        + '<div style="font-size:18px; font-weight:700; color:#0f172a;">↔ 改約 / 取消預約</div>'
+        + '<div style="font-size:13px; color:#64748b; margin-top:4px;">' + esc(d.name||'') + '　' + esc(d.type||'') + '　原：' + esc(d.date||'') + ' ' + esc(d.startTime||'') + '</div>'
+        + '</div>'
+        + '<div style="padding:16px 20px; display:flex; flex-direction:column; gap:12px;">'
+        +   '<div style="display:flex; gap:8px;">'
+        +     '<label id="kw-rs-mode-resched" style="flex:1; text-align:center; padding:9px; border:2px solid #2563eb; border-radius:8px; font-weight:600; color:#1e40af; background:#eff6ff; cursor:pointer; font-size:14px;"><input type="radio" name="kw-rs-mode" value="reschedule" checked style="display:none;">↔ 改約</label>'
+        +     '<label id="kw-rs-mode-cancel" style="flex:1; text-align:center; padding:9px; border:2px solid #e2e8f0; border-radius:8px; font-weight:600; color:#64748b; background:#fff; cursor:pointer; font-size:14px;"><input type="radio" name="kw-rs-mode" value="cancel" style="display:none;">✕ 取消預約</label>'
+        +   '</div>'
+        +   '<div id="kw-rs-fields" style="display:flex; flex-direction:column; gap:12px;">'
+        +     row('院區', '<select id="kw-rs-clinic" style="'+inp()+'">' + clinics.map(function(c){return '<option value="'+esc(c)+'"'+(c===curClinic?' selected':'')+'>'+esc(c)+'</option>';}).join('') + '</select>')
+        +     row('醫師', '<select id="kw-rs-doctor" style="'+inp()+'"></select>')
+        +     row('看診日期', '<input type="date" id="kw-rs-date" value="'+esc(d.date||'')+'" style="'+inp()+'">')
+        +     row('開始時段', '<input type="time" id="kw-rs-time" step="600" value="'+esc(d.startTime||'')+'" style="'+inp()+'">')
+        +   '</div>'
+        +   '<div id="kw-rs-reason-wrap" style="display:none;">'
+        +     row('取消原因', '<input type="text" id="kw-rs-reason" placeholder="例：病人臨時有事" style="'+inp()+'">')
+        +   '</div>'
+        +   '<div style="border-top:1px dashed #e2e8f0; padding-top:12px;">'
+        +     '<div style="font-size:13px; font-weight:600; color:#334155; margin-bottom:6px;">是否拿藥（避免療程中斷）</div>'
+        +     '<label style="margin-right:16px; font-size:14px; cursor:pointer;"><input type="radio" name="kw-rs-meds" value="no" checked> 未拿藥</label>'
+        +     '<label style="font-size:14px; cursor:pointer;"><input type="radio" name="kw-rs-meds" value="yes"> 有拿藥</label>'
+        +     '<div id="kw-rs-weeks-wrap" style="margin-top:8px; display:none;">'
+        +       '<span style="font-size:13px; color:#475569;">拿藥週數：</span>'
+        +       '<input type="number" id="kw-rs-weeks" min="1" max="52" value="4" style="width:70px; padding:6px 8px; border:1px solid #cbd5e1; border-radius:6px;"> 週'
+        +     '</div>'
+        +   '</div>'
+        +   row('備註(選填)', '<input type="text" id="kw-rs-note" placeholder="例：病人來電改期" style="'+inp()+'">')
+        + '</div>'
+        + '<div style="padding:14px 20px; border-top:1px solid #e2e8f0; display:flex; gap:10px; justify-content:flex-end;">'
+        +   '<button id="kw-rs-cancel" type="button" style="padding:9px 16px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer;">關閉</button>'
+        +   '<button id="kw-rs-submit" type="button" style="padding:9px 18px; background:#2563eb; color:#fff; border:none; border-radius:8px; font-weight:600; cursor:pointer;">確認改約</button>'
+        + '</div>';
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+
+      function inp(){ return 'width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:14px; box-sizing:border-box;'; }
+      function row(label, field){ return '<div><label style="display:block; font-size:12.5px; color:#64748b; margin-bottom:4px;">'+label+'</label>'+field+'</div>'; }
+
+      var clinicSel = card.querySelector('#kw-rs-clinic');
+      var doctorSel = card.querySelector('#kw-rs-doctor');
+      function fillDoctors() {
+        var list = doctorsForClinic(clinicSel.value);
+        var opts = '<option value="__any__">不指定（暫不發送通知）</option>';
+        opts += list.map(function(dr){
+          var nm = dr.shortName || dr.name;
+          var sel = (nm === (d.doctor||'').replace(/\s*醫師$/,'')) ? ' selected' : '';
+          return '<option value="'+esc(nm)+'"'+sel+'>'+esc(dr.name||nm)+'</option>';
+        }).join('');
+        doctorSel.innerHTML = opts;
+      }
+      fillDoctors();
+      clinicSel.addEventListener('change', fillDoctors);
+
+      // 拿藥 radio
+      card.querySelectorAll('input[name="kw-rs-meds"]').forEach(function(r){
+        r.addEventListener('change', function(){
+          card.querySelector('#kw-rs-weeks-wrap').style.display = (card.querySelector('input[name="kw-rs-meds"]:checked').value === 'yes') ? 'block' : 'none';
+        });
+      });
+
+      // 改約 / 取消 模式切換
+      var submitBtnRef = card.querySelector('#kw-rs-submit');
+      var lblResched = card.querySelector('#kw-rs-mode-resched');
+      var lblCancel = card.querySelector('#kw-rs-mode-cancel');
+      function setMode(mode) {
+        var isCancel = (mode === 'cancel');
+        card.querySelector('#kw-rs-fields').style.display = isCancel ? 'none' : 'flex';
+        card.querySelector('#kw-rs-reason-wrap').style.display = isCancel ? 'block' : 'none';
+        submitBtnRef.textContent = isCancel ? '確認取消預約' : '確認改約';
+        submitBtnRef.style.background = isCancel ? '#dc2626' : '#2563eb';
+        // tab 樣式
+        lblResched.style.borderColor = isCancel ? '#e2e8f0' : '#2563eb';
+        lblResched.style.color = isCancel ? '#64748b' : '#1e40af';
+        lblResched.style.background = isCancel ? '#fff' : '#eff6ff';
+        lblCancel.style.borderColor = isCancel ? '#dc2626' : '#e2e8f0';
+        lblCancel.style.color = isCancel ? '#991b1b' : '#64748b';
+        lblCancel.style.background = isCancel ? '#fef2f2' : '#fff';
+      }
+      lblResched.addEventListener('click', function(){ card.querySelector('input[name="kw-rs-mode"][value="reschedule"]').checked = true; setMode('reschedule'); });
+      lblCancel.addEventListener('click', function(){ card.querySelector('input[name="kw-rs-mode"][value="cancel"]').checked = true; setMode('cancel'); });
+
+      card.querySelector('#kw-rs-cancel').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+
+      function refreshAfter() {
+        try {
+          if (state.cloudApptCache) Object.keys(state.cloudApptCache).forEach(function(k){ delete state.cloudApptCache[k]; });
+          if (state.counterClinic && state.counterDate && typeof fetchCloudAppts === 'function') {
+            fetchCloudAppts(state.counterClinic, state.counterDate).then(function(){
+              if (typeof renderCounterPage === 'function') renderCounterPage();
+            });
+          } else if (typeof renderCounterPage === 'function') {
+            renderCounterPage();
+          }
+        } catch (e) {}
+      }
+      function closeSrcModal() {
+        try {
+          if (srcModal) {
+            var closeBtn = Array.prototype.slice.call(srcModal.querySelectorAll('button')).filter(function(b){return (b.textContent||'').replace(/\s+/g,'')==='關閉';})[0];
+            if (closeBtn) closeBtn.click();
+          }
+        } catch (e) {}
+      }
+
+      card.querySelector('#kw-rs-submit').onclick = function() {
+        var mode = card.querySelector('input[name="kw-rs-mode"]:checked').value;
+        var medsYes = card.querySelector('input[name="kw-rs-meds"]:checked').value === 'yes';
+        var weeks = medsYes ? (parseInt(card.querySelector('#kw-rs-weeks').value, 10) || 1) : '';
+        var note = card.querySelector('#kw-rs-note').value || '';
+        var cu = state.counterUser || state.currentUser || {};
+        var submitBtn = card.querySelector('#kw-rs-submit');
+
+        if (mode === 'cancel') {
+          var reason = card.querySelector('#kw-rs-reason').value || '';
+          if (!confirm('確定要取消這筆預約嗎？' + (medsYes ? '\n（已記錄拿藥 '+weeks+' 週）' : ''))) return;
+          submitBtn.disabled = true; submitBtn.textContent = '處理中…';
+          KW.api._post('updateAppointmentStatus', {
+            apptId: apptId, status: '已取消',
+            cancelReason: reason, medicationWeeks: weeks,
+            phone: d.phone, date: d.date, startTime: d.startTime,
+            note: note || ('取消' + (medsYes ? '（拿藥'+weeks+'週）' : '')),
+            employeeId: cu.employeeId || cu.id || '', employeeName: cu.name || '櫃台', employeeRole: cu.role || 'counter'
+          }, true).then(function(res) {
+            if (res && res.ok) {
+              overlay.remove(); closeSrcModal();
+              if (typeof showToast === 'function') showToast('已取消預約' + (medsYes ? '（拿藥 '+weeks+' 週）' : ''), 'success');
+              else alert('已取消預約');
+              refreshAfter();
+            } else {
+              submitBtn.disabled = false; submitBtn.textContent = '確認取消預約';
+              alert('取消失敗：' + (res && res.error ? res.error : '未知錯誤'));
+            }
+          })['catch'](function(e){ submitBtn.disabled = false; submitBtn.textContent = '確認取消預約'; alert('取消失敗：' + e); });
+          return;
+        }
+
+        // === 改約 ===
+        var clinic = clinicSel.value;
+        var doctorVal = doctorSel.value;
+        var doctor = (doctorVal === '__any__') ? '不指定' : doctorVal;
+        var date = card.querySelector('#kw-rs-date').value;
+        var startTime = card.querySelector('#kw-rs-time').value;
+        if (!date || !startTime) { alert('請選擇看診日期與時段'); return; }
+        var endTime = addMin(startTime, durationOf(d.type));
+        submitBtn.disabled = true; submitBtn.textContent = '處理中…';
+
+        KW.api._post('rescheduleAppointment', {
+          oldApptId: apptId,
+          clinic: clinic, date: date, startTime: startTime, endTime: endTime,
+          doctor: doctor, name: d.name, phone: d.phone, type: d.type,
+          caseFull: d.caseFull, idNo: d.idNo, notify: (d.notify || 'sms'),
+          medicationWeeks: weeks, note: note || '改約',
+          employeeId: cu.employeeId || cu.id || '', employeeName: cu.name || '櫃台',
+          employeeRole: cu.role || 'counter'
+        }, true).then(function(res) {
+          if (res && res.ok) {
+            overlay.remove(); closeSrcModal();
+            if (typeof showToast === 'function') showToast('改約完成' + (medsYes ? '（已記錄拿藥 '+weeks+' 週）' : ''), 'success');
+            else alert('改約完成');
+            refreshAfter();
+          } else {
+            submitBtn.disabled = false; submitBtn.textContent = '確認改約';
+            alert('改約失敗：' + (res && res.error ? res.error : '未知錯誤'));
+          }
+        })['catch'](function(e){ submitBtn.disabled = false; submitBtn.textContent = '確認改約'; alert('改約失敗：' + e); });
+      };
+    }
+
+    console.log('[KW v8.19] ✓ 改約流程 + 拿藥記錄啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.19] 改約流程 + 拿藥記錄 結束 ===== -->
+
+<!-- ===== [v8.20] 取消併入改約 + 報到發候診號碼 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') {
+      cb();
+    } else if (retries > 0) {
+      setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+    } else {
+      console.warn('[KW v8.20] KW.api 未就緒，跳過');
+    }
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+
+    function findModalFrom(el) {
+      var cur = el;
+      for (var i=0;i<12 && cur;i++){ if ((cur.textContent||'').indexOf('預約詳情')>=0) return cur; cur = cur.parentElement; }
+      return null;
+    }
+    function extractApptId(modal) {
+      var btns = modal.querySelectorAll('button, a');
+      for (var i=0;i<btns.length;i++){ var m=(btns[i].getAttribute('onclick')||'').match(/['"](A[0-9A-Za-z]{3,})['"]/); if(m) return m[1]; }
+      for (var j=0;j<btns.length;j++){ var m2=(btns[j].getAttribute('onclick')||'').match(/['"]([A-Za-z0-9_-]{6,})['"]/); if(m2) return m2[1]; }
+      return null;
+    }
+
+    // ===== 1. 隱藏預約詳情的「取消預約」按鈕（改到改約視窗裡操作）=====
+    function hideCancelButton() {
+      document.querySelectorAll('button').forEach(function(b){
+        if ((b.textContent||'').replace(/\s+/g,'') !== '取消預約') return;
+        var modal = findModalFrom(b);
+        if (modal) b.style.display = 'none';
+      });
+    }
+    var obs = new MutationObserver(function(){ setTimeout(hideCancelButton, 30); });
+    obs.observe(document.body, { childList: true, subtree: true });
+    setTimeout(hideCancelButton, 500);
+
+    // ===== 2. 接管「報到」按鈕 → 候診號碼視窗 =====
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var btn = (t.tagName === 'BUTTON' || t.tagName === 'A') ? t : (t.closest ? t.closest('button,a') : null);
+      if (!btn) return;
+      if ((btn.textContent || '').replace(/\s+/g,'') !== '報到') return;
+      var modal = findModalFrom(btn);
+      if (!modal) return;
+      var apptId = extractApptId(modal);
+      if (!apptId) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openCheckin(apptId, modal);
+    }, true);
+
+    function openCheckin(apptId, srcModal) {
+      KW.api._post('getApptNotifyDetail', { apptId: apptId }, true).then(function(d) {
+        var detail = (d && d.ok) ? d : {};
+        buildCheckinModal(apptId, detail, srcModal);
+      })['catch'](function(){ buildCheckinModal(apptId, {}, srcModal); });
+    }
+
+    function buildCheckinModal(apptId, d, srcModal) {
+      var old = document.getElementById('kw-checkin-overlay'); if (old) old.remove();
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-checkin-overlay';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.5); z-index:100000; display:flex; align-items:center; justify-content:center; padding:16px;';
+
+      var notify = d.notify || 'sms';
+      var notifyLabel = notify === 'sms' ? '📱 簡訊' : (notify === 'line' ? '💚 LINE 優先' : '🔕 不通知');
+      var canSend = (notify !== 'none');
+      var warnHtml = (notify === 'none') ?
+        '<div style="margin-top:6px; padding:8px 10px; background:#fef3c7; color:#92400e; border-radius:8px; font-size:12.5px;">⚠ 此客戶設定不收訊息，報到後請<strong>手寫紙本號碼單</strong>給客戶。</div>'
+        : '<div style="margin-top:6px; color:#94a3b8; font-size:11.5px;">將依優先序通知：LINE → 簡訊；若都無法送達會提示發紙本。</div>';
+
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:380px; box-shadow:0 20px 60px rgba(0,0,0,.3);';
+      card.innerHTML =
+        '<div style="padding:16px 20px; border-bottom:1px solid #e2e8f0;">'
+        + '<div style="font-size:18px; font-weight:700; color:#0f172a;">✅ 報到 / 候診號碼</div>'
+        + '<div style="font-size:13px; color:#64748b; margin-top:4px;">' + esc(d.name||'') + '　' + esc(d.type||'') + '　通知方式：' + notifyLabel + '</div>'
+        + '</div>'
+        + '<div style="padding:16px 20px;">'
+        +   '<label style="display:block; font-size:13px; color:#475569; margin-bottom:6px;">候診號碼</label>'
+        +   '<input type="text" id="kw-ci-queue" placeholder="例：18" inputmode="numeric" style="width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:20px; text-align:center; box-sizing:border-box;">'
+        +   warnHtml
+        + '</div>'
+        + '<div style="padding:14px 20px; border-top:1px solid #e2e8f0; display:flex; gap:10px; justify-content:flex-end;">'
+        +   '<button id="kw-ci-cancel" type="button" style="padding:9px 16px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer;">關閉</button>'
+        +   '<button id="kw-ci-submit" type="button" style="padding:9px 18px; background:#16a34a; color:#fff; border:none; border-radius:8px; font-weight:600; cursor:pointer;">'
+        +     (canSend ? '報到並發送號碼' : '報到（發紙本）') + '</button>'
+        + '</div>';
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+
+      var qIn = card.querySelector('#kw-ci-queue');
+      setTimeout(function(){ qIn.focus(); }, 50);
+      card.querySelector('#kw-ci-cancel').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+
+      card.querySelector('#kw-ci-submit').onclick = function() {
+        var queueNo = (qIn.value || '').trim();
+        if (!queueNo) { alert('請輸入候診號碼'); qIn.focus(); return; }
+        var cu = state.counterUser || state.currentUser || {};
+        var sb = card.querySelector('#kw-ci-submit');
+        sb.disabled = true; sb.textContent = '處理中…';
+        KW.api._post('checkInWithQueue', {
+          apptId: apptId, queueNo: queueNo,
+          employeeId: cu.employeeId || cu.id || '', employeeName: cu.name || '櫃台', employeeRole: cu.role || 'counter'
+        }, true).then(function(res) {
+          if (res && res.ok) {
+            overlay.remove();
+            // 關閉原 modal
+            try {
+              if (srcModal) {
+                var cb = Array.prototype.slice.call(srcModal.querySelectorAll('button')).filter(function(b){return (b.textContent||'').replace(/\s+/g,'')==='關閉';})[0];
+                if (cb) cb.click();
+              }
+            } catch (e) {}
+            if (res.sent) {
+              var ch = res.channel === 'line' ? 'LINE' : '簡訊';
+              if (typeof showToast === 'function') showToast('已報到，候診號碼 ' + queueNo + ' 已用' + ch + '發送', 'success');
+              else alert('已報到，候診號碼已用' + ch + '發送');
+            } else {
+              var why = { line_not_integrated: 'LINE 尚未串接', patient_no_notify: '客戶設定不收訊息', no_phone: '無電話', no_contact: '無 LINE / 電話可送', sms_failed: '簡訊發送失敗' }[res.reason] || '無法線上發送';
+              alert('已報到 ✅\n\n⚠ 候診號碼「' + queueNo + '」無法線上發送（' + why + '）。\n請手寫紙本號碼單交給客戶。');
+            }
+            // 刷新
+            try {
+              if (state.cloudApptCache) Object.keys(state.cloudApptCache).forEach(function(k){ delete state.cloudApptCache[k]; });
+              if (state.counterClinic && state.counterDate && typeof fetchCloudAppts === 'function') {
+                fetchCloudAppts(state.counterClinic, state.counterDate).then(function(){ if (typeof renderCounterPage === 'function') renderCounterPage(); });
+              } else if (typeof renderCounterPage === 'function') renderCounterPage();
+            } catch (e) {}
+          } else {
+            sb.disabled = false; sb.textContent = canSend ? '報到並發送號碼' : '報到（發紙本）';
+            alert('報到失敗：' + (res && res.error ? res.error : '未知錯誤'));
+          }
+        })['catch'](function(e){ sb.disabled = false; sb.textContent = canSend ? '報到並發送號碼' : '報到（發紙本）'; alert('報到失敗：' + e); });
+      };
+    }
+
+    console.log('[KW v8.20] ✓ 取消併入改約 + 報到發候診號碼啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.20] 取消併入改約 + 報到發候診號碼 結束 ===== -->
 
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
