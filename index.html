@@ -11843,6 +11843,952 @@
 </script>
 <!-- ===== [v8.20] 取消併入改約 + 報到發候診號碼 結束 ===== -->
 
+<!-- ===== [v8.22] 改約/報到 apptId 解析修補 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && state.cloudApptCache !== undefined) cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+  waitReady(function() {
+
+    function findValueByLabel(root, labelText) {
+      var all = root.querySelectorAll('*');
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        if (el.children.length === 0 && el.textContent.replace(/\s+/g, '') === labelText) {
+          if (el.nextElementSibling) return el.nextElementSibling;
+          if (el.parentElement && el.parentElement.nextElementSibling) return el.parentElement.nextElementSibling;
+        }
+      }
+      return null;
+    }
+
+    function resolveApptId(modal) {
+      try {
+        var nameEl = findValueByLabel(modal, '病人姓名');
+        var timeEl = findValueByLabel(modal, '看診時間');
+        if (!nameEl || !timeEl) return null;
+        var name = nameEl.textContent.replace(/\s+/g, '');
+        var timeTxt = timeEl.textContent.replace(/\s+/g, '');
+        var startHM = (timeTxt.match(/(\d{1,2}:\d{2})/) || [])[1] || '';
+        var cache = state.cloudApptCache || {};
+        var hit = null;
+        Object.keys(cache).forEach(function(k) {
+          (cache[k] || []).forEach(function(a) {
+            var an = String(a.name || a.patientName || '').replace(/\s+/g, '');
+            var ast = '';
+            if (typeof a.startMin === 'number') {
+              ast = String(Math.floor(a.startMin/60)).padStart(2,'0') + ':' + String(a.startMin%60).padStart(2,'0');
+            }
+            if (an && an === name && (!startHM || ast === startHM)) hit = a;
+          });
+        });
+        return (hit && hit.cloudId) || null;
+      } catch (e) { return null; }
+    }
+
+    // window 層 capture：保證在 v8.19 / v8.20 的 document capture 之前先跑
+    window.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var btn = (t.tagName === 'BUTTON' || t.tagName === 'A') ? t : (t.closest ? t.closest('button,a') : null);
+      if (!btn) return;
+      var txt = (btn.textContent || '').replace(/\s+/g, '');
+      if (txt !== '改約' && txt !== '報到') return;
+      var cur = btn;
+      for (var i = 0; i < 12 && cur; i++) {
+        if ((cur.textContent || '').indexOf('預約詳情') >= 0) break;
+        cur = cur.parentElement;
+      }
+      if (!cur) return;
+      var id = resolveApptId(cur);
+      if (!id) return;
+      var oc = btn.getAttribute('onclick') || '';
+      if (oc.indexOf("'" + id + "'") === -1) {
+        var clean = oc.replace(/;?void\('[A-Za-z0-9_-]+'\)/g, '');
+        btn.setAttribute('onclick', clean + ";void('" + id + "')");
+      }
+    }, true);
+
+    console.log('[KW v8.22] ✓ 改約/報到 apptId 解析修補啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.22] 改約/報到 apptId 解析修補 結束 ===== -->
+
+<!-- ===== [v8.23] 系統管理儀表板：自費收入 → 來客數（已報到 新客/舊客） 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+  waitReady(function() {
+    function rebuildCard() {
+      var labels = document.querySelectorAll('*');
+      var hit = null;
+      for (var i = 0; i < labels.length; i++) {
+        var el = labels[i];
+        if (el.children.length === 0 && el.textContent.replace(/\s+/g,'').indexOf('本月自費項目收入') >= 0) {
+          var card = el;
+          for (var k = 0; k < 6 && card.parentElement; k++) {
+            card = card.parentElement;
+            var ptxt = (card.parentElement && card.parentElement.textContent) || '';
+            if (ptxt.indexOf('本月預約總數') >= 0 && ptxt.indexOf('LINE') >= 0) { hit = card; break; }
+          }
+          if (hit) break;
+        }
+      }
+      if (!hit || hit.__kwv823) return false;
+      hit.__kwv823 = true;
+      hit.innerHTML =
+        '<div style="color:#64748b; font-size:13px;">本月來客數（已報到）</div>'
+      + '<div id="kw-v823-total" style="font-size:34px; font-weight:700; color:#0f172a; margin:6px 0 8px;">—</div>'
+      + '<div style="display:flex; gap:16px; font-size:12.5px;">'
+      +   '<div><span style="color:#64748b;">新客（初診）</span><br><span id="kw-v823-new" style="font-size:18px; font-weight:600; color:#1d4ed8;">—</span></div>'
+      +   '<div><span style="color:#64748b;">舊客（複診）</span><br><span id="kw-v823-old" style="font-size:18px; font-weight:600; color:#16a34a;">—</span></div>'
+      + '</div>';
+      load();
+      return true;
+    }
+    function load() {
+      KW.api._post('getMonthlyCheckIns', {}, true).then(function(res) {
+        if (!res || !res.ok || !res.data) { setNums('—','—','—'); return; }
+        var d = res.data;
+        setNums(d.total, d.newPatients, d.returningPatients);
+      })['catch'](function(){ setNums('—','—','—'); });
+    }
+    function setNums(t, n, o) {
+      var et = document.getElementById('kw-v823-total'), en = document.getElementById('kw-v823-new'), eo = document.getElementById('kw-v823-old');
+      if (et) et.textContent = t;
+      if (en) en.textContent = n;
+      if (eo) eo.textContent = o;
+    }
+    setTimeout(rebuildCard, 500);
+    setInterval(function(){ rebuildCard(); }, 1500);
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var txt = (t.textContent || '').replace(/\s+/g,'');
+      if (txt.indexOf('系統管理') >= 0) setTimeout(rebuildCard, 200);
+    }, true);
+    console.log('[KW v8.23] ✓ 儀表板來客數卡片啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.23] 系統管理儀表板：自費收入 → 來客數（已報到 新客/舊客） 結束 ===== -->
+
+<!-- ===== [v8.24] 個別病患查詢「展開」接近30天出席明細 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+
+    function statusColor(s) {
+      if (s === '已報到') return '#16a34a';
+      if (s === '已取消') return '#dc2626';
+      if (s === '已改約') return '#d97706';
+      if (s === '未到診') return '#7c3aed';
+      return '#475569';
+    }
+
+    function fmt(d) {
+      if (!d) return '';
+      var s = String(d);
+      if (s.length >= 10) return s.substring(0, 10);
+      return s;
+    }
+
+    function within30Days(dateStr) {
+      if (!dateStr) return false;
+      var t = new Date(dateStr).getTime();
+      if (isNaN(t)) return false;
+      var now = Date.now();
+      return t >= now - 30 * 86400000;
+    }
+
+    // 接管所有「展開」連結／按鈕
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var txt = (t.textContent || '').replace(/\s+/g, '');
+      if (txt !== '展開' && txt !== '收起') return;
+      // 必須在個別病患查詢的表格內
+      var row = t.closest ? t.closest('tr') : null;
+      if (!row) return;
+      // 不要影響其它「展開」（例如其它區塊也可能有）
+      var section = row.closest('div, section, table');
+      var sectionTxt = section ? (section.textContent || '') : '';
+      if (sectionTxt.indexOf('預約出席統計') < 0 && sectionTxt.indexOf('個別病患') < 0) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // 切換：已展開的就移除
+      var nextTr = row.nextElementSibling;
+      if (nextTr && nextTr.classList && nextTr.classList.contains('kw-v824-detail')) {
+        nextTr.remove();
+        t.textContent = '展開';
+        return;
+      }
+
+      // 從 row 取病人 keyword（依序試：電話、病例號、姓名）
+      var cells = row.querySelectorAll('td');
+      var keyword = '';
+      // 通常 [0]=病人 [1]=病例號 [2]=電話
+      function val(i) { return (cells[i] && cells[i].textContent || '').trim().replace(/[\s—–-]+$/, ''); }
+      var name = val(0), caseNo = val(1), phone = val(2);
+      // 過濾 "—" / 空白
+      function ok(s) { return s && s !== '—' && s !== '-' && s !== '–'; }
+      if (ok(phone)) keyword = phone;
+      else if (ok(caseNo)) keyword = caseNo;
+      else if (ok(name)) keyword = name;
+      if (!keyword) { alert('無法取得病人識別資訊'); return; }
+
+      // 插入「載入中」row
+      var colCount = row.children.length || 10;
+      var trL = document.createElement('tr');
+      trL.className = 'kw-v824-detail';
+      trL.innerHTML = '<td colspan="'+colCount+'" style="padding:14px 16px; background:#f8fafc; color:#64748b; font-size:13px;">載入中…</td>';
+      row.parentNode.insertBefore(trL, row.nextSibling);
+      t.textContent = '收起';
+
+      KW.api._post('searchPatientHistory', { keyword: keyword }, true).then(function(res) {
+        if (!res || !res.ok || !res.data) {
+          trL.querySelector('td').textContent = '讀取失敗';
+          return;
+        }
+        var d = res.data;
+        var history = (d.history || []);
+        var recent = history.filter(function(r){ return within30Days(fmt(r['看診日期'])); });
+        var hasMore = history.length > recent.length;
+        renderDetail(trL, colCount, d.patient, recent, history, hasMore);
+      })['catch'](function(err) {
+        trL.querySelector('td').textContent = '讀取失敗：' + err;
+      });
+    }, true);
+
+    function renderDetail(trL, colCount, patient, recent, all, hasMore) {
+      var html = '<td colspan="'+colCount+'" style="padding:0; background:#f8fafc;">'
+        + '<div style="padding:14px 18px;">'
+        + '<div style="font-size:13px; color:#475569; margin-bottom:8px;">'
+        +   '<strong>' + esc((patient && patient['姓名']) || '') + '</strong>'
+        +   ' · 近 30 天共 <strong>' + recent.length + '</strong> 筆'
+        + '</div>';
+
+      if (recent.length === 0) {
+        html += '<div style="color:#94a3b8; font-size:13px;">近 30 天沒有預約紀錄</div>';
+      } else {
+        html += '<table style="width:100%; border-collapse:collapse; font-size:12.5px;">'
+          + '<thead><tr style="background:#e2e8f0; color:#334155;">'
+          +   '<th style="padding:6px 8px; text-align:left;">日期</th>'
+          +   '<th style="padding:6px 8px; text-align:left;">時段</th>'
+          +   '<th style="padding:6px 8px; text-align:left;">院區</th>'
+          +   '<th style="padding:6px 8px; text-align:left;">醫師</th>'
+          +   '<th style="padding:6px 8px; text-align:left;">類型</th>'
+          +   '<th style="padding:6px 8px; text-align:left;">狀態</th>'
+          +   '<th style="padding:6px 8px; text-align:left;">拿藥</th>'
+          +   '<th style="padding:6px 8px; text-align:left;">改至</th>'
+          + '</tr></thead><tbody>';
+        recent.forEach(function(r) {
+          var st = String(r['狀態'] || '');
+          var meds = Number(r['拿藥週數']) || 0;
+          var newDate = r['改約後日期'] ? (fmt(r['改約後日期']) + ' ' + (r['改約後時段']||'')) : '';
+          html += '<tr style="border-bottom:1px solid #e2e8f0;">'
+            + '<td style="padding:5px 8px;">' + esc(fmt(r['看診日期'])) + '</td>'
+            + '<td style="padding:5px 8px;">' + esc(r['開始時段'] || '') + '</td>'
+            + '<td style="padding:5px 8px;">' + esc(r['院區'] || '') + '</td>'
+            + '<td style="padding:5px 8px;">' + esc(r['醫師'] || '') + '</td>'
+            + '<td style="padding:5px 8px;">' + esc(r['類型'] || '') + '</td>'
+            + '<td style="padding:5px 8px; color:' + statusColor(st) + '; font-weight:600;">' + esc(st) + '</td>'
+            + '<td style="padding:5px 8px;">' + (meds > 0 ? (meds + ' 週') : '—') + '</td>'
+            + '<td style="padding:5px 8px; color:#64748b;">' + esc(newDate) + '</td>'
+            + '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+
+      if (hasMore) {
+        html += '<div style="margin-top:10px;"><button type="button" data-kw="view-all" style="background:#fff; color:#2563eb; border:1px solid #93c5fd; border-radius:6px; padding:5px 12px; font-size:12px; cursor:pointer;">📋 查看更多（含全部 ' + all.length + ' 筆完整病歷）</button></div>';
+      }
+
+      html += '</div></td>';
+      trL.innerHTML = html;
+
+      // 「查看更多」鈕
+      var moreBtn = trL.querySelector('[data-kw="view-all"]');
+      if (moreBtn) moreBtn.onclick = function() { openFullHistory(patient, all); };
+    }
+
+    // 完整病歷 modal
+    function openFullHistory(patient, history) {
+      var old = document.getElementById('kw-v824-full'); if (old) old.remove();
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-v824-full';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:100001; display:flex; align-items:center; justify-content:center; padding:20px;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:880px; max-height:88vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.3);';
+
+      var rows = (history || []).map(function(r) {
+        var st = String(r['狀態'] || '');
+        var meds = Number(r['拿藥週數']) || 0;
+        return '<tr style="border-bottom:1px solid #e2e8f0;">'
+          + '<td style="padding:6px 8px;">' + esc(fmt(r['看診日期'])) + '</td>'
+          + '<td style="padding:6px 8px;">' + esc(r['開始時段'] || '') + '</td>'
+          + '<td style="padding:6px 8px;">' + esc(r['院區'] || '') + '</td>'
+          + '<td style="padding:6px 8px;">' + esc(r['醫師'] || '') + '</td>'
+          + '<td style="padding:6px 8px;">' + esc(r['類型'] || '') + '</td>'
+          + '<td style="padding:6px 8px; color:' + statusColor(st) + '; font-weight:600;">' + esc(st) + '</td>'
+          + '<td style="padding:6px 8px;">' + (meds > 0 ? (meds + ' 週') : '—') + '</td>'
+          + '<td style="padding:6px 8px; color:#64748b;">' + esc(r['備註'] || '') + '</td>'
+          + '</tr>';
+      }).join('');
+
+      card.innerHTML =
+        '<div style="padding:16px 22px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">'
+        + '<div>'
+        +   '<div style="font-size:18px; font-weight:700;">📋 ' + esc((patient && patient['姓名']) || '') + ' · 完整病歷</div>'
+        +   '<div style="font-size:12.5px; color:#64748b; margin-top:2px;">病例號 ' + esc((patient && patient['病例號']) || '—') + ' · 電話 ' + esc((patient && patient['電話']) || '—') + ' · 共 ' + (history||[]).length + ' 筆</div>'
+        + '</div>'
+        + '<button id="kw-v824-close" style="background:#fff; border:1px solid #cbd5e1; border-radius:8px; padding:6px 14px; cursor:pointer;">關閉</button>'
+        + '</div>'
+        + '<div style="padding:16px 22px;">'
+        +   '<table style="width:100%; border-collapse:collapse; font-size:13px;">'
+        +     '<thead><tr style="background:#f1f5f9; color:#334155;">'
+        +       '<th style="padding:8px; text-align:left;">日期</th><th style="padding:8px; text-align:left;">時段</th>'
+        +       '<th style="padding:8px; text-align:left;">院區</th><th style="padding:8px; text-align:left;">醫師</th>'
+        +       '<th style="padding:8px; text-align:left;">類型</th><th style="padding:8px; text-align:left;">狀態</th>'
+        +       '<th style="padding:8px; text-align:left;">拿藥</th><th style="padding:8px; text-align:left;">備註</th>'
+        +     '</tr></thead><tbody>' + rows + '</tbody>'
+        +   '</table>'
+        + '</div>';
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      card.querySelector('#kw-v824-close').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+    }
+
+    console.log('[KW v8.24] ✓ 個別病患「展開」近30天明細啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.24] 個別病患查詢「展開」接近30天出席明細 結束 ===== -->
+
+<!-- ===== [v8.25] 班表手動新增/編輯（含生效日）開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function'
+        && typeof CLINICS !== 'undefined' && typeof DOCTORS !== 'undefined') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+    var WEEKDAYS = ['週日','週一','週二','週三','週四','週五','週六'];
+    var SESSIONS = ['早診','午診','晚診'];
+
+    function activeClinics() {
+      return (CLINICS || []).map(function(c){ return (typeof c==='string') ? c : c.name; }).filter(Boolean);
+    }
+    function doctorsForClinic(clinic) {
+      return (DOCTORS || []).filter(function(d){
+        if (d.clinicStatus === '停診') return false;
+        if (!d.clinics || !d.clinics.length) return true;
+        return d.clinics.indexOf(clinic) >= 0;
+      });
+    }
+    function todayISO() {
+      var d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    }
+    function parseWeekdayText(t) {
+      var i = WEEKDAYS.indexOf((t||'').replace(/\s+/g,''));
+      return i >= 0 ? i : '';
+    }
+
+    // ===== 接管「+ 手動新增」按鈕 =====
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var btn = (t.tagName==='BUTTON' || t.tagName==='A') ? t : (t.closest ? t.closest('button,a') : null);
+      if (!btn) return;
+      var txt = (btn.textContent || '').replace(/\s+/g, '');
+      // 必須在排班設定頁，否則放過
+      var pageTxt = document.body.textContent || '';
+      if (pageTxt.indexOf('排班設定') < 0) return;
+
+      if (txt === '+手動新增' || txt === '手動新增') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        openModal(null);
+      } else if (txt === '編輯') {
+        // 只接管排班 row 的「編輯」（避免衝突）
+        var tr = btn.closest && btn.closest('tr');
+        if (!tr) return;
+        var tableTxt = (tr.closest('table') || {}).textContent || '';
+        if (tableTxt.indexOf('看診醫師') < 0 || tableTxt.indexOf('時段開關') < 0) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        openEditFromRow(tr);
+      }
+    }, true);
+
+    function openEditFromRow(tr) {
+      var cells = tr.querySelectorAll('td');
+      function txt(i){ return (cells[i] && cells[i].textContent || '').trim(); }
+      // 預期欄位: [院區, 星期幾, 時段, 時間, 看診醫師, 備註, 時段開關, 操作]
+      var clinic = txt(0), weekdayTxt = txt(1), session = txt(2);
+      var timeRange = txt(3);  // "09:00 ~ 12:00"
+      var doctor = txt(4), note = txt(5);
+      var parts = timeRange.split(/[~–-]/).map(function(s){return s.trim();});
+      var weekday = parseWeekdayText(weekdayTxt);
+      // 取啟用狀態（看 toggle 是否打勾）
+      var toggle = cells[6] && cells[6].querySelector('input[type="checkbox"]');
+      var enabled = toggle ? toggle.checked : true;
+      // 嘗試從後端撈 班表編號（用院區+星期+起始時間+醫師+session 比對）
+      KW.api._get('getSchedules', {}).then(function(res) {
+        var id = null, startDate = '';
+        if (res && res.ok && Array.isArray(res.data)) {
+          var match = res.data.find(function(s) {
+            return s.clinic === clinic && Number(s.weekday) === Number(weekday)
+              && s.session === session && s.start === parts[0]
+              && s.doctor === doctor;
+          });
+          if (match) { id = match.id; startDate = match.startDate || ''; }
+        }
+        openModal({
+          id: id, clinic: clinic, weekday: weekday, session: session,
+          start: parts[0]||'', end: parts[1]||'', doctor: doctor,
+          enabled: enabled, startDate: startDate, note: note
+        });
+      })['catch'](function(){
+        openModal({
+          clinic: clinic, weekday: weekday, session: session,
+          start: parts[0]||'', end: parts[1]||'', doctor: doctor,
+          enabled: enabled, note: note
+        });
+      });
+    }
+
+    function openModal(initial) {
+      var old = document.getElementById('kw-sched-overlay'); if (old) old.remove();
+      var isEdit = !!(initial && initial.id);
+      var data = initial || {};
+      var clinics = activeClinics();
+      var defClinic = data.clinic || clinics[0] || '';
+
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-sched-overlay';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:100001; display:flex; align-items:center; justify-content:center; padding:16px;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:480px; max-height:92vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.3);';
+
+      function inp(){ return 'width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:14px; box-sizing:border-box;'; }
+      function row(label, field){ return '<div><label style="display:block; font-size:12.5px; color:#64748b; margin-bottom:4px;">'+label+'</label>'+field+'</div>'; }
+
+      card.innerHTML =
+        '<div style="padding:16px 20px; border-bottom:1px solid #e2e8f0;">'
+        + '<div style="font-size:18px; font-weight:700; color:#0f172a;">' + (isEdit ? '✏️ 編輯班表' : '➕ 新增班表') + '</div>'
+        + '<div style="font-size:12.5px; color:#64748b; margin-top:4px;">填好按存檔；要連續新增可按「存檔並繼續加同院區」</div>'
+        + '</div>'
+        + '<div style="padding:16px 20px; display:grid; grid-template-columns: 1fr 1fr; gap:12px;">'
+        +   row('院區', '<select id="kw-s-clinic" style="'+inp()+'">' + clinics.map(function(c){return '<option value="'+esc(c)+'"'+(c===defClinic?' selected':'')+'>'+esc(c)+'</option>';}).join('') + '</select>')
+        +   row('星期幾', '<select id="kw-s-weekday" style="'+inp()+'">' + WEEKDAYS.map(function(w,i){return '<option value="'+i+'"'+(Number(data.weekday)===i?' selected':'')+'>'+w+'</option>';}).join('') + '</select>')
+        +   row('時段', '<select id="kw-s-session" style="'+inp()+'">' + SESSIONS.map(function(s){return '<option value="'+s+'"'+(data.session===s?' selected':'')+'>'+s+'</option>';}).join('') + '</select>')
+        +   row('醫師', '<select id="kw-s-doctor" style="'+inp()+'"></select>')
+        +   row('起始時間', '<input type="time" id="kw-s-start" step="600" value="'+esc(data.start||'')+'" style="'+inp()+'">')
+        +   row('結束時間', '<input type="time" id="kw-s-end" step="600" value="'+esc(data.end||'')+'" style="'+inp()+'">')
+        +   '<div style="grid-column:1/-1;">'+row('生效日（從哪天開始啟用）', '<input type="date" id="kw-s-startdate" value="'+esc(data.startDate||todayISO())+'" style="'+inp()+'"><div style="margin-top:4px; font-size:11.5px; color:#94a3b8;">留空＝立刻生效。可指定未來日期，預先輸入下季班表</div>')+'</div>'
+        +   '<div style="grid-column:1/-1;">'+row('備註(選填)', '<input type="text" id="kw-s-note" value="'+esc(data.note||'')+'" style="'+inp()+'">')+'</div>'
+        +   '<div style="grid-column:1/-1;"><label style="display:flex; align-items:center; gap:6px; font-size:14px; cursor:pointer;"><input type="checkbox" id="kw-s-enabled"' + (data.enabled !== false ? ' checked' : '') + '> 啟用（病人端可看到此時段）</label></div>'
+        + '</div>'
+        + '<div style="padding:14px 20px; border-top:1px solid #e2e8f0; display:flex; gap:8px; justify-content:space-between; flex-wrap:wrap;">'
+        +   '<div>' + (isEdit ? '<button id="kw-s-delete" type="button" style="padding:9px 14px; background:#fff; color:#dc2626; border:1px solid #fca5a5; border-radius:8px; cursor:pointer;">🗑 刪除</button>' : '') + '</div>'
+        +   '<div style="display:flex; gap:8px;">'
+        +     '<button id="kw-s-close" type="button" style="padding:9px 14px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer;">關閉</button>'
+        +     (isEdit ? '' : '<button id="kw-s-save-continue" type="button" style="padding:9px 14px; background:#fff; color:#1d4ed8; border:1px solid #93c5fd; border-radius:8px; cursor:pointer;">存檔並繼續加同院區</button>')
+        +     '<button id="kw-s-save" type="button" style="padding:9px 16px; background:#2563eb; color:#fff; border:none; border-radius:8px; font-weight:600; cursor:pointer;">存檔</button>'
+        +   '</div>'
+        + '</div>';
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+
+      var clinicSel = card.querySelector('#kw-s-clinic');
+      var doctorSel = card.querySelector('#kw-s-doctor');
+      function fillDoctors() {
+        var list = doctorsForClinic(clinicSel.value);
+        var opts = '<option value="">(未指定)</option>';
+        opts += list.map(function(d){
+          var nm = d.shortName || d.name;
+          var sel = (nm === data.doctor) ? ' selected' : '';
+          return '<option value="'+esc(nm)+'"'+sel+'>'+esc(d.name||nm)+'</option>';
+        }).join('');
+        doctorSel.innerHTML = opts;
+      }
+      fillDoctors();
+      clinicSel.addEventListener('change', fillDoctors);
+
+      card.querySelector('#kw-s-close').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+
+      function collect() {
+        return {
+          '班表編號': data.id || '',
+          '院區':     clinicSel.value,
+          '星期幾':   Number(card.querySelector('#kw-s-weekday').value) || 0,
+          '時段':     card.querySelector('#kw-s-session').value,
+          '起始時間': card.querySelector('#kw-s-start').value,
+          '結束時間': card.querySelector('#kw-s-end').value,
+          '醫師短名': card.querySelector('#kw-s-doctor').value,
+          '起始日':   card.querySelector('#kw-s-startdate').value,
+          '啟用':     card.querySelector('#kw-s-enabled').checked ? 'TRUE' : 'FALSE',
+          '備註':     card.querySelector('#kw-s-note').value
+        };
+      }
+      function validate(payload) {
+        if (!payload['院區']) return '院區未選';
+        if (!payload['起始時間'] || !payload['結束時間']) return '時間未填';
+        if (payload['起始時間'] >= payload['結束時間']) return '結束時間需晚於起始時間';
+        return null;
+      }
+      function doSave(continueMode) {
+        var payload = collect();
+        var err = validate(payload);
+        if (err) { alert(err); return; }
+        var btn = card.querySelector('#kw-s-save');
+        btn.disabled = true; var origTxt = btn.textContent; btn.textContent = '處理中…';
+        KW.api._post('saveSchedule', payload, true).then(function(res) {
+          btn.disabled = false; btn.textContent = origTxt;
+          if (res && res.ok) {
+            if (continueMode) {
+              if (typeof showToast === 'function') showToast('已存檔。可繼續輸入下一筆', 'success');
+              // 院區/生效日保留，其它清空
+              card.querySelector('#kw-s-start').value = '';
+              card.querySelector('#kw-s-end').value = '';
+              card.querySelector('#kw-s-note').value = '';
+              // weekday +1 為下一天，幫忙加速輸入週班表
+              var w = Number(card.querySelector('#kw-s-weekday').value) || 0;
+              card.querySelector('#kw-s-weekday').value = (w + 1) % 7;
+            } else {
+              overlay.remove();
+              if (typeof showToast === 'function') showToast('班表已儲存', 'success');
+              else alert('已儲存');
+              setTimeout(function(){ window.location.reload(); }, 600);
+            }
+          } else {
+            alert('儲存失敗：' + (res && res.error ? res.error : '未知'));
+          }
+        })['catch'](function(e){ btn.disabled = false; btn.textContent = origTxt; alert('儲存失敗：' + e); });
+      }
+      card.querySelector('#kw-s-save').onclick = function(){ doSave(false); };
+      var contBtn = card.querySelector('#kw-s-save-continue');
+      if (contBtn) contBtn.onclick = function(){ doSave(true); };
+
+      var delBtn = card.querySelector('#kw-s-delete');
+      if (delBtn) delBtn.onclick = function() {
+        if (!data.id) { alert('找不到班表編號'); return; }
+        if (!confirm('確定刪除這筆班表？此動作無法復原。')) return;
+        KW.api._post('deleteSchedule', { '班表編號': data.id }, true).then(function(res) {
+          if (res && res.ok) {
+            overlay.remove();
+            if (typeof showToast === 'function') showToast('已刪除', 'success');
+            setTimeout(function(){ window.location.reload(); }, 600);
+          } else {
+            alert('刪除失敗：' + (res && res.error ? res.error : '未知'));
+          }
+        });
+      };
+
+      // 自動 focus 起始時間
+      setTimeout(function(){ var f = card.querySelector('#kw-s-start'); if (f && !f.value) f.focus(); }, 60);
+    }
+
+    console.log('[KW v8.25] ✓ 班表手動新增/編輯啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.25] 班表手動新增/編輯（含生效日）結束 ===== -->
+
+<!-- ===== [v8.26] Drive 班表同步 + 審核 + 衝突 + 2D看板 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+    var WEEKDAYS_SHORT = ['日','一','二','三','四','五','六'];
+
+    // ===== 1. 排班設定頁注入工具列 =====
+    function injectToolbar() {
+      var pageTxt = document.body.textContent || '';
+      if (pageTxt.indexOf('排班設定') < 0) return;
+      // 找已存在的「+ 手動新增」按鈕，把工具列加在它附近
+      var hostBtn = null;
+      document.querySelectorAll('button,a').forEach(function(b) {
+        var t = (b.textContent || '').replace(/\s+/g,'');
+        if (t === '+手動新增' || t === '手動新增' || t.indexOf('Excel匯入班表') >= 0) {
+          hostBtn = hostBtn || b;
+        }
+      });
+      if (!hostBtn) return;
+      var hostRow = hostBtn.parentElement;
+      if (!hostRow || hostRow.dataset.kwv826 === '1') return;
+      hostRow.dataset.kwv826 = '1';
+
+      var bar = document.createElement('div');
+      bar.id = 'kw-v826-bar';
+      bar.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; margin:8px 0;';
+      bar.innerHTML =
+        '<button id="kw-v826-sync" type="button" style="padding:8px 14px; background:#0ea5e9; color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:13px;">📥 從 Drive 同步</button>'
+      + '<button id="kw-v826-pending" type="button" style="padding:8px 14px; background:#fff; color:#1d4ed8; border:1px solid #93c5fd; border-radius:8px; cursor:pointer; font-size:13px;">✅ 待審核 <span id="kw-v826-pcount" style="background:#1d4ed8; color:#fff; padding:1px 7px; border-radius:10px; font-size:11px; margin-left:4px;">0</span></button>'
+      + '<button id="kw-v826-conflict" type="button" style="padding:8px 14px; background:#fff; color:#dc2626; border:1px solid #fca5a5; border-radius:8px; cursor:pointer; font-size:13px;">📞 異動影響 <span id="kw-v826-ccount" style="background:#dc2626; color:#fff; padding:1px 7px; border-radius:10px; font-size:11px; margin-left:4px;">0</span></button>'
+      + '<button id="kw-v826-board" type="button" style="padding:8px 14px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:13px;">📊 看板檢視</button>';
+      hostRow.parentElement.insertBefore(bar, hostRow);
+
+      document.getElementById('kw-v826-sync').onclick = doSync;
+      document.getElementById('kw-v826-pending').onclick = openPending;
+      document.getElementById('kw-v826-conflict').onclick = openConflicts;
+      document.getElementById('kw-v826-board').onclick = openBoard;
+      refreshCounts();
+    }
+
+    function refreshCounts() {
+      KW.api._post('getPendingSchedules', {}, true).then(function(res) {
+        if (res && res.ok && res.data) {
+          var el = document.getElementById('kw-v826-pcount');
+          if (el) el.textContent = res.data.length;
+        }
+      });
+      KW.api._post('getScheduleConflicts', {}, true).then(function(res) {
+        if (res && res.ok && res.data) {
+          var el = document.getElementById('kw-v826-ccount');
+          if (el) el.textContent = res.data.length;
+          // 有衝突 → bell 提醒
+          var b = document.getElementById('kw-v826-conflict');
+          if (b && res.data.length > 0) b.style.background = '#fef2f2';
+        }
+      });
+      KW.api._post('getScheduleReminders', {}, true).then(function(res) {
+        if (res && res.ok && res.data) showRemindBanner(res.data);
+      });
+    }
+
+    function showRemindBanner(data) {
+      var old = document.getElementById('kw-v826-banner'); if (old) old.remove();
+      if (!data.urgent.length && !data.remind.length) return;
+      var bar = document.getElementById('kw-v826-bar');
+      if (!bar) return;
+      var banner = document.createElement('div');
+      banner.id = 'kw-v826-banner';
+      var bg = data.urgent.length > 0 ? '#fef2f2' : '#fef3c7';
+      var fg = data.urgent.length > 0 ? '#991b1b' : '#92400e';
+      banner.style.cssText = 'padding:10px 14px; background:'+bg+'; color:'+fg+'; border-radius:8px; margin:8px 0; font-size:13px; display:flex; justify-content:space-between; align-items:center;';
+      var msg = '';
+      if (data.urgent.length) msg += '🚨 <strong>' + data.urgent.length + '</strong> 筆即將生效（24 小時內）需立即審核';
+      if (data.urgent.length && data.remind.length) msg += '；';
+      if (data.remind.length) msg += '⏰ ' + data.remind.length + ' 筆 7 天內需審核';
+      banner.innerHTML = '<div>' + msg + '</div>'
+        + '<button id="kw-v826-banner-open" style="background:#fff; color:'+fg+'; border:1px solid currentColor; border-radius:6px; padding:4px 10px; cursor:pointer; font-size:12px;">前往審核</button>';
+      bar.parentElement.insertBefore(banner, bar);
+      document.getElementById('kw-v826-banner-open').onclick = openPending;
+    }
+
+    // ===== 2. 從 Drive 同步 =====
+    function doSync() {
+      var btn = document.getElementById('kw-v826-sync');
+      btn.disabled = true; var orig = btn.textContent; btn.textContent = '同步中…';
+      KW.api._post('syncSchedulesFromDrive', { force: false }, true).then(function(res) {
+        btn.disabled = false; btn.textContent = orig;
+        if (res && res.ok) {
+          alert('同步完成\n處理檔案：' + res.processed + '\n新增待審核：' + res.addedPending);
+          refreshCounts();
+        } else {
+          alert('同步失敗：' + (res && res.error ? res.error : '未知'));
+        }
+      })['catch'](function(e){ btn.disabled = false; btn.textContent = orig; alert('同步失敗：' + e); });
+    }
+
+    // ===== 3. 待審核清單 =====
+    function openPending() {
+      KW.api._post('getPendingSchedules', {}, true).then(function(res) {
+        var items = (res && res.ok && res.data) ? res.data : [];
+        renderListModal('✅ 待審核班表', items, renderPendingItem, 880);
+      });
+    }
+    function renderPendingItem(r, container) {
+      var typeLabel = r['類型'] === '異動' ? '<span style="background:#fef3c7; color:#92400e; padding:2px 8px; border-radius:10px; font-size:11px;">異動</span>' : '<span style="background:#dbeafe; color:#1e40af; padding:2px 8px; border-radius:10px; font-size:11px;">固定</span>';
+      var when = r['類型'] === '異動'
+        ? (r['看診日期'] + '（' + WEEKDAYS_SHORT[(new Date(r['看診日期'])).getDay()] + '）')
+        : ('每週' + WEEKDAYS_SHORT[Number(r['星期幾'])] + '（生效 ' + (r['生效日']||'立即') + '）');
+      var time = (r['起始時間']||'') + (r['結束時間'] ? '-' + r['結束時間'] : '');
+      if (r['備註'] === '休診') time = '休診';
+      var html =
+        '<div style="border:1px solid #e2e8f0; border-radius:10px; padding:12px 14px; margin-bottom:8px;">'
+        + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
+        +   '<div>' + typeLabel + ' <strong style="margin-left:6px;">' + esc(r['院區']) + '</strong> · ' + esc(r['時段帶']||'減重專診') + '</div>'
+        +   '<div style="font-size:11px; color:#94a3b8;">來自 ' + esc(r['來源檔名']||'-') + '</div>'
+        + '</div>'
+        + '<div style="font-size:13px; color:#475569; margin-bottom:8px;">' + esc(when) + ' · ' + esc(time) + ' · 醫師 <strong>' + esc(r['醫師短名']||'(未指定)') + '</strong></div>'
+        + '<div style="display:flex; gap:8px;">'
+        +   '<button data-act="approve" style="padding:5px 12px; background:#16a34a; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px;">✓ 通過</button>'
+        +   '<button data-act="reject" style="padding:5px 12px; background:#fff; color:#dc2626; border:1px solid #fca5a5; border-radius:6px; cursor:pointer; font-size:12px;">✕ 退回</button>'
+        + '</div>'
+        + '</div>';
+      var div = document.createElement('div');
+      div.innerHTML = html;
+      var card = div.firstChild;
+      var cu = state.counterUser || state.currentUser || {};
+      card.querySelector('[data-act="approve"]').onclick = function() {
+        KW.api._post('approvePendingSchedule', { '待審編號': r['待審編號'], operator: cu.name || 'admin' }, true).then(function(rs) {
+          if (rs && rs.ok) { card.style.opacity = '0.4'; card.querySelector('[data-act="approve"]').textContent = '已通過'; setTimeout(refreshCounts, 300); }
+          else alert('失敗：' + (rs && rs.error));
+        });
+      };
+      card.querySelector('[data-act="reject"]').onclick = function() {
+        var reason = prompt('退回原因（選填）');
+        if (reason === null) return;
+        KW.api._post('rejectPendingSchedule', { '待審編號': r['待審編號'], operator: cu.name || 'admin', reason: reason }, true).then(function(rs) {
+          if (rs && rs.ok) { card.style.opacity = '0.4'; card.querySelector('[data-act="reject"]').textContent = '已退回'; setTimeout(refreshCounts, 300); }
+          else alert('失敗：' + (rs && rs.error));
+        });
+      };
+      container.appendChild(card);
+    }
+
+    // ===== 4. 衝突影響清單（櫃台用） =====
+    function openConflicts() {
+      KW.api._post('getScheduleConflicts', {}, true).then(function(res) {
+        var items = (res && res.ok && res.data) ? res.data : [];
+        renderListModal('📞 班表異動影響：請打電話協助改約', items, renderConflictItem, 880);
+      });
+    }
+    function renderConflictItem(r, container) {
+      var phone = String(r['電話']||'').replace(/^'/,'').trim();
+      var html =
+        '<div style="border:1px solid #fecaca; background:#fffafa; border-radius:10px; padding:12px 14px; margin-bottom:8px;">'
+        + '<div style="display:flex; justify-content:space-between; gap:8px; align-items:start;">'
+        +   '<div style="flex:1;">'
+        +     '<div style="font-weight:700; font-size:15px; color:#0f172a;">' + esc(r['病人姓名']||'(未填名)') + ' <span style="font-weight:normal; color:#475569; font-size:13px;">· ' + esc(r['電話']||'無電話') + '</span></div>'
+        +     '<div style="font-size:13px; color:#475569; margin-top:4px;">' + esc(r['看診日期']) + ' ' + esc(r['開始時段']) + ' · ' + esc(r['院區']) + ' · 原醫師：' + esc(r['原醫師']||'(無)') + '</div>'
+        +     '<div style="font-size:12.5px; color:#991b1b; margin-top:6px;"><strong>變更：</strong>' + esc(r['變更說明']) + '</div>'
+        +   '</div>'
+        +   '<div style="display:flex; flex-direction:column; gap:6px; min-width:120px;">'
+        +     (phone ? '<a href="tel:' + esc(phone) + '" style="padding:6px 10px; background:#16a34a; color:#fff; border-radius:6px; text-decoration:none; text-align:center; font-size:12px;">📞 撥打</a>' : '')
+        +     '<button data-act="done" style="padding:5px 10px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer; font-size:12px;">✓ 標記已處理</button>'
+        +   '</div>'
+        + '</div>'
+        + '</div>';
+      var div = document.createElement('div');
+      div.innerHTML = html;
+      var card = div.firstChild;
+      var cu = state.counterUser || state.currentUser || {};
+      card.querySelector('[data-act="done"]').onclick = function() {
+        var note = prompt('處理備註（例：已電話通知病人並改約 6/10）', '');
+        KW.api._post('markConflictHandled', { '衝突編號': r['衝突編號'], operator: cu.name || 'counter', note: note || '' }, true).then(function(rs) {
+          if (rs && rs.ok) { card.style.opacity = '0.4'; card.querySelector('[data-act="done"]').textContent = '已處理'; setTimeout(refreshCounts, 300); }
+          else alert('失敗：' + (rs && rs.error));
+        });
+      };
+      container.appendChild(card);
+    }
+
+    // ===== 5. 看板檢視（2D 格子，仿 Excel） =====
+    function openBoard() {
+      KW.api._post('getPendingSchedules', {}, true).then(function(p) {
+        KW.api._get('getSchedules', {}).then(function(s) {
+          KW.api._post('getScheduleConflicts', {}, true).then(function(c) {
+            var pending = (p && p.ok && p.data) || [];
+            var approved = (s && s.ok && s.data) || [];
+            renderBoardModal(pending, approved);
+          });
+        });
+      });
+    }
+
+    function renderBoardModal(pending, approved) {
+      var clinics = {};
+      // 收集所有出現的院區
+      approved.forEach(function(s){ if (s.clinic) clinics[s.clinic] = true; });
+      pending.forEach(function(s){ if (s['院區']) clinics[s['院區']] = true; });
+      var clinicList = Object.keys(clinics);
+      if (clinicList.length === 0) clinicList = ['(尚無資料)'];
+      var curClinic = clinicList[0];
+
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-v826-board';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:100001; display:flex; align-items:center; justify-content:center; padding:16px;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:1100px; max-height:92vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.3);';
+      card.innerHTML =
+        '<div style="padding:14px 20px; border-bottom:1px solid #e2e8f0; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">'
+        + '<div style="font-size:17px; font-weight:700;">📊 班表看板</div>'
+        + '<select id="kw-board-clinic" style="padding:6px 10px; border:1px solid #cbd5e1; border-radius:6px;">'
+        +   clinicList.map(function(c){return '<option value="'+esc(c)+'">'+esc(c)+'</option>';}).join('')
+        + '</select>'
+        + '<div style="margin-left:auto; display:flex; gap:6px;">'
+        +   '<button id="kw-board-tab-fixed" data-tab="fixed" style="padding:6px 12px; border:1px solid #2563eb; background:#2563eb; color:#fff; border-radius:6px; cursor:pointer; font-size:12.5px;">固定班表</button>'
+        +   '<button id="kw-board-tab-override" data-tab="override" style="padding:6px 12px; border:1px solid #cbd5e1; background:#fff; color:#475569; border-radius:6px; cursor:pointer; font-size:12.5px;">異動班表</button>'
+        + '</div>'
+        + '<button id="kw-board-close" style="background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:5px 12px; cursor:pointer;">關閉</button>'
+        + '</div>'
+        + '<div id="kw-board-body" style="padding:16px 20px;"></div>';
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      card.querySelector('#kw-board-close').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+
+      var currentTab = 'fixed';
+      var body = card.querySelector('#kw-board-body');
+      function render() {
+        body.innerHTML = '';
+        var clinic = card.querySelector('#kw-board-clinic').value;
+        if (currentTab === 'fixed') body.appendChild(buildFixedGrid(clinic, approved, pending));
+        else body.appendChild(buildOverrideGrid(clinic, pending));
+      }
+      card.querySelector('#kw-board-clinic').onchange = render;
+      ['fixed','override'].forEach(function(name) {
+        var b = card.querySelector('#kw-board-tab-'+name);
+        b.onclick = function() {
+          currentTab = name;
+          card.querySelectorAll('[data-tab]').forEach(function(bb) {
+            var active = bb.dataset.tab === name;
+            bb.style.background = active ? '#2563eb' : '#fff';
+            bb.style.color = active ? '#fff' : '#475569';
+            bb.style.borderColor = active ? '#2563eb' : '#cbd5e1';
+          });
+          render();
+        };
+      });
+      render();
+    }
+
+    function buildFixedGrid(clinic, approved, pending) {
+      // 篩出該院區固定班表（已核准）+ 待審核固定（用淡橘色標出）
+      var approvedRows = approved.filter(function(s) { return s.clinic === clinic; });
+      var pendingRows = pending.filter(function(p) { return p['類型'] === '固定' && p['院區'] === clinic; });
+      var wrap = document.createElement('div');
+      wrap.innerHTML = '<div style="font-size:13px; color:#475569; margin-bottom:8px;">' + esc(clinic) + ' · 固定週班表（已核准 ' + approvedRows.length + ' / 待審核 ' + pendingRows.length + '）</div>';
+      var tbl = document.createElement('table');
+      tbl.style.cssText = 'width:100%; border-collapse:collapse; font-size:12.5px; table-layout:fixed;';
+      var thead = '<thead><tr><th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:6px;">時段</th>';
+      for (var i = 1; i <= 6; i++) thead += '<th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:6px;">週'+WEEKDAYS_SHORT[i]+'</th>';
+      thead += '<th style="border:1px solid #cbd5e1; background:#f1f5f9; padding:6px;">週日</th></tr></thead>';
+      var tbody = '<tbody>';
+      tbody += '<tr><td style="border:1px solid #cbd5e1; background:#eff6ff; padding:6px; font-weight:600; text-align:center;">減重專診</td>';
+      for (var w = 1; w <= 7; w++) {
+        var wd = w === 7 ? 0 : w;
+        var ok = approvedRows.filter(function(s){ return Number(s.weekday) === wd; });
+        var pd = pendingRows.filter(function(s){ return Number(s['星期幾']) === wd; });
+        var cells = ok.map(function(s) {
+          return '<div>' + esc(s.doctor||'') + '<br><small style="color:#475569;">' + esc(s.start||'') + '-' + esc(s.end||'') + '</small></div>';
+        }).join('<hr style="margin:4px 0; border:none; border-top:1px dashed #e2e8f0;">');
+        var pcells = pd.map(function(s) {
+          return '<div style="background:#fef3c7; padding:2px 4px; border-radius:4px; color:#92400e;">⏳ ' + esc(s['醫師短名']||'') + '<br><small>' + esc(s['起始時間']||'') + '-' + esc(s['結束時間']||'') + ' · 生效 ' + esc(s['生效日']||'-') + '</small></div>';
+        }).join('<div style="height:4px;"></div>');
+        tbody += '<td style="border:1px solid #cbd5e1; padding:6px; vertical-align:top; min-height:60px;">' + (cells || '<span style="color:#cbd5e1;">—</span>') + (pcells ? '<div style="margin-top:6px;">' + pcells + '</div>' : '') + '</td>';
+      }
+      tbody += '</tr></tbody>';
+      tbl.innerHTML = thead + tbody;
+      wrap.appendChild(tbl);
+      return wrap;
+    }
+
+    function buildOverrideGrid(clinic, pending) {
+      var rows = pending.filter(function(p) { return p['類型'] === '異動' && p['院區'] === clinic; });
+      // 依日期分組
+      var byDate = {};
+      rows.forEach(function(r) {
+        var d = r['看診日期'] || '';
+        (byDate[d] = byDate[d] || []).push(r);
+      });
+      var dates = Object.keys(byDate).sort();
+      var wrap = document.createElement('div');
+      if (!dates.length) {
+        wrap.innerHTML = '<div style="color:#94a3b8; padding:20px; text-align:center;">' + esc(clinic) + ' 目前沒有異動班表待審核</div>';
+        return wrap;
+      }
+      wrap.innerHTML = '<div style="font-size:13px; color:#475569; margin-bottom:8px;">' + esc(clinic) + ' · 待審核異動（' + rows.length + ' 筆，依日期）</div>';
+      var html = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px,1fr)); gap:10px;">';
+      dates.forEach(function(d) {
+        var dayItems = byDate[d];
+        var weekday = WEEKDAYS_SHORT[(new Date(d)).getDay()];
+        html += '<div style="border:2px solid #fed7aa; border-radius:10px; padding:10px 12px; background:#fffbf5;">';
+        html += '<div style="font-weight:700; color:#9a3412; margin-bottom:8px;">' + esc(d) + ' (週' + weekday + ')</div>';
+        dayItems.forEach(function(it) {
+          var isClosed = it['備註'] === '休診';
+          html += '<div style="margin-bottom:6px; padding:6px 8px; background:#fff; border-radius:6px; font-size:12.5px;">'
+            + (isClosed ? '<span style="color:#dc2626; font-weight:600;">🚫 休診</span>' : '<strong>' + esc(it['醫師短名']||'(未指定)') + '</strong> <span style="color:#64748b;">' + esc(it['起始時間']||'') + '-' + esc(it['結束時間']||'') + '</span>')
+            + '</div>';
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+      wrap.insertAdjacentHTML('beforeend', html);
+      return wrap;
+    }
+
+    // ===== 共用清單 modal =====
+    function renderListModal(title, items, renderItem, maxWidth) {
+      var old = document.getElementById('kw-v826-list'); if (old) old.remove();
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-v826-list';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:100001; display:flex; align-items:center; justify-content:center; padding:16px;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:'+(maxWidth||720)+'px; max-height:90vh; display:flex; flex-direction:column;';
+      card.innerHTML =
+        '<div style="padding:14px 20px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">'
+        + '<div style="font-size:17px; font-weight:700;">' + esc(title) + ' <span style="font-size:12px; color:#94a3b8; font-weight:normal;">(' + items.length + ')</span></div>'
+        + '<button id="kw-v826-list-close" style="background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:5px 12px; cursor:pointer;">關閉</button>'
+        + '</div>'
+        + '<div id="kw-v826-list-body" style="padding:16px 20px; overflow:auto;"></div>';
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      card.querySelector('#kw-v826-list-close').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+      var body = card.querySelector('#kw-v826-list-body');
+      if (!items.length) body.innerHTML = '<div style="color:#94a3b8; padding:30px; text-align:center;">目前沒有資料</div>';
+      else items.forEach(function(it){ renderItem(it, body); });
+    }
+
+    // ===== 進入排班設定頁時觸發 =====
+    setTimeout(injectToolbar, 600);
+    setInterval(injectToolbar, 2000);
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var txt = (t.textContent || '').replace(/\s+/g,'');
+      if (txt.indexOf('排班設定') >= 0 || txt.indexOf('系統管理') >= 0) setTimeout(injectToolbar, 300);
+    }, true);
+
+    console.log('[KW v8.26] ✓ Drive 班表同步 + 審核 + 衝突 + 2D看板啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.26] Drive 班表同步 + 審核 + 衝突 + 2D看板 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
+
 </body>
 </html>
