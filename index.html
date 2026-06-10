@@ -13099,35 +13099,29 @@
     var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
 
     // === A. 攔截病人端 Step 1：醫師卡點擊 → 開介紹 modal ===
+    // 用現成 class .doctor-card 直接抓（從 HTML 結構確認過）
     document.addEventListener('click', function(e) {
       var t = e.target;
-      if (!t) return;
-      // 找最近的醫師卡（含「醫師」字尾的卡片）
-      var card = (t.closest ? t.closest('div') : null);
-      var found = null, cur = t;
-      for (var i = 0; i < 8 && cur; i++) {
-        if (cur.tagName === 'DIV' && (cur.textContent || '').indexOf('醫師') >= 0 && (cur.textContent || '').indexOf('駐診院區') >= 0) {
-          found = cur; break;
-        }
-        cur = cur.parentElement;
-      }
-      if (!found) return;
-      // 是否在病人端 Step 1
-      var page = document.getElementById('page-patient');
-      if (!page || !page.contains(found)) return;
-      // 從卡片文字提取醫師短名
-      var txt = (found.querySelector('strong, .doctor-name, span') || {}).textContent || found.textContent || '';
-      var m = txt.match(/([一-龥]{2,4})\s*醫師/);
-      if (!m) return;
-      var shortName = m[1];
-      // 找 DOCTORS 對應物件
-      var dr = (DOCTORS || []).find(function(d) {
-        return (d.shortName && d.shortName === shortName) ||
-               (d.name && d.name.replace(/\s*醫師\s*$/,'') === shortName);
+      if (!t || !t.closest) return;
+      var card = t.closest('.doctor-card');
+      if (!card) return;
+      // 取醫師名：從 .doctor-info 文字，regex 取「X 醫師」最長匹配
+      var info = card.querySelector('.doctor-info') || card;
+      var infoTxt = info.textContent || '';
+      var matches = infoTxt.match(/([\u4e00-\u9fa5]{2,4})\s*醫師/g) || [];
+      var shortName = '';
+      matches.forEach(function(m) {
+        var sn = m.replace(/\s*醫師\s*$/, '').trim();
+        if (sn.length > shortName.length) shortName = sn;
       });
-      if (!dr) return;
+      if (!shortName || shortName.length < 2) return;
+      // 試從 DOCTORS 找完整物件，找不到用簡單物件（modal 仍會用 shortName 抓後端介紹）
+      var dr = (DOCTORS || []).find(function(d) {
+        var sn = d.shortName || String(d.name||'').replace(/\s*醫師\s*$/,'').trim();
+        return sn === shortName;
+      }) || { shortName: shortName, name: shortName + ' 醫師', specialty: '減重門診', photoData: '' };
       e.preventDefault();
-      e.stopImmediatePropagation();   // 阻止原本卡片的 onclick
+      e.stopImmediatePropagation();
       e.stopPropagation();
       openProfileModal(dr);
     }, true);
@@ -13335,21 +13329,24 @@
     }
 
     function findDoctorsContainer(step1) {
-      // 找放醫師卡的 grid：直接子元素 「大部分」都是醫師卡（含「駐診院區」字樣）
-      var candidates = step1.querySelectorAll('div');
-      var hit = null;
+      // 直接用 id 抓（從 HTML 確認過）
+      var byId = document.getElementById('patient-doctor-grid');
+      if (byId) return byId;
+      var byClass = document.querySelector('.doctor-grid');
+      if (byClass) return byClass;
+      // fallback：找直接子元素 >70% 是醫師卡的 div
+      var candidates = (step1 || document).querySelectorAll('div');
       for (var i = 0; i < candidates.length; i++) {
         var c = candidates[i];
-        var children = c.children;
-        if (children.length < 5) continue;  // 醫師 grid 至少幾張卡
-        var docCardCount = 0;
-        for (var j = 0; j < children.length; j++) {
-          if ((children[j].textContent || '').indexOf('駐診院區') >= 0) docCardCount++;
+        if (c.children.length < 5) continue;
+        var docCount = 0;
+        for (var j = 0; j < c.children.length; j++) {
+          if (c.children[j].classList && c.children[j].classList.contains('doctor-card')) docCount++;
+          else if ((c.children[j].textContent || '').indexOf('駐診院區') >= 0) docCount++;
         }
-        // 大於 70% 的子元素都是醫師卡 → 這才是 grid
-        if (docCardCount >= children.length * 0.7) { hit = c; break; }
+        if (docCount >= c.children.length * 0.7) return c;
       }
-      return hit;
+      return null;
     }
 
     function injectToggle() {
@@ -13771,26 +13768,27 @@
     }
 
     function findClinicSections(modal) {
-      // 每個院區section特徵：含「院區」字、含 "共 X 個固定時段" 字、有 table
+      // 步驟 1：找所有「X 個固定時段」leaf（每個就是一個院區 header）
+      var headers = [];
+      modal.querySelectorAll('*').forEach(function(el) {
+        if (el.children.length > 0) return;
+        if ((el.textContent || '').indexOf('個固定時段') < 0) return;
+        headers.push(el);
+      });
+      if (!headers.length) return [];
+      // 步驟 2：每個 header 往上爬，找「只含此 header 且至少含一個 table」的最大祖先
       var sections = [];
-      var candidates = modal.querySelectorAll('div');
-      candidates.forEach(function(c) {
-        var t = c.textContent || '';
-        if (t.indexOf('院區') < 0) return;
-        if (t.indexOf('個固定時段') < 0) return;
-        // 必須包含 table 才算
-        if (!c.querySelector('table')) return;
-        // 避免巢狀重複
-        var alreadyIn = sections.some(function(s){ return s.contains(c) || c.contains(s); });
-        if (alreadyIn) return;
-        // 取最外層 (因為 textContent 一定包含內部的所有字)
-        sections.push(c);
+      headers.forEach(function(h) {
+        var cur = h, best = null;
+        while (cur && cur !== modal && cur !== document.body) {
+          var containsOther = headers.some(function(other){ return other !== h && cur.contains(other); });
+          if (containsOther) break;
+          if (cur.querySelector && cur.querySelector('table')) best = cur;
+          cur = cur.parentElement;
+        }
+        if (best) sections.push(best);
       });
-      // 去除巢狀：保留最小的（最內層）
-      var minimal = sections.filter(function(s) {
-        return !sections.some(function(o){ return o !== s && s.contains(o); });
-      });
-      return minimal;
+      return sections;
     }
 
     function processModal(modal) {
