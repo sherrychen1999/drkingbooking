@@ -13738,6 +13738,471 @@
 </script>
 <!-- ===== [v8.33] 醫師管理頁編輯/新增醫師接管 結束 ===== -->
 
+<!-- ===== [v8.34] 各院區門診表改先選院區 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+
+    function findModal() {
+      // 找含「各院區減重門診表」的容器
+      var divs = document.querySelectorAll('div');
+      for (var i = 0; i < divs.length; i++) {
+        var d = divs[i];
+        if (d.offsetParent === null) continue;
+        if ((d.textContent || '').indexOf('各院區減重門診表') < 0) continue;
+        // 取最內層仍含這字串的 div
+        var inner = d;
+        var children = d.querySelectorAll('div');
+        for (var j = 0; j < children.length; j++) {
+          var c = children[j];
+          if ((c.textContent || '').indexOf('各院區減重門診表') >= 0 && c.offsetParent !== null) inner = c;
+        }
+        return inner;
+      }
+      return null;
+    }
+
+    function findClinicSections(modal) {
+      // 每個院區section特徵：含「院區」字、含 "共 X 個固定時段" 字、有 table
+      var sections = [];
+      var candidates = modal.querySelectorAll('div');
+      candidates.forEach(function(c) {
+        var t = c.textContent || '';
+        if (t.indexOf('院區') < 0) return;
+        if (t.indexOf('個固定時段') < 0) return;
+        // 必須包含 table 才算
+        if (!c.querySelector('table')) return;
+        // 避免巢狀重複
+        var alreadyIn = sections.some(function(s){ return s.contains(c) || c.contains(s); });
+        if (alreadyIn) return;
+        // 取最外層 (因為 textContent 一定包含內部的所有字)
+        sections.push(c);
+      });
+      // 去除巢狀：保留最小的（最內層）
+      var minimal = sections.filter(function(s) {
+        return !sections.some(function(o){ return o !== s && s.contains(o); });
+      });
+      return minimal;
+    }
+
+    function processModal(modal) {
+      if (modal.__kwv834) return;
+      var sections = findClinicSections(modal);
+      if (!sections.length) return;
+
+      // 取得每個 section 對應的院區名（從 section 文字頭抓「XX院區」）
+      var clinicInfos = sections.map(function(sec) {
+        var txt = sec.textContent || '';
+        var m = txt.match(/(\S+院區)/);
+        var name = m ? m[1] : '(未識別)';
+        return { name: name, el: sec };
+      });
+      if (!clinicInfos.length) return;
+      modal.__kwv834 = true;
+
+      // 1. 全部隱藏
+      clinicInfos.forEach(function(info){ info.el.style.display = 'none'; });
+
+      // 2. 把選擇器插在第一個 section 之前
+      var picker = document.createElement('div');
+      picker.id = 'kw-v834-picker';
+      picker.style.cssText = 'margin:14px 0 18px; padding:14px; border-radius:10px; background:#f8fafc;';
+      picker.innerHTML =
+        '<div style="font-size:13px; color:#475569; margin-bottom:10px;">請選擇要查看的院區：</div>'
+        + '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(120px,1fr)); gap:8px;">'
+        +   clinicInfos.map(function(info, idx) {
+              return '<button data-idx="' + idx + '" class="kwv834-btn" type="button" style="padding:10px 8px; background:#fff; color:#475569; border:2px solid #cbd5e1; border-radius:8px; font-weight:600; cursor:pointer; font-size:13.5px;">' + esc(info.name) + '</button>';
+            }).join('')
+        + '</div>'
+        + '<div id="kw-v834-back" style="display:none; margin-top:10px;">'
+        +   '<button id="kw-v834-back-btn" type="button" style="padding:6px 14px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:6px; cursor:pointer; font-size:13px;">← 返回院區選擇</button>'
+        + '</div>';
+
+      // 插入位置：放在 hint 提示字的後面（或第一個 section 前）
+      var firstSection = clinicInfos[0].el;
+      firstSection.parentElement.insertBefore(picker, firstSection);
+
+      picker.querySelectorAll('.kwv834-btn').forEach(function(b) {
+        b.addEventListener('click', function() {
+          var idx = Number(b.dataset.idx);
+          clinicInfos.forEach(function(info, i){ info.el.style.display = (i === idx) ? '' : 'none'; });
+          // 高亮選中的按鈕
+          picker.querySelectorAll('.kwv834-btn').forEach(function(bb, i) {
+            var on = i === idx;
+            bb.style.background = on ? '#2563eb' : '#fff';
+            bb.style.color = on ? '#fff' : '#475569';
+            bb.style.borderColor = on ? '#2563eb' : '#cbd5e1';
+          });
+          document.getElementById('kw-v834-back').style.display = '';
+          // 捲到該院區
+          setTimeout(function(){
+            try { clinicInfos[idx].el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+          }, 50);
+        });
+      });
+
+      var backBtn = picker.querySelector('#kw-v834-back-btn');
+      if (backBtn) backBtn.onclick = function() {
+        clinicInfos.forEach(function(info){ info.el.style.display = 'none'; });
+        picker.querySelectorAll('.kwv834-btn').forEach(function(bb) {
+          bb.style.background = '#fff'; bb.style.color = '#475569'; bb.style.borderColor = '#cbd5e1';
+        });
+        document.getElementById('kw-v834-back').style.display = 'none';
+        try { picker.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+      };
+    }
+
+    function scan() {
+      var modal = findModal();
+      if (modal) processModal(modal);
+    }
+    var obs = new MutationObserver(function(){ setTimeout(scan, 50); });
+    obs.observe(document.body, { childList: true, subtree: true });
+    setTimeout(scan, 500);
+
+    console.log('[KW v8.34] ✓ 各院區門診表改先選院區啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.34] 各院區門診表改先選院區 結束 ===== -->
+
+<!-- ===== [v8.35] 病人 24h 外自助取消改約 + 拿藥代取通知 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+
+    function chineseDateTime(dateStr, timeStr) {
+      if (!dateStr) return timeStr || '';
+      var m = String(dateStr).match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (!m) return dateStr + ' ' + (timeStr||'');
+      var y = m[1], mm = parseInt(m[2],10), dd = parseInt(m[3],10);
+      var wd = '日一二三四五六'[new Date(parseInt(y), mm-1, dd).getDay()];
+      var dt = y + '/' + mm + '/' + dd + '（' + wd + '）';
+      if (timeStr) {
+        var tm = String(timeStr).match(/(\d{1,2}):(\d{2})/);
+        if (tm) {
+          var h = parseInt(tm[1],10), mn = parseInt(tm[2],10), pe;
+          if (h < 5) pe = '凌晨'; else if (h < 12) pe = '早上';
+          else if (h === 12) pe = '中午'; else if (h < 18) { pe = '下午'; h -= 12; }
+          else { pe = '晚上'; h -= 12; }
+          dt += ' ' + pe + h + '點' + (mn === 30 ? '半' : (mn ? mn + '分' : ''));
+        }
+      }
+      return dt;
+    }
+    function is24hPlus(dateStr, timeStr) {
+      if (!dateStr || !timeStr) return false;
+      var tm = String(timeStr).match(/(\d{1,2}):(\d{2})/);
+      if (!tm) return false;
+      var d = new Date(dateStr + 'T' + String(tm[1]).padStart(2,'0') + ':' + tm[2] + ':00+08:00');
+      return (d.getTime() - Date.now()) > 24 * 3600 * 1000;
+    }
+
+    // ====== 病人查詢結果加 取消/改約 鈕 ======
+    function injectPatientButtons() {
+      // 找含「未來預約」「您目前的預約」字樣的表格 row
+      var rows = document.querySelectorAll('tr');
+      rows.forEach(function(tr) {
+        if (tr.__kwv835) return;
+        // 是否在病人查詢 modal 內
+        var modal = tr.closest('[id*="patient-query"], [class*="patient-query"], .modal, .modal-overlay');
+        if (!modal) {
+          // 或：tr 內含 "院區" 字樣的 cell
+          var t = tr.textContent || '';
+          if (!/院區/.test(t) || !/醫師/.test(t)) return;
+        }
+        // 找預約編號（從 onclick / data attr 或文字）
+        var apptId = '';
+        Array.prototype.forEach.call(tr.querySelectorAll('button, a'), function(b) {
+          var oc = b.getAttribute('onclick') || b.getAttribute('data-id') || '';
+          var m = oc.match(/(A[-]\d{8,}[-]\d+)/);
+          if (m) apptId = m[1];
+        });
+        // 也試 cell 文字
+        if (!apptId) {
+          var txts = (tr.textContent || '').match(/A[-]\d{8,}[-]\d+/);
+          if (txts) apptId = txts[0];
+        }
+        if (!apptId) return;
+        tr.__kwv835 = true;
+        // 取得 cell 日期+時段（簡易：找 YYYY-MM-DD 跟 HH:MM）
+        var rowTxt = tr.textContent || '';
+        var dateM = rowTxt.match(/(\d{4}-\d{2}-\d{2})/);
+        var timeM = rowTxt.match(/(\d{2}:\d{2})/);
+        var phoneM = rowTxt.match(/09\d{8}/);
+        if (!dateM || !timeM) return;
+        var actCell = tr.querySelector('td:last-child');
+        if (!actCell) return;
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex; gap:4px; margin-top:4px; flex-wrap:wrap;';
+        var canSelf = is24hPlus(dateM[1], timeM[1]);
+        if (canSelf) {
+          wrap.innerHTML =
+            '<button data-kw="cancel" style="padding:4px 8px; background:#fff; color:#dc2626; border:1px solid #fca5a5; border-radius:5px; cursor:pointer; font-size:11.5px;">取消</button>'
+          + '<button data-kw="resched" style="padding:4px 8px; background:#fff; color:#1d4ed8; border:1px solid #93c5fd; border-radius:5px; cursor:pointer; font-size:11.5px;">改約</button>';
+        } else {
+          wrap.innerHTML = '<span style="font-size:11px; color:#94a3b8;">⏰ 24h 內<br>請來電院區</span>';
+        }
+        actCell.appendChild(wrap);
+        if (canSelf) {
+          wrap.querySelector('[data-kw="cancel"]').onclick = function() { openSelfModal('cancel', apptId, dateM[1], timeM[1], phoneM ? phoneM[0] : '', rowTxt); };
+          wrap.querySelector('[data-kw="resched"]').onclick = function() { openSelfModal('resched', apptId, dateM[1], timeM[1], phoneM ? phoneM[0] : '', rowTxt); };
+        }
+      });
+    }
+
+    function openSelfModal(mode, apptId, dateStr, timeStr, phone, infoTxt) {
+      var old = document.getElementById('kw-v835-modal'); if (old) old.remove();
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-v835-modal';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.6); z-index:100001; display:flex; align-items:center; justify-content:center; padding:16px;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:460px; max-height:92vh; overflow:auto;';
+      var title = mode === 'cancel' ? '✕ 取消預約' : '↔ 改約';
+      card.innerHTML =
+        '<div style="padding:16px 20px; border-bottom:1px solid #e2e8f0;">'
+        + '<div style="font-size:18px; font-weight:700;">' + title + '</div>'
+        + '<div style="font-size:13px; color:#64748b; margin-top:4px;">原預約：' + esc(chineseDateTime(dateStr, timeStr)) + '</div>'
+        + '</div>'
+        + '<div style="padding:18px 20px; display:flex; flex-direction:column; gap:12px;">'
+        +   (mode === 'resched' ?
+              '<div><label style="display:block; font-size:12.5px; color:#64748b; margin-bottom:4px;">新日期</label>'
+            + '<input type="date" id="kw-v835-date" value="' + esc(dateStr) + '" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px;">'
+            + '</div>'
+            + '<div><label style="display:block; font-size:12.5px; color:#64748b; margin-bottom:4px;">新時段</label>'
+            + '<input type="time" id="kw-v835-time" value="' + esc(timeStr) + '" step="600" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px;">'
+            + '</div>'
+            : '')
+        +   '<div style="background:#fef3c7; padding:12px 14px; border-radius:8px;">'
+        +     '<div style="font-size:13.5px; color:#92400e; font-weight:600; margin-bottom:6px;">💊 是否需要櫃台為您代取藥物？</div>'
+        +     '<div style="font-size:12px; color:#92400e; margin-bottom:8px;">取消看診可能造成療程中斷，櫃台可協助先代取下次回診前所需的藥物。</div>'
+        +     '<label style="display:block; margin-bottom:4px; cursor:pointer; font-size:14px;"><input type="radio" name="kw-v835-meds" value="no" checked> 不需要</label>'
+        +     '<label style="display:block; cursor:pointer; font-size:14px;"><input type="radio" name="kw-v835-meds" value="yes"> 需要，請櫃台為我代取</label>'
+        +     '<div id="kw-v835-weeks-wrap" style="display:none; margin-top:8px;"><span style="font-size:13px; color:#92400e;">需要幾週的藥？</span> '
+        +       '<input type="number" id="kw-v835-weeks" min="1" max="12" value="4" style="width:60px; padding:4px 8px; border:1px solid #cbd5e1; border-radius:6px;"> 週</div>'
+        +   '</div>'
+        +   '<div><label style="display:block; font-size:12.5px; color:#64748b; margin-bottom:4px;">確認手機（需與預約時相同）</label>'
+        +     '<input type="tel" id="kw-v835-phone" value="' + esc(phone) + '" placeholder="09xxxxxxxx" style="width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px;">'
+        +   '</div>'
+        + '</div>'
+        + '<div style="padding:14px 20px; border-top:1px solid #e2e8f0; display:flex; gap:8px; justify-content:flex-end;">'
+        +   '<button id="kw-v835-close" style="padding:9px 16px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer;">關閉</button>'
+        +   '<button id="kw-v835-submit" style="padding:9px 18px; background:' + (mode==='cancel'?'#dc2626':'#2563eb') + '; color:#fff; border:none; border-radius:8px; font-weight:600; cursor:pointer;">' + (mode==='cancel'?'確認取消':'確認改約') + '</button>'
+        + '</div>';
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      card.querySelector('#kw-v835-close').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+
+      card.querySelectorAll('input[name="kw-v835-meds"]').forEach(function(r) {
+        r.addEventListener('change', function() {
+          card.querySelector('#kw-v835-weeks-wrap').style.display = card.querySelector('input[name="kw-v835-meds"]:checked').value === 'yes' ? 'block' : 'none';
+        });
+      });
+
+      card.querySelector('#kw-v835-submit').onclick = function() {
+        var inputPhone = card.querySelector('#kw-v835-phone').value.trim();
+        if (!inputPhone) { alert('請填手機號碼'); return; }
+        var needMeds = card.querySelector('input[name="kw-v835-meds"]:checked').value === 'yes';
+        var weeks = needMeds ? (Number(card.querySelector('#kw-v835-weeks').value) || 4) : 0;
+        var btn = this; btn.disabled = true; var orig = btn.textContent; btn.textContent = '處理中…';
+        var endpoint = mode === 'cancel' ? 'patientSelfCancel' : 'patientSelfReschedule';
+        var payload = { apptId: apptId, oldApptId: apptId, phone: inputPhone, needMeds: needMeds, weeks: weeks };
+        if (mode === 'resched') {
+          payload.date = card.querySelector('#kw-v835-date').value;
+          payload.startTime = card.querySelector('#kw-v835-time').value;
+        }
+        KW.api._post(endpoint, payload, false).then(function(res) {
+          btn.disabled = false; btn.textContent = orig;
+          if (res && res.ok) {
+            overlay.remove();
+            var msg = mode === 'cancel' ? '預約已取消' : '改約成功';
+            if (needMeds) msg += '。\n\n✅ 已通知櫃台為您代取 ' + weeks + ' 週藥物，請於下次回診前至' + (infoTxt.match(/(\S+院區)/) ? infoTxt.match(/(\S+院區)/)[1] : '院區') + '領取。';
+            alert(msg);
+            setTimeout(function(){ window.location.reload(); }, 800);
+          } else {
+            var err = res && res.error || '未知';
+            if (err === 'within_24h') {
+              alert('⚠ 此預約距離看診不到 24 小時，無法線上操作。\n請來電院區：' + (res.clinicPhone || ''));
+            } else if (err === 'phone_mismatch') {
+              alert('❌ 手機號碼與預約資料不符');
+            } else {
+              alert('失敗：' + err);
+            }
+          }
+        });
+      };
+    }
+
+    // ====== 櫃台側：拿藥代取清單 ======
+    function injectCounterBtn() {
+      var page = document.getElementById('page-counter');
+      if (!page) return;
+      // 找側邊選單，加「拿藥代取」項
+      var sidebar = page.querySelector('aside, nav, .sidebar, .counter-sidebar');
+      if (!sidebar) {
+        // 後備：找含「今日看診表」的容器
+        var nodes = page.querySelectorAll('*');
+        for (var i = 0; i < nodes.length; i++) {
+          if ((nodes[i].textContent||'').replace(/\s+/g,'').indexOf('今日看診表') >= 0 && nodes[i].children.length > 2) { sidebar = nodes[i].parentElement; break; }
+        }
+      }
+      if (!sidebar || sidebar.querySelector('#kw-v835-med-btn')) return;
+      var btn = document.createElement('div');
+      btn.id = 'kw-v835-med-btn';
+      btn.style.cssText = 'margin:8px 12px; padding:10px 14px; background:#fef3c7; color:#92400e; border-radius:8px; cursor:pointer; font-size:13.5px; display:flex; justify-content:space-between; align-items:center;';
+      btn.innerHTML = '<span>💊 拿藥代取</span><span id="kw-v835-medcnt" style="background:#dc2626; color:#fff; padding:1px 8px; border-radius:10px; font-size:11px;">0</span>';
+      sidebar.appendChild(btn);
+      btn.onclick = openMedList;
+      refreshMedCount();
+      setInterval(refreshMedCount, 30000);
+    }
+
+    function refreshMedCount() {
+      KW.api._post('getMedicationRequests', {}, true).then(function(res) {
+        if (!res || !res.ok) return;
+        var el = document.getElementById('kw-v835-medcnt');
+        if (el) {
+          el.textContent = res.data.length;
+          el.style.background = res.data.length > 0 ? '#dc2626' : '#94a3b8';
+        }
+      });
+    }
+
+    function openMedList() {
+      KW.api._post('getMedicationRequests', {}, true).then(function(res) {
+        var items = (res && res.ok) ? res.data : [];
+        var old = document.getElementById('kw-v835-med-list'); if (old) old.remove();
+        var overlay = document.createElement('div');
+        overlay.id = 'kw-v835-med-list';
+        overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:100001; display:flex; align-items:center; justify-content:center; padding:16px;';
+        var card = document.createElement('div');
+        card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:820px; max-height:92vh; display:flex; flex-direction:column;';
+        card.innerHTML =
+          '<div style="padding:14px 20px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center;">'
+          + '<div style="font-size:17px; font-weight:700;">💊 拿藥代取通知 <span style="font-size:13px; color:#94a3b8; font-weight:normal;">(' + items.length + ' 筆待處理)</span></div>'
+          + '<button id="kw-v835-lclose" style="background:#fff; border:1px solid #cbd5e1; border-radius:6px; padding:5px 12px; cursor:pointer;">關閉</button>'
+          + '</div>'
+          + '<div id="kw-v835-lbody" style="padding:16px 20px; overflow:auto;"></div>';
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+        card.querySelector('#kw-v835-lclose').onclick = function(){ overlay.remove(); };
+        overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+        var body = card.querySelector('#kw-v835-lbody');
+        if (!items.length) {
+          body.innerHTML = '<div style="color:#94a3b8; padding:30px; text-align:center;">目前沒有待處理的拿藥代取通知</div>';
+          return;
+        }
+        items.forEach(function(r) {
+          var el = document.createElement('div');
+          el.style.cssText = 'border:1px solid #fde68a; background:#fffbeb; border-radius:10px; padding:12px 14px; margin-bottom:8px;';
+          el.innerHTML =
+            '<div style="display:flex; justify-content:space-between; align-items:start; gap:10px;">'
+            + '<div style="flex:1;">'
+            +   '<div style="font-weight:700; font-size:15px;">' + esc(r['病人姓名']||'(未填名)') + ' <span style="font-weight:normal; color:#475569; font-size:13px;">· ' + esc(r['電話']||'') + '</span></div>'
+            +   '<div style="font-size:13px; color:#475569; margin-top:4px;">' + esc(r['院區']||'') + ' · 原預約 ' + esc(r['原看診日期']||'') + ' ' + esc(r['原時段']||'') + ' · 醫師 ' + esc(r['醫師']||'') + '</div>'
+            +   '<div style="font-size:13px; color:#92400e; margin-top:6px;"><strong>需代取 ' + (r['拿藥週數']||'?') + ' 週藥物</strong>（來源：' + esc(r['來源']||'') + '）</div>'
+            + '</div>'
+            + '<button data-act="done" style="padding:6px 12px; background:#16a34a; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px;">✓ 已備藥</button>'
+            + '</div>';
+          body.appendChild(el);
+          el.querySelector('[data-act="done"]').onclick = function() {
+            var note = prompt('備註（選填，例：已備藥 4 週、放於櫃台）', '');
+            var cu = state.counterUser || state.currentUser || {};
+            KW.api._post('markMedicationReady', { '通知編號': r['通知編號'], operator: cu.name || 'counter', note: note || '' }, true).then(function(rs) {
+              if (rs && rs.ok) {
+                el.style.opacity = '0.4';
+                el.querySelector('[data-act="done"]').textContent = '已備藥';
+                setTimeout(refreshMedCount, 300);
+              } else alert('失敗');
+            });
+          };
+        });
+      });
+    }
+
+    setInterval(function(){ injectPatientButtons(); injectCounterBtn(); }, 1500);
+
+    console.log('[KW v8.35] ✓ 病人自助取消改約 + 拿藥代取通知啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.35] 病人 24h 外自助取消改約 + 拿藥代取通知 結束 ===== -->
+
+<!-- ===== [v8.36] 全站小字體統一放大 開始 ===== -->
+<style id="kw-v836-style">
+  /* 將 inline style 裡常見的小字尺寸統一放大 */
+  [style*="font-size:10px"],
+  [style*="font-size: 10px"]     { font-size: 13px !important; }
+  [style*="font-size:10.5px"],
+  [style*="font-size: 10.5px"]   { font-size: 13px !important; }
+  [style*="font-size:11px"],
+  [style*="font-size: 11px"]     { font-size: 13.5px !important; }
+  [style*="font-size:11.5px"],
+  [style*="font-size: 11.5px"]   { font-size: 13.5px !important; }
+  [style*="font-size:12px"],
+  [style*="font-size: 12px"]     { font-size: 14px !important; }
+  [style*="font-size:12.5px"],
+  [style*="font-size: 12.5px"]   { font-size: 14px !important; }
+  [style*="font-size:13px"],
+  [style*="font-size: 13px"]     { font-size: 14.5px !important; }
+  [style*="font-size:13.5px"],
+  [style*="font-size: 13.5px"]   { font-size: 14.5px !important; }
+
+  /* 常見 utility class（Tailwind 風格） */
+  .text-xs   { font-size: 13.5px !important; }
+  .text-sm   { font-size: 14.5px !important; }
+  .text-base { font-size: 15.5px !important; }
+
+  /* <small> 標籤 */
+  small      { font-size: 13.5px !important; }
+
+  /* table 文字維持可讀 */
+  table { font-size: 14px; }
+  table th, table td { font-size: 14px !important; }
+  table small { font-size: 13px !important; }
+
+  /* 側邊欄選單字（櫃台/系統管理側邊 nav） */
+  aside *, nav * { font-size: 15px; }
+
+  /* 按鈕內字尺寸維持點擊好按 */
+  button[style*="font-size:11px"],
+  button[style*="font-size:11.5px"],
+  button[style*="font-size:12px"]   { font-size: 13.5px !important; padding-top:5px !important; padding-bottom:5px !important; }
+</style>
+<script>
+(function() {
+  // 確保 style 標籤就算被原始 head 蓋過，也維持載入
+  setInterval(function() {
+    if (!document.getElementById('kw-v836-style')) {
+      var s = document.createElement('style');
+      s.id = 'kw-v836-style';
+      s.textContent = document.querySelector('style#kw-v836-style-cache') ? document.querySelector('style#kw-v836-style-cache').textContent : '';
+      document.head.appendChild(s);
+    }
+  }, 5000);
+  console.log('[KW v8.36] ✓ 全站小字體統一放大');
+})();
+</script>
+<!-- ===== [v8.36] 全站小字體統一放大 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
