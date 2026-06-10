@@ -14424,8 +14424,9 @@
           if (!entries.length) {
             html += '<span style="color:#cbd5e1;">—</span>';
           } else {
+            entries.sort(function(a,b){ return String(a.start) < String(b.start) ? -1 : 1; });
             html += entries.map(function(e) {
-              return '<div style="margin-bottom:4px;"><span data-kw-doctor="' + esc(e.doctor) + '" style="color:#6d28d9; font-weight:600; border-bottom:1px dashed #c4b5fd;">' + esc(e.doctor) + ' 醫師</span><br><small style="color:#64748b;">' + esc(e.start) + '-' + esc(e.end) + '</small></div>';
+              return '<div style="margin-bottom:4px;"><span data-kw-doctor="' + esc(e.doctor) + '" style="color:#6d28d9; font-weight:600; border-bottom:1px dashed #c4b5fd;">' + esc(e.doctor) + ' 醫師</span><br><small style="color:#64748b;">' + esc(e.start) + '~' + esc(e.end) + '</small></div>';
             }).join('<hr style="margin:4px 0; border:none; border-top:1px dashed #e2e8f0;">');
           }
           html += '</td>';
@@ -14538,13 +14539,31 @@
         if (ia < 0) ia = 99; if (ib < 0) ib = 99;
         return ia - ib;
       });
+      function fmtT(v) {
+        if (!v) return '';
+        var s = String(v);
+        // ISO 日期字串如 1899-12-30T01:00:00.000Z → 取 HH:MM 並補 +8 時區
+        var m = s.match(/T(\d{2}):(\d{2})/);
+        if (m) {
+          var h = (parseInt(m[1], 10) + 8) % 24;
+          return String(h).padStart(2,'0') + ':' + m[2];
+        }
+        var m2 = s.match(/(\d{1,2}):(\d{2})/);
+        if (m2) return String(m2[1]).padStart(2,'0') + ':' + m2[2];
+        return s;
+      }
       var bucket = {};
       sessionsFound.forEach(function(sess){ bucket[sess] = [[],[],[],[],[],[],[]]; });
+      var seen = {};
       scheds.forEach(function(s) {
         var sess = s.session || '其他';
         var wd = Number(s.weekday);
         if (isNaN(wd) || wd < 0 || wd > 6) return;
-        bucket[sess][wd].push({ doctor: s.doctor || '', start: s.start || '', end: s.end || '' });
+        var startT = fmtT(s.start), endT = fmtT(s.end);
+        var key = sess + '|' + wd + '|' + (s.doctor||'') + '|' + startT + '|' + endT;
+        if (seen[key]) return;  // 去重
+        seen[key] = true;
+        bucket[sess][wd].push({ doctor: s.doctor || '', start: startT, end: endT });
       });
       var html = '<div style="font-size:15px; color:#1e40af; font-weight:700; margin-bottom:10px;">🏥 ' + esc(clinic) + ' · 門診表</div>'
         + '<div style="font-size:12.5px; color:#94a3b8; margin-bottom:10px;">💡 點醫師姓名可查看醫師介紹</div>'
@@ -14564,8 +14583,9 @@
           if (!entries.length) {
             html += '<span style="color:#cbd5e1;">—</span>';
           } else {
+            entries.sort(function(a,b){ return String(a.start) < String(b.start) ? -1 : 1; });
             html += entries.map(function(e) {
-              return '<div style="margin-bottom:4px;"><span data-kw-doctor="' + esc(e.doctor) + '" style="color:#6d28d9; font-weight:600; border-bottom:1px dashed #c4b5fd;">' + esc(e.doctor) + ' 醫師</span><br><small style="color:#64748b;">' + esc(e.start) + '-' + esc(e.end) + '</small></div>';
+              return '<div style="margin-bottom:4px;"><span data-kw-doctor="' + esc(e.doctor) + '" style="color:#6d28d9; font-weight:600; border-bottom:1px dashed #c4b5fd;">' + esc(e.doctor) + ' 醫師</span><br><small style="color:#64748b;">' + esc(e.start) + '~' + esc(e.end) + '</small></div>';
             }).join('<hr style="margin:4px 0; border:none; border-top:1px dashed #e2e8f0;">');
           }
           html += '</td>';
