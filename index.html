@@ -13099,17 +13099,15 @@
     var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
 
     // === A. 攔截病人端 Step 1：醫師卡點擊 → 開介紹 modal ===
-    // 用現成 class .doctor-card 直接抓（從 HTML 結構確認過）
+    // v8.43 改版：只在點擊「📋 介紹」小按鈕時才開 modal，卡身點擊保留給原本流程
     document.addEventListener('click', function(e) {
       var t = e.target;
       if (!t || !t.closest) return;
-      var card = t.closest('.doctor-card');
+      // 新規則：必須是 .kw-info-btn 或其子元素
+      var infoBtn = t.closest('.kw-info-btn');
+      if (!infoBtn) return;
+      var card = infoBtn.closest('.doctor-card');
       if (!card) return;
-      // v8.42+ bypass：當「預約這位醫師」按鈕觸發 click 時，直接放行讓原本委派 handler 跑
-      if (card.__kwv841_bookBypass) {
-        card.__kwv841_bookBypass = false;
-        return;  // 不擋、不開 modal
-      }
       // 取醫師名：從 .doctor-info 文字，regex 取「X 醫師」最長匹配
       var info = card.querySelector('.doctor-info') || card;
       var infoTxt = info.textContent || '';
@@ -15177,6 +15175,169 @@
 })();
 </script>
 <!-- ===== [v8.42] 醫師照片位置 !important 衝突修正 結束 ===== -->
+
+<!-- ===== [v8.43] 架構整理：介紹按鈕分離 + 咖色門診表 + 位置即時生效 開始 ===== -->
+<style id="kw-v843-style">
+  /* 介紹小按鈕 */
+  .kw-info-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(109, 40, 217, 0.1);
+    color: #6d28d9;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-left: 6px;
+    flex-shrink: 0;
+    border: none;
+  }
+  .kw-info-btn:hover {
+    background: #6d28d9;
+    color: #fff;
+    transform: scale(1.1);
+  }
+
+  /* === 咖色門診表（覆寫 v8.41 紫色版） === */
+  #kw-v838-schedule-view {
+    background: #fdfaf6 !important;
+    padding: 18px !important;
+    border-radius: 14px !important;
+    border: 1px solid #e8dccc !important;
+  }
+  #kw-v838-schedule-view > div:first-child {
+    font-size: 17px !important;
+    color: #8b6f47 !important;
+    margin-bottom: 10px !important;
+  }
+  #kw-v838-schedule-view > div:nth-child(2) {
+    font-size: 13px !important;
+    color: #a89070 !important;
+    margin-bottom: 12px !important;
+  }
+  #kw-v838-schedule-view table {
+    font-size: 15px !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+  #kw-v838-schedule-view table th {
+    font-size: 14.5px !important;
+    padding: 11px 8px !important;
+    background: #f5ede0 !important;
+    color: #8b6f47 !important;
+    border: 1px solid #e8dccc !important;
+    font-weight: 600 !important;
+    letter-spacing: normal !important;
+  }
+  #kw-v838-schedule-view table td {
+    font-size: 14px !important;
+    padding: 10px !important;
+    border: 1px solid #f0e6d6 !important;
+    vertical-align: top !important;
+    background: #fff !important;
+  }
+  #kw-v838-schedule-view table tbody td:first-child {
+    background: #faf3e8 !important;
+    font-weight: 700 !important;
+    font-size: 14.5px !important;
+    color: #8b6f47 !important;
+    text-align: center !important;
+    min-width: 80px !important;
+  }
+  #kw-v838-schedule-view table tbody td:not(:first-child):hover {
+    background: #fdfaf6 !important;
+  }
+  #kw-v838-schedule-view table [data-kw-doctor] {
+    font-size: 14.5px !important;
+    color: #6b4f2c !important;
+    font-weight: 600 !important;
+    border-bottom: 1px dashed #c4a682 !important;
+    padding-bottom: 1px !important;
+    cursor: pointer !important;
+    background: transparent !important;
+  }
+  #kw-v838-schedule-view table [data-kw-doctor]:hover {
+    color: #fff !important;
+    background: #8b6f47 !important;
+    border-bottom-color: #8b6f47 !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+  }
+  #kw-v838-schedule-view table small {
+    font-size: 12.5px !important;
+    color: #8b6f47 !important;
+    display: inline-block !important;
+    margin-top: 4px !important;
+    background: #faf3e8 !important;
+    padding: 1px 6px !important;
+    border-radius: 4px !important;
+  }
+  #kw-v838-schedule-view table hr {
+    border: none !important;
+    border-top: 1px dashed #e8dccc !important;
+    margin: 8px 0 !important;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+
+    // === 在每張 .doctor-card 注入 📋 介紹按鈕 ===
+    function injectInfoButtons() {
+      document.querySelectorAll('.doctor-card').forEach(function(card) {
+        if (card.querySelector('.kw-info-btn')) return;
+        var info = card.querySelector('.doctor-info');
+        if (!info) return;
+        // 找 info 內標題列（含「醫師」字樣的元素）
+        var leaves = info.querySelectorAll('*');
+        var nameEl = null;
+        for (var i = 0; i < leaves.length; i++) {
+          var el = leaves[i];
+          if (el.children.length === 0 && (el.textContent || '').indexOf('醫師') >= 0) {
+            nameEl = el; break;
+          }
+        }
+        if (!nameEl) nameEl = info.firstElementChild || info;
+        // 包成 flex（保留原本內容）
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'kw-info-btn';
+        btn.title = '查看醫師介紹';
+        btn.innerHTML = '📋';
+        // 加在 nameEl 的後面（或內部）
+        if (nameEl.parentElement) {
+          // 包一層 wrapper 確保並排
+          if (!nameEl.parentElement.style.display || nameEl.parentElement.style.display.indexOf('flex') < 0) {
+            nameEl.parentElement.style.display = 'flex';
+            nameEl.parentElement.style.alignItems = 'center';
+            nameEl.parentElement.style.justifyContent = 'space-between';
+          }
+          nameEl.parentElement.appendChild(btn);
+        }
+      });
+    }
+    setInterval(injectInfoButtons, 2000);
+    setTimeout(injectInfoButtons, 600);
+
+    console.log('[KW v8.43] ✓ 架構整理 + 咖色門診表 + 介紹按鈕分離啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.43] 架構整理：介紹按鈕分離 + 咖色門診表 + 位置即時生效 結束 ===== -->
 
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
