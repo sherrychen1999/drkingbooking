@@ -13105,6 +13105,11 @@
       if (!t || !t.closest) return;
       var card = t.closest('.doctor-card');
       if (!card) return;
+      // v8.42+ bypass：當「預約這位醫師」按鈕觸發 click 時，直接放行讓原本委派 handler 跑
+      if (card.__kwv841_bookBypass) {
+        card.__kwv841_bookBypass = false;
+        return;  // 不擋、不開 modal
+      }
       // 取醫師名：從 .doctor-info 文字，regex 取「X 醫師」最長匹配
       var info = card.querySelector('.doctor-info') || card;
       var infoTxt = info.textContent || '';
@@ -13494,7 +13499,7 @@
       };
     }
 
-    setInterval(injectToggle, 1200);
+    setInterval(injectToggle, 2000);
 
     console.log('[KW v8.32] ✓ Step 1 院區/醫師切換啟用');
   });
@@ -14455,7 +14460,7 @@
     }
 
     // 偵測：當 v8.32 顯示「返回院區選擇」時切換為門診表
-    setInterval(processClinicView, 800);
+    setInterval(processClinicView, 2000);
 
     // 也要處理「返回院區選擇」時清掉 schedule view
     document.addEventListener('click', function(e) {
@@ -14638,7 +14643,7 @@
         }
       }
     }
-    setInterval(fixModalAvatar2, 200);
+    setInterval(fixModalAvatar2, 1500);
 
     console.log('[KW v8.39] ✓ 院區 normalize + modal avatar 補強啟用');
   });
@@ -14710,7 +14715,7 @@
         }
       });
     }
-    setInterval(applyPositions, 800);
+    setInterval(applyPositions, 1500);
 
     // ===== 系統管理 醫師管理：點頭像 → 開放大調整 modal =====
     document.addEventListener('click', function(e) {
@@ -14964,29 +14969,9 @@
       var card = t.closest('.doctor-card');
       if (!card) return;
       if (card.__kwv841_bookBypass) {
-        card.__kwv841_bookBypass = false;
-        // 立即阻止 v8.31 跳 modal，但讓原本流程跑
-        e.stopImmediatePropagation();
-        // 不 preventDefault — 讓原本 click 行為（如有）繼續
-        // 順便：嘗試常見的 state 鍵
-        var info = card.querySelector('.doctor-info') || card;
-        var m = (info.textContent||'').match(/([一-龥]{2,4})\s*醫師/);
-        if (m && typeof state !== 'undefined') {
-          var sn = m[1];
-          state.selectedDoctor = sn;
-          state.selectedDoctorName = sn;
-          state.bookingDoctor = sn;
-          state.patientDoctor = sn;
-          var dr = (DOCTORS||[]).find(function(d){ return (d.shortName||(d.name||'').replace(/\s*醫師\s*$/,''))===sn; });
-          if (dr) {
-            state.selectedDoctorObj = dr;
-            state.selectedDoctorId = dr.id;
-          }
-        }
-        // 主動推進到 Step 2
-        if (typeof window.patientNext === 'function') {
-          try { window.patientNext(1); } catch (err) {}
-        }
+        // 不 stop / preventDefault — 讓事件正常冒泡到原本委派 handler（grid 上）
+        // v8.31 那邊靠相同的 bypass flag 跳過攔截，原始流程會自己處理 state + patientNext
+        return;
       }
     }, true);
 
@@ -15035,7 +15020,7 @@
         }
       }
     }
-    setInterval(fixModalPhoto, 200);
+    setInterval(fixModalPhoto, 1500);
 
     // ===== 3. v8.31 modal 的「預約這位醫師」按鈕：改成觸發 bypass =====
     function fixBookButton() {
@@ -15065,7 +15050,7 @@
         }
       };
     }
-    setInterval(fixBookButton, 200);
+    setInterval(fixBookButton, 1500);
 
     // ===== 4. 加速 v8.40 POSITIONS 載入週期 =====
     // 取得 v8.40 的 POSITIONS map（透過自己再撈一次並讓 v8.40 應用）
@@ -15091,13 +15076,107 @@
       });
     }
     reloadPositions();
-    setInterval(reloadPositions, 8000);
+    setInterval(reloadPositions, 15000);
 
     console.log('[KW v8.41] ✓ 三大 bug 修正 + 門診表美化啟用');
   });
 })();
 </script>
 <!-- ===== [v8.41] 三大 bug 修正 + 門診表美化 結束 ===== -->
+
+<!-- ===== [v8.42] 醫師照片位置 !important 衝突修正 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api) cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+
+    window.__KW842_POS = {};
+
+    function loadPositions() {
+      return KW.api._post('getAllDoctorProfiles', {}, true).then(function(res) {
+        if (!res || !res.ok) return;
+        (res.data || []).forEach(function(d) {
+          if (d.shortName && d.photoPos) window.__KW842_POS[d.shortName] = d.photoPos;
+        });
+        applyAll();
+      });
+    }
+
+    function applyAll() {
+      // 病人端 .doctor-card 的 img / avatar
+      document.querySelectorAll('.doctor-card').forEach(function(card) {
+        var info = card.querySelector('.doctor-info') || card;
+        var m = (info.textContent || '').match(/([一-龥]{2,4})\s*醫師/);
+        if (!m) return;
+        var pos = window.__KW842_POS[m[1]];
+        if (!pos) return;
+        // 重點：用 setProperty 'important' 蓋過 v8.37 的 CSS !important
+        var img = card.querySelector('img');
+        if (img) {
+          img.style.setProperty('object-position', pos, 'important');
+          img.style.setProperty('object-fit', 'cover', 'important');
+        }
+        var av = card.querySelector('.doctor-avatar, [class*="doctor-avatar"]');
+        if (av) {
+          av.style.setProperty('background-position', pos, 'important');
+          av.style.setProperty('background-size', 'cover', 'important');
+        }
+      });
+      // 醫師管理 table
+      document.querySelectorAll('table tbody tr').forEach(function(tr) {
+        var cells = tr.querySelectorAll('td');
+        var nameCell = cells[1];
+        if (!nameCell) return;
+        var tx = (nameCell.textContent || '').replace(/[\s上傳照片移除更換]/g, '');
+        var mm = tx.match(/[一-龥]{2,4}/);
+        if (!mm) return;
+        var pos = window.__KW842_POS[mm[0]];
+        if (!pos) return;
+        var img = nameCell.querySelector('img');
+        if (img) {
+          img.style.setProperty('object-position', pos, 'important');
+          img.style.setProperty('object-fit', 'cover', 'important');
+        }
+      });
+      // v8.31 modal 的 avatar 圓圈（80px）
+      var modal = document.getElementById('kw-v831-profile');
+      if (modal) {
+        var titleEl = modal.querySelector('div[style*="font-size:20px"]') || modal.querySelector('div[style*="font-size: 20px"]');
+        if (titleEl) {
+          var mm2 = (titleEl.textContent || '').match(/([一-龥]{2,4})\s*醫師/);
+          if (mm2) {
+            var pos2 = window.__KW842_POS[mm2[1]];
+            if (pos2) {
+              var divs = modal.querySelectorAll('div');
+              for (var i = 0; i < divs.length; i++) {
+                var cs = getComputedStyle(divs[i]);
+                var w = parseInt(cs.width, 10), h = parseInt(cs.height, 10);
+                if (w >= 70 && w <= 100 && h >= 70 && h <= 100 && cs.borderRadius && cs.borderRadius.indexOf('50%') >= 0) {
+                  divs[i].style.setProperty('background-position', pos2, 'important');
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    loadPositions();
+    setInterval(loadPositions, 15000);
+    setInterval(applyAll, 1500);  // 高頻套用，cover 動態載入
+
+    console.log('[KW v8.42] ✓ 照片位置 !important 修正啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.42] 醫師照片位置 !important 衝突修正 結束 ===== -->
 
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
