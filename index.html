@@ -14472,6 +14472,383 @@
 </script>
 <!-- ===== [v8.38] 院區別檢視點院區→門診表 結束 ===== -->
 
+<!-- ===== [v8.39] 院區名 normalize + modal avatar 修補 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+
+    // ===== 1. 院區名 normalize（v8.38 修補） =====
+    // 既有 v8.38 的 loadScheds 與 buildScheduleHTML 改用更寬鬆的院區比對
+    function normalizeClinicName(s) {
+      return String(s || '').trim().replace(/院區$/, '').trim();
+    }
+
+    // 不直接改 v8.38，攔在 click event 補資料：當點院區卡 → 重撈所有 schedules 並 patch 篩選
+    setInterval(function() {
+      var view = document.getElementById('kw-v838-schedule-view');
+      if (!view) return;
+      if (view.__kwv839Processed) return;
+      // 取目前 selected clinic
+      var backBtn = document.querySelector('#kw-v832-back-btn');
+      if (!backBtn) return;
+      var strong = backBtn.parentElement && backBtn.parentElement.querySelector('strong');
+      if (!strong) return;
+      var selectedClinic = strong.textContent.trim();
+      var selectedNorm = normalizeClinicName(selectedClinic);
+      // 只在 view 顯示「此院區目前沒有開診時段」時介入
+      var emptyHint = view.textContent && view.textContent.indexOf('沒有開診時段') >= 0;
+      if (!emptyHint) return;
+      view.__kwv839Processed = true;
+      // 重撈、用 normalize 比對重建表格
+      KW.api._get('getSchedules', {}).then(function(res) {
+        var scheds = (res && res.ok) ? res.data : [];
+        var matching = scheds.filter(function(s) {
+          if (s.enabled === false) return false;
+          if (normalizeClinicName(s.clinic) !== selectedNorm) return false;
+          return true;
+        });
+        if (!matching.length) return;
+        view.innerHTML = buildScheduleHTML(selectedClinic, matching);
+        view.querySelectorAll('[data-kw-doctor]').forEach(function(el) {
+          el.style.cursor = 'pointer';
+          el.addEventListener('click', function() { showProfileFor(el.dataset.kwDoctor); });
+        });
+      });
+    }, 1000);
+
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+    var WEEKDAYS_LABEL = ['週日','週一','週二','週三','週四','週五','週六'];
+
+    function buildScheduleHTML(clinic, scheds) {
+      var sessionOrder = ['早診','午診','晚診','減重專診','減重'];
+      var sessionsFound = [];
+      scheds.forEach(function(s) {
+        var sess = s.session || '其他';
+        if (sessionsFound.indexOf(sess) < 0) sessionsFound.push(sess);
+      });
+      sessionsFound.sort(function(a, b) {
+        var ia = sessionOrder.indexOf(a), ib = sessionOrder.indexOf(b);
+        if (ia < 0) ia = 99; if (ib < 0) ib = 99;
+        return ia - ib;
+      });
+      var bucket = {};
+      sessionsFound.forEach(function(sess){ bucket[sess] = [[],[],[],[],[],[],[]]; });
+      scheds.forEach(function(s) {
+        var sess = s.session || '其他';
+        var wd = Number(s.weekday);
+        if (isNaN(wd) || wd < 0 || wd > 6) return;
+        bucket[sess][wd].push({ doctor: s.doctor || '', start: s.start || '', end: s.end || '' });
+      });
+      var html = '<div style="font-size:15px; color:#1e40af; font-weight:700; margin-bottom:10px;">🏥 ' + esc(clinic) + ' · 門診表</div>'
+        + '<div style="font-size:12.5px; color:#94a3b8; margin-bottom:10px;">💡 點醫師姓名可查看醫師介紹</div>'
+        + '<div style="overflow-x:auto;">'
+        + '<table style="width:100%; border-collapse:collapse; font-size:13.5px; min-width:680px;">'
+        + '<thead><tr><th style="border:1px solid #e2e8f0; background:#f1f5f9; padding:8px; width:90px;">時段</th>';
+      var order = [1,2,3,4,5,6,0];
+      order.forEach(function(wd) {
+        html += '<th style="border:1px solid #e2e8f0; background:#f1f5f9; padding:8px;">' + WEEKDAYS_LABEL[wd] + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+      sessionsFound.forEach(function(sess) {
+        html += '<tr><td style="border:1px solid #e2e8f0; background:#eff6ff; padding:8px; font-weight:600; text-align:center;">' + esc(sess) + '</td>';
+        order.forEach(function(wd) {
+          var entries = bucket[sess][wd] || [];
+          html += '<td style="border:1px solid #e2e8f0; padding:8px; vertical-align:top; min-width:90px;">';
+          if (!entries.length) {
+            html += '<span style="color:#cbd5e1;">—</span>';
+          } else {
+            html += entries.map(function(e) {
+              return '<div style="margin-bottom:4px;"><span data-kw-doctor="' + esc(e.doctor) + '" style="color:#6d28d9; font-weight:600; border-bottom:1px dashed #c4b5fd;">' + esc(e.doctor) + ' 醫師</span><br><small style="color:#64748b;">' + esc(e.start) + '-' + esc(e.end) + '</small></div>';
+            }).join('<hr style="margin:4px 0; border:none; border-top:1px dashed #e2e8f0;">');
+          }
+          html += '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      return html;
+    }
+
+    function showProfileFor(shortName) {
+      if (!shortName) return;
+      var grid = document.getElementById('patient-doctor-grid') || document.querySelector('.doctor-grid');
+      if (!grid) return;
+      var cards = grid.querySelectorAll('.doctor-card');
+      for (var i = 0; i < cards.length; i++) {
+        var info = cards[i].querySelector('.doctor-info');
+        var txt = (info ? info.textContent : cards[i].textContent) || '';
+        if (txt.indexOf(shortName + ' 醫師') >= 0 || txt.indexOf(shortName + '醫師') >= 0) {
+          cards[i].click();
+          return;
+        }
+      }
+    }
+
+    // ===== 2. modal avatar：更可靠的偵測 + 同步照片 =====
+    function fixModalAvatar2() {
+      var modal = document.getElementById('kw-v831-profile');
+      if (!modal || modal.__kwv839Fixed) return;
+      var photo = window.__kwv837LastPhoto || '';
+      // 從目前選的卡再撈一次
+      if (!photo && window.__kwv837LastCard) {
+        var img = window.__kwv837LastCard.querySelector('img');
+        if (img && img.src) photo = img.src;
+      }
+      if (!photo) return;
+      // 找 modal 內第一個 80×80 圓形 div（更寬鬆比對：getComputedStyle）
+      var divs = modal.querySelectorAll('div');
+      for (var i = 0; i < divs.length; i++) {
+        var d = divs[i];
+        var cs = getComputedStyle(d);
+        var w = parseInt(cs.width, 10), h = parseInt(cs.height, 10);
+        var radius = cs.borderRadius;
+        if (w >= 70 && w <= 90 && h >= 70 && h <= 90 && (radius === '50%' || w === h)) {
+          // 強制改背景為照片
+          d.style.cssText += '; background-image:url("' + photo + '"); background-size:cover; background-position:center 22%; background-repeat:no-repeat; color:transparent;';
+          d.textContent = '';
+          modal.__kwv839Fixed = true;
+          break;
+        }
+      }
+    }
+    setInterval(fixModalAvatar2, 200);
+
+    console.log('[KW v8.39] ✓ 院區 normalize + modal avatar 補強啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.39] 院區名 normalize + modal avatar 修補 結束 ===== -->
+
+<!-- ===== [v8.40] 醫師照片位置調整 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+
+    var POSITIONS = {};   // shortName → "X% Y%"
+    function loadPositions() {
+      return KW.api._post('getAllDoctorProfiles', {}, true).then(function(res) {
+        if (!res || !res.ok) return;
+        (res.data || []).forEach(function(d) {
+          if (d.shortName && d.photoPos) POSITIONS[d.shortName] = d.photoPos;
+        });
+      });
+    }
+    loadPositions();
+    setInterval(loadPositions, 30000);
+
+    // ===== 自動套用 object-position 到所有醫師卡 / modal 頭像 =====
+    function applyPositions() {
+      // 病人端 .doctor-card
+      document.querySelectorAll('.doctor-card').forEach(function(card) {
+        var info = card.querySelector('.doctor-info') || card;
+        var txt = info.textContent || '';
+        var m = txt.match(/([一-龥]{2,4})\s*醫師/);
+        if (!m) return;
+        var name = m[1];
+        var pos = POSITIONS[name];
+        var img = card.querySelector('img');
+        if (img && pos) {
+          img.style.objectPosition = pos;
+          img.style.objectFit = 'cover';
+        }
+        // background-image 路徑也套
+        var av = card.querySelector('.doctor-avatar, [class*="doctor-avatar"]');
+        if (av && pos) {
+          av.style.backgroundPosition = pos;
+          av.style.backgroundSize = 'cover';
+        }
+      });
+      // 系統管理 醫師管理 table 內的頭像
+      document.querySelectorAll('table tbody tr').forEach(function(tr) {
+        var cells = tr.querySelectorAll('td');
+        var nameCell = cells[1];
+        if (!nameCell) return;
+        var name = '';
+        var tx = (nameCell.textContent || '').replace(/[\s上傳照片移除更換]/g, '');
+        var mm = tx.match(/[一-龥]{2,4}/);
+        if (mm) name = mm[0];
+        var pos = POSITIONS[name];
+        var img = nameCell.querySelector('img');
+        if (img && pos) {
+          img.style.objectPosition = pos;
+          img.style.objectFit = 'cover';
+        }
+      });
+    }
+    setInterval(applyPositions, 800);
+
+    // ===== 系統管理 醫師管理：點頭像 → 開放大調整 modal =====
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      // 必須在醫師管理頁的 table 內
+      var tr = (t.closest ? t.closest('tr') : null);
+      if (!tr) return;
+      var tbl = tr.closest('table');
+      if (!tbl) return;
+      var heads = tbl.querySelectorAll('thead th');
+      var headTxts = Array.prototype.map.call(heads, function(h){ return h.textContent.replace(/\s+/g,''); });
+      var hasDocId = headTxts.some(function(s){ return s.indexOf('醫師編號') >= 0; });
+      var hasSlot = headTxts.some(function(s){ return s.indexOf('時段限額') >= 0; });
+      if (!hasDocId && !hasSlot) return;
+      // 點的必須是頭像 cell / 圖片 / 圓圈
+      var nameCell = tr.querySelectorAll('td')[1];
+      if (!nameCell || !nameCell.contains(t)) return;
+      // 是否點到 img 或 avatar 圓圈
+      var avatar = t.closest && (t.closest('img') || t.closest('.doctor-avatar, [class*="avatar"]'));
+      if (!avatar && t.tagName !== 'IMG') {
+        // 也容許點到「上傳照片/移除/更換」以外的部分
+        var clickedTxt = (t.textContent || '').replace(/\s+/g,'');
+        if (clickedTxt === '上傳照片' || clickedTxt === '移除' || clickedTxt === '更換') return;
+        // 找頭像
+        avatar = nameCell.querySelector('img') || nameCell.querySelector('.doctor-avatar, [class*="avatar"]');
+      }
+      if (!avatar) return;
+      // 取醫師名
+      var nameTxt = (nameCell.textContent || '').replace(/[\s上傳照片移除更換]/g, '');
+      var nm = nameTxt.match(/[一-龥]{2,4}/);
+      if (!nm) return;
+      var shortName = nm[0];
+      // 取得圖片 URL
+      var imgUrl = '';
+      if (avatar.tagName === 'IMG') imgUrl = avatar.src;
+      else {
+        var img2 = avatar.querySelector('img');
+        if (img2) imgUrl = img2.src;
+        else {
+          var bg = getComputedStyle(avatar).backgroundImage;
+          var bgm = bg && bg.match(/url\(["']?(.*?)["']?\)/);
+          if (bgm) imgUrl = bgm[1];
+        }
+      }
+      if (!imgUrl) { alert('此醫師尚未上傳照片，請先上傳照片再調整位置'); return; }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openPositionModal(shortName, imgUrl);
+    }, true);
+
+    function openPositionModal(shortName, imgUrl) {
+      var existing = document.getElementById('kw-v840-pos'); if (existing) existing.remove();
+      var startPos = POSITIONS[shortName] || '50% 22%';
+      var pm = startPos.match(/(-?\d+(?:\.\d+)?)%\s+(-?\d+(?:\.\d+)?)%/);
+      var px = pm ? Number(pm[1]) : 50;
+      var py = pm ? Number(pm[2]) : 22;
+
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-v840-pos';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.6); z-index:100001; display:flex; align-items:center; justify-content:center; padding:16px;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:520px; box-shadow:0 20px 60px rgba(0,0,0,.3);';
+      card.innerHTML =
+        '<div style="padding:14px 20px; border-bottom:1px solid #e2e8f0;">'
+        + '<div style="font-size:17px; font-weight:700;">🖼 調整照片位置：' + esc(shortName) + '</div>'
+        + '<div style="font-size:12.5px; color:#94a3b8; margin-top:4px;">用方向鈕微調照片在頭像圓圈內的位置，存檔後病人端同步生效</div>'
+        + '</div>'
+        + '<div style="padding:20px; display:flex; flex-direction:column; align-items:center; gap:14px;">'
+        +   '<div id="kw-v840-preview" style="width:260px; height:260px; border-radius:50%; overflow:hidden; background:#f1f5f9; border:3px solid #cbd5e1;">'
+        +     '<img src="' + esc(imgUrl) + '" id="kw-v840-img" style="width:100%; height:100%; object-fit:cover; object-position:' + esc(px) + '% ' + esc(py) + '%;">'
+        +   '</div>'
+        +   '<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; max-width:220px; width:100%;">'
+        +     '<div></div>'
+        +     '<button data-dir="up" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:16px;">▲</button>'
+        +     '<div></div>'
+        +     '<button data-dir="left" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:16px;">◀</button>'
+        +     '<button data-dir="reset" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:11.5px;">重置</button>'
+        +     '<button data-dir="right" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:16px;">▶</button>'
+        +     '<div></div>'
+        +     '<button data-dir="down" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:16px;">▼</button>'
+        +     '<div></div>'
+        +   '</div>'
+        +   '<div style="font-size:12px; color:#64748b;">位置：<span id="kw-v840-coord">' + px + '% / ' + py + '%</span></div>'
+        +   '<div style="font-size:11.5px; color:#94a3b8;">每次按鍵移動 2%</div>'
+        + '</div>'
+        + '<div style="padding:14px 20px; border-top:1px solid #e2e8f0; display:flex; gap:8px; justify-content:flex-end;">'
+        +   '<button id="kw-v840-cancel" style="padding:9px 16px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer;">關閉</button>'
+        +   '<button id="kw-v840-save" style="padding:9px 18px; background:#2563eb; color:#fff; border:none; border-radius:8px; font-weight:600; cursor:pointer;">✓ 存檔</button>'
+        + '</div>';
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      card.querySelector('#kw-v840-cancel').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+
+      var imgPrev = card.querySelector('#kw-v840-img');
+      var coord = card.querySelector('#kw-v840-coord');
+      function update() {
+        imgPrev.style.objectPosition = px + '% ' + py + '%';
+        coord.textContent = px + '% / ' + py + '%';
+      }
+      card.querySelectorAll('[data-dir]').forEach(function(b) {
+        b.addEventListener('click', function() {
+          var d = b.dataset.dir;
+          if (d === 'up')    py = Math.max(0, py - 2);
+          if (d === 'down')  py = Math.min(100, py + 2);
+          if (d === 'left')  px = Math.max(0, px - 2);
+          if (d === 'right') px = Math.min(100, px + 2);
+          if (d === 'reset') { px = 50; py = 22; }
+          update();
+        });
+      });
+      // 鍵盤支援
+      var keyHandler = function(e) {
+        if (e.key === 'ArrowUp') { e.preventDefault(); py = Math.max(0, py-2); update(); }
+        if (e.key === 'ArrowDown') { e.preventDefault(); py = Math.min(100, py+2); update(); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); px = Math.max(0, px-2); update(); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); px = Math.min(100, px+2); update(); }
+      };
+      document.addEventListener('keydown', keyHandler);
+      overlay.__cleanup = function(){ document.removeEventListener('keydown', keyHandler); };
+      var origRemove = overlay.remove.bind(overlay);
+      overlay.remove = function() { if (overlay.__cleanup) overlay.__cleanup(); origRemove(); };
+
+      card.querySelector('#kw-v840-save').onclick = function() {
+        var posStr = px + '% ' + py + '%';
+        var b = this; b.disabled = true; b.textContent = '存檔中…';
+        // 先撈現有 profile，避免覆寫其他欄
+        KW.api._post('getDoctorProfile', { shortName: shortName }, false).then(function(res) {
+          var prev = (res && res.ok && res.data) || {};
+          return KW.api._post('saveDoctorProfile', {
+            '醫師短名': shortName,
+            '醫師全名': prev.fullName || '',
+            '一句話': prev.tagline || '',
+            '介紹文字': prev.bio || '',
+            'Drive資料夾ID': prev.folderId || '',
+            '照片位置': posStr
+          }, true);
+        }).then(function(rs) {
+          b.disabled = false; b.textContent = '✓ 存檔';
+          if (rs && rs.ok) {
+            POSITIONS[shortName] = posStr;
+            applyPositions();
+            overlay.remove();
+            if (typeof showToast === 'function') showToast('位置已存檔', 'success');
+          } else {
+            alert('存檔失敗：' + (rs && rs.error ? rs.error : '未知'));
+          }
+        });
+      };
+    }
+
+    console.log('[KW v8.40] ✓ 醫師照片位置調整啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.40] 醫師照片位置調整 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
