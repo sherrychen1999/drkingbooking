@@ -14201,6 +14201,277 @@
 </script>
 <!-- ===== [v8.36] 全站小字體統一放大 結束 ===== -->
 
+<!-- ===== [v8.37] 介紹 modal 三 bug 修正 開始 ===== -->
+<style id="kw-v837-style">
+  /* 1. 照片預設往上偏 25%，避免頭部被截掉 */
+  .doctor-avatar img,
+  .doctor-card img,
+  img.doctor-photo,
+  [class*="doctor-avatar"] img {
+    object-position: center 22% !important;
+    object-fit: cover !important;
+  }
+  .doctor-avatar,
+  [class*="doctor-avatar"] {
+    background-position: center 22% !important;
+    background-size: cover !important;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+
+    // === Bug 修法：用 capture 攔截醫師卡點擊，多做幾件事 ===
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var card = t.closest('.doctor-card');
+      if (!card) return;
+      // bypass flag：來自「預約這位醫師」按鈕的程式點擊
+      if (card.__kwv837_bypass) {
+        card.__kwv837_bypass = false;
+        return; // 放行原流程
+      }
+      // 取卡片內 photo（如有）
+      var imgEl = card.querySelector('img');
+      var photoSrc = '';
+      if (imgEl && imgEl.src) photoSrc = imgEl.src;
+      else {
+        // 試 background-image
+        var av = card.querySelector('.doctor-avatar, [class*="doctor-avatar"]');
+        if (av) {
+          var bg = (av.style.backgroundImage || getComputedStyle(av).backgroundImage || '');
+          var m = bg.match(/url\(["']?(.*?)["']?\)/);
+          if (m) photoSrc = m[1];
+        }
+      }
+      // 把 card 跟 photoSrc 放到 modal 上下文（讓 v8.31 用）
+      window.__kwv837LastCard = card;
+      window.__kwv837LastPhoto = photoSrc;
+    }, true);
+
+    // 攔截 v8.31 modal 出現後，替換 avatar 為實際照片
+    function fixModalAvatar() {
+      var modal = document.getElementById('kw-v831-profile');
+      if (!modal || modal.__kwv837Fixed) return;
+      var photo = window.__kwv837LastPhoto || '';
+      if (!photo) return;
+      // 找 modal 內的 avatar 圓圈（80px 圓）
+      var avatars = modal.querySelectorAll('div');
+      for (var i = 0; i < avatars.length; i++) {
+        var a = avatars[i];
+        if (a.style.borderRadius === '50%' && a.style.width === '80px') {
+          // 換成照片背景
+          a.style.background = '#a78bfa center/cover no-repeat url("' + photo + '")';
+          a.style.backgroundPosition = 'center 22%';
+          a.textContent = '';  // 清掉字母 avatar
+          modal.__kwv837Fixed = true;
+          break;
+        }
+      }
+    }
+
+    // 攔截「預約這位醫師」按鈕：改成觸發原本卡片點擊（帶 bypass）
+    function fixBookButton() {
+      var modal = document.getElementById('kw-v831-profile');
+      if (!modal || modal.__kwv837BtnFixed) return;
+      var bookBtn = modal.querySelector('#kw-v831-book');
+      if (!bookBtn) return;
+      modal.__kwv837BtnFixed = true;
+      bookBtn.onclick = function() {
+        modal.remove();
+        var card = window.__kwv837LastCard;
+        if (!card) return;
+        card.__kwv837_bypass = true;
+        // 程式觸發 click，這次會被上面的 listener 放行
+        card.click();
+      };
+    }
+
+    // 觀察 modal 出現
+    var obs = new MutationObserver(function() {
+      setTimeout(function() { fixModalAvatar(); fixBookButton(); }, 50);
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+
+    console.log('[KW v8.37] ✓ 介紹 modal avatar/預約按鈕同步修正啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.37] 介紹 modal 三 bug 修正 結束 ===== -->
+
+<!-- ===== [v8.38] 院區別檢視點院區→門診表 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api) cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+    var SCHEDULES_CACHE = null;
+    function loadScheds() {
+      if (SCHEDULES_CACHE) return Promise.resolve(SCHEDULES_CACHE);
+      return KW.api._get('getSchedules', {}).then(function(res) {
+        SCHEDULES_CACHE = (res && res.ok) ? res.data : [];
+        return SCHEDULES_CACHE;
+      })['catch'](function(){ SCHEDULES_CACHE = []; return []; });
+    }
+
+    var WEEKDAYS_LABEL = ['週日','週一','週二','週三','週四','週五','週六'];
+    var SESSIONS_FOR_DIET = ['減重專診'];  // 減重預約系統 → 只顯示減重專診時段
+
+    // 觀察 v8.32 的 SELECTED_CLINIC：用 DOM 反映
+    // 每次「返回院區選擇」/「點某院區」會改變 picker 狀態，這裡我們攔截相同事件
+    function processClinicView() {
+      // 找 picker 是否顯示「← 返回院區選擇」狀態
+      var backBtn = document.querySelector('#kw-v832-back-btn');
+      if (!backBtn) return;
+      var selectedClinic = '';
+      // 從返回按鈕旁邊的 strong 取得院區名
+      var strong = backBtn.parentElement && backBtn.parentElement.querySelector('strong');
+      if (strong) selectedClinic = strong.textContent.trim();
+      if (!selectedClinic) return;
+
+      // 如果已經有 schedule view 對應這個 clinic，不重做
+      var existing = document.getElementById('kw-v838-schedule-view');
+      if (existing && existing.dataset.clinic === selectedClinic) return;
+      if (existing) existing.remove();
+
+      // 把原本被 v8.32 顯示的醫師 grid 重新隱藏（v8.32 那邊會展開）
+      var docGrid = document.getElementById('patient-doctor-grid') || document.querySelector('.doctor-grid');
+      if (docGrid) docGrid.style.display = 'none';
+
+      // 建立 schedule view
+      var view = document.createElement('div');
+      view.id = 'kw-v838-schedule-view';
+      view.dataset.clinic = selectedClinic;
+      view.style.cssText = 'margin-top:14px;';
+      view.innerHTML = '<div style="color:#94a3b8; padding:30px; text-align:center;">載入門診表...</div>';
+      // 插入到 back 按鈕的後面
+      backBtn.parentElement.parentElement.appendChild(view);
+
+      loadScheds().then(function(scheds) {
+        var matching = scheds.filter(function(s) {
+          if (!s.enabled) return false;
+          if (s.clinic !== selectedClinic) return false;
+          // 全部 session 都顯示（早診/午診/晚診/減重專診 都收）
+          return true;
+        });
+        if (!matching.length) {
+          view.innerHTML = '<div style="padding:24px; color:#94a3b8; text-align:center;">此院區目前沒有開診時段</div>';
+          return;
+        }
+        view.innerHTML = buildScheduleHTML(selectedClinic, matching);
+        // 醫師名稱點擊 → 觸發 profile modal
+        view.querySelectorAll('[data-kw-doctor]').forEach(function(el) {
+          el.style.cursor = 'pointer';
+          el.addEventListener('click', function() { showProfileFor(el.dataset.kwDoctor); });
+        });
+      });
+    }
+
+    function buildScheduleHTML(clinic, scheds) {
+      // 取得所有時段帶（依出現順序，並對齊常見排序：早診/午診/晚診/減重專診）
+      var sessionOrder = ['早診','午診','晚診','減重專診','減重'];
+      var sessionsFound = [];
+      scheds.forEach(function(s) {
+        var sess = s.session || '其他';
+        if (sessionsFound.indexOf(sess) < 0) sessionsFound.push(sess);
+      });
+      sessionsFound.sort(function(a, b) {
+        var ia = sessionOrder.indexOf(a), ib = sessionOrder.indexOf(b);
+        if (ia < 0) ia = 99; if (ib < 0) ib = 99;
+        return ia - ib;
+      });
+
+      // 依時段 + 星期幾分桶
+      var bucket = {};   // bucket[session][weekday] = [ {doctor, start, end} ]
+      sessionsFound.forEach(function(sess){ bucket[sess] = [[],[],[],[],[],[],[]]; });
+      scheds.forEach(function(s) {
+        var sess = s.session || '其他';
+        var wd = Number(s.weekday);
+        if (isNaN(wd) || wd < 0 || wd > 6) return;
+        bucket[sess][wd].push({ doctor: s.doctor || '', start: s.start || '', end: s.end || '' });
+      });
+
+      var html = '<div style="font-size:15px; color:#1e40af; font-weight:700; margin-bottom:10px;">🏥 ' + esc(clinic) + ' · 門診表</div>'
+        + '<div style="font-size:12.5px; color:#94a3b8; margin-bottom:10px;">💡 點醫師姓名可查看醫師介紹</div>'
+        + '<div style="overflow-x:auto;">'
+        + '<table style="width:100%; border-collapse:collapse; font-size:13.5px; min-width:680px;">'
+        + '<thead><tr><th style="border:1px solid #e2e8f0; background:#f1f5f9; padding:8px; width:90px;">時段</th>';
+      // 週一~週日 (1..6, 0)
+      var order = [1,2,3,4,5,6,0];
+      order.forEach(function(wd) {
+        html += '<th style="border:1px solid #e2e8f0; background:#f1f5f9; padding:8px;">' + WEEKDAYS_LABEL[wd] + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+      sessionsFound.forEach(function(sess) {
+        html += '<tr><td style="border:1px solid #e2e8f0; background:#eff6ff; padding:8px; font-weight:600; text-align:center;">' + esc(sess) + '</td>';
+        order.forEach(function(wd) {
+          var entries = bucket[sess][wd] || [];
+          html += '<td style="border:1px solid #e2e8f0; padding:8px; vertical-align:top; min-width:90px;">';
+          if (!entries.length) {
+            html += '<span style="color:#cbd5e1;">—</span>';
+          } else {
+            html += entries.map(function(e) {
+              return '<div style="margin-bottom:4px;"><span data-kw-doctor="' + esc(e.doctor) + '" style="color:#6d28d9; font-weight:600; border-bottom:1px dashed #c4b5fd;">' + esc(e.doctor) + ' 醫師</span><br><small style="color:#64748b;">' + esc(e.start) + '-' + esc(e.end) + '</small></div>';
+            }).join('<hr style="margin:4px 0; border:none; border-top:1px dashed #e2e8f0;">');
+          }
+          html += '</td>';
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      return html;
+    }
+
+    function showProfileFor(shortName) {
+      if (!shortName) return;
+      // 找對應的 doctor-card（即使隱藏也能 click）
+      var grid = document.getElementById('patient-doctor-grid') || document.querySelector('.doctor-grid');
+      if (!grid) return;
+      var cards = grid.querySelectorAll('.doctor-card');
+      for (var i = 0; i < cards.length; i++) {
+        var info = cards[i].querySelector('.doctor-info');
+        var txt = (info ? info.textContent : cards[i].textContent) || '';
+        if (txt.indexOf(shortName + ' 醫師') >= 0 || txt.indexOf(shortName + '醫師') >= 0) {
+          // 觸發 click → v8.31 介紹 modal
+          cards[i].click();
+          return;
+        }
+      }
+    }
+
+    // 偵測：當 v8.32 顯示「返回院區選擇」時切換為門診表
+    setInterval(processClinicView, 800);
+
+    // 也要處理「返回院區選擇」時清掉 schedule view
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t || !t.id) return;
+      if (t.id === 'kw-v832-back-btn' || (t.parentElement && t.parentElement.id === 'kw-v832-back-btn')) {
+        var v = document.getElementById('kw-v838-schedule-view');
+        if (v) v.remove();
+      }
+    }, true);
+
+    console.log('[KW v8.38] ✓ 院區門診表呈現啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.38] 院區別檢視點院區→門診表 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
