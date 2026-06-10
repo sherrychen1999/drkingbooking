@@ -12796,7 +12796,295 @@
 </script>
 <!-- ===== [v8.26] Drive 班表同步 + 審核 + 衝突 + 2D看板 結束 ===== -->
 
-<!-- ===== 後續累積改動會加在這下方 ===== -->
+<!-- ===== [v8.27] 快速登錄時段依排班動態過濾 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
 
+  waitReady(function() {
+
+    var SCHEDULES_CACHE = null;
+    function loadSchedules() {
+      if (SCHEDULES_CACHE) return Promise.resolve(SCHEDULES_CACHE);
+      return KW.api._get('getSchedules', {}).then(function(res) {
+        SCHEDULES_CACHE = (res && res.ok && res.data) ? res.data : [];
+        return SCHEDULES_CACHE;
+      })['catch'](function(){ SCHEDULES_CACHE = []; return []; });
+    }
+
+    function findField(kind) {
+      // 先試 v8.13 已知 id
+      var byId = { clinic:'counter-quick-clinic', doctor:'counter-quick-doctor',
+                   date:'counter-quick-date', hour:'counter-quick-hour', minute:'counter-quick-min' }[kind];
+      if (byId && document.getElementById(byId)) return document.getElementById(byId);
+      // 回退：用 placeholder/type/位置判斷
+      if (kind === 'date') {
+        var d = document.querySelector('#page-counter input[type="date"]') || document.querySelector('input[type="date"]');
+        return d;
+      }
+      if (kind === 'hour' || kind === 'minute') {
+        var sels = document.querySelectorAll('#page-counter select, select');
+        for (var i = 0; i < sels.length; i++) {
+          var s = sels[i];
+          var opts = Array.prototype.map.call(s.options, function(o){return String(o.value||o.textContent).trim();});
+          if (kind === 'hour' && opts.indexOf('20') >= 0 && opts.indexOf('23') >= 0 && opts.indexOf('00') >= 0 && opts.length <= 26) return s;
+          if (kind === 'minute' && opts.indexOf('00') >= 0 && opts.indexOf('50') >= 0 && opts.length <= 8) return s;
+        }
+      }
+      return null;
+    }
+
+    function getActiveFields() {
+      return {
+        clinic: findField('clinic'),
+        doctor: findField('doctor'),
+        date:   findField('date'),
+        hour:   findField('hour'),
+        minute: findField('minute')
+      };
+    }
+
+    // 給日期，回傳 0~6（週日=0）
+    function weekdayOf(dateStr) {
+      if (!dateStr) return -1;
+      var d = new Date(dateStr);
+      if (isNaN(d.getTime())) return -1;
+      return d.getDay();
+    }
+
+    function compileValidSlots(schedules, clinic, dateStr, doctorVal) {
+      // 回傳 Set<'HH:MM'>（每 10 分為一格）
+      var weekday = weekdayOf(dateStr);
+      if (weekday < 0) return new Set();
+      var slots = new Set();
+      schedules.forEach(function(s) {
+        if (!s || s.enabled === false) return;
+        if (clinic && s.clinic !== clinic) return;
+        if (Number(s.weekday) !== weekday) return;
+        // 生效日：若 startDate 比 dateStr 大則跳過
+        if (s.startDate) {
+          var sd = String(s.startDate).slice(0,10);
+          if (sd > dateStr) return;
+        }
+        // 指定醫師：過濾
+        if (doctorVal && doctorVal !== '__any__' && doctorVal !== '') {
+          var docName = String(s.doctor || '').replace(/\s*醫師\s*$/, '');
+          var pickName = String(doctorVal).replace(/\s*醫師\s*$/, '');
+          if (docName !== pickName) return;
+        }
+        // 把 start~end 拆成 10 分鐘格
+        var start = String(s.start || ''), end = String(s.end || '');
+        var sm = start.match(/(\d{1,2}):(\d{2})/), em = end.match(/(\d{1,2}):(\d{2})/);
+        if (!sm || !em) return;
+        var sMin = parseInt(sm[1],10)*60 + parseInt(sm[2],10);
+        var eMin = parseInt(em[1],10)*60 + parseInt(em[2],10);
+        for (var m = sMin; m < eMin; m += 10) {
+          slots.add(String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0'));
+        }
+      });
+      return slots;
+    }
+
+    var LAST_KEY = '';
+    var CURRENT_SLOTS = new Set();
+
+    function refilter() {
+      var f = getActiveFields();
+      if (!f.clinic || !f.date || !f.hour || !f.minute) return;
+      var clinic = f.clinic.value || '';
+      var dateStr = f.date.value || '';
+      var doctorVal = (f.doctor && f.doctor.value) || '';
+      var key = clinic + '|' + dateStr + '|' + doctorVal;
+      if (key === LAST_KEY) return; // 避免重複處理
+      LAST_KEY = key;
+      loadSchedules().then(function(scheds) {
+        CURRENT_SLOTS = compileValidSlots(scheds, clinic, dateStr, doctorVal);
+        applyFilter(f);
+      });
+    }
+
+    function applyFilter(f) {
+      // 蒐集有效時刻
+      var validHours = new Set();
+      CURRENT_SLOTS.forEach(function(hm){ validHours.add(hm.slice(0,2)); });
+
+      // 過濾 hour
+      Array.prototype.forEach.call(f.hour.options, function(opt) {
+        var v = String(opt.value).padStart(2,'0');
+        if (validHours.size === 0) {
+          opt.disabled = false;
+          opt.style.color = '';
+          return;
+        }
+        var ok = validHours.has(v);
+        opt.disabled = !ok;
+        opt.style.color = ok ? '' : '#cbd5e1';
+        if (!ok && !opt.textContent.endsWith('（未開診）')) {
+          var base = opt.textContent.replace(/（未開診）/g,'');
+          opt.textContent = base.trim() + '（未開診）';
+        }
+        if (ok) opt.textContent = opt.textContent.replace(/（未開診）/g,'').trim();
+      });
+
+      // 過濾 minute（依目前選的 hour）
+      var curHour = String(f.hour.value).padStart(2,'0');
+      var validMinForHour = new Set();
+      CURRENT_SLOTS.forEach(function(hm) {
+        if (hm.slice(0,2) === curHour) validMinForHour.add(hm.slice(3,5));
+      });
+      Array.prototype.forEach.call(f.minute.options, function(opt) {
+        var v = String(opt.value).padStart(2,'0');
+        if (validMinForHour.size === 0 && validHours.has(curHour)) { opt.disabled = false; opt.style.color = ''; return; }
+        if (!validHours.has(curHour)) { opt.disabled = true; opt.style.color = '#cbd5e1'; return; }
+        var ok = validMinForHour.has(v);
+        opt.disabled = !ok;
+        opt.style.color = ok ? '' : '#cbd5e1';
+      });
+
+      // 顯示提示
+      showHint(f);
+    }
+
+    function showHint(f) {
+      var host = f.clinic && f.clinic.parentElement && f.clinic.parentElement.parentElement;
+      if (!host) host = document.querySelector('#page-counter') || document.body;
+      var existing = document.getElementById('kw-v827-hint');
+      if (CURRENT_SLOTS.size === 0) {
+        if (!existing) {
+          var h = document.createElement('div');
+          h.id = 'kw-v827-hint';
+          h.style.cssText = 'padding:8px 12px; margin:6px 0; background:#fef3c7; color:#92400e; border-radius:6px; font-size:12.5px;';
+          h.textContent = '⚠ 此院區/日期/醫師組合當天無排班，時段下拉已停用';
+          host.insertBefore(h, host.firstChild);
+        }
+      } else if (existing) {
+        existing.remove();
+      }
+    }
+
+    // 防呆：建立預約前再 check 一次
+    function hookSubmit() {
+      document.addEventListener('click', function(e) {
+        var t = e.target;
+        if (!t) return;
+        var btn = (t.tagName === 'BUTTON') ? t : (t.closest ? t.closest('button') : null);
+        if (!btn) return;
+        var txt = (btn.textContent || '').replace(/\s+/g, '');
+        if (txt !== '建立預約') return;
+        var f = getActiveFields();
+        if (!f.hour || !f.minute) return;
+        var hm = String(f.hour.value).padStart(2,'0') + ':' + String(f.minute.value).padStart(2,'0');
+        if (CURRENT_SLOTS.size > 0 && !CURRENT_SLOTS.has(hm)) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          alert('⚠ 您選的時段 ' + hm + ' 沒有醫師排班，無法預約。\n請改選有開診的時段（下拉「未開診」字樣為灰色不可選）。');
+          return false;
+        }
+      }, true);
+    }
+
+    // 監聽 clinic/date/doctor 變更
+    function attachListeners() {
+      var f = getActiveFields();
+      ['clinic','doctor','date','hour'].forEach(function(k) {
+        var el = f[k];
+        if (el && !el.__kwv827) {
+          el.__kwv827 = true;
+          el.addEventListener('change', function(){ LAST_KEY = ''; refilter(); });
+        }
+      });
+    }
+
+    setInterval(function(){ attachListeners(); refilter(); }, 1200);
+    hookSubmit();
+
+    console.log('[KW v8.27] ✓ 快速登錄時段依排班動態過濾啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.27] 快速登錄時段依排班動態過濾 結束 ===== -->
+
+<!-- ===== [v8.29] dashboard 模擬數據歸零 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+
+    var LABEL_MAP = {
+      '本月預約總數': { big: '0',  diff: '' },
+      '預約完成率':   { big: '0%', diff: '' },
+      'LINE 綁定率':  { big: '0%', diff: '' }
+      // 本月來客數已由 v8.23 接管，這邊不動
+    };
+
+    function zeroCards() {
+      // 找 leaf：文字是其中一個 label
+      var labels = document.querySelectorAll('*');
+      Object.keys(LABEL_MAP).forEach(function(labelKey) {
+        var leaf = null;
+        for (var i = 0; i < labels.length; i++) {
+          var el = labels[i];
+          if (el.children.length !== 0) continue;
+          var t = (el.textContent || '').replace(/\s+/g,'');
+          if (t === labelKey.replace(/\s+/g,'')) { leaf = el; break; }
+        }
+        if (!leaf) return;
+        // 在 leaf 的「卡片」範圍內找：大數字（兄弟元素，或 parent.children 中字很大的那個）
+        var card = leaf.parentElement;
+        if (!card || card.__kwv829_done === labelKey) return;
+        // 安全網：卡片不應太大
+        if (card.querySelectorAll('*').length > 40) return;
+        // 找卡片內所有 leaf
+        var allLeaves = card.querySelectorAll('*');
+        var bigEl = null, diffEl = null;
+        for (var j = 0; j < allLeaves.length; j++) {
+          var x = allLeaves[j];
+          if (x === leaf) continue;
+          if (x.children.length !== 0) continue;
+          var tx = (x.textContent || '').trim();
+          if (!tx) continue;
+          // 大數字：含數字或百分比，且字體尺寸大（>20px），且不是趨勢
+          var fs = parseInt(getComputedStyle(x).fontSize, 10) || 0;
+          if (!bigEl && /^[\d.,]+%?$/.test(tx) && fs >= 24) bigEl = x;
+          // 趨勢文字：含 ↑/↓/% vs/上月
+          if (!diffEl && /(↑|↓|vs|上月|%)/.test(tx) && fs < 20) {
+            // 額外條件：不是 bigEl 本身
+            if (x !== bigEl) diffEl = x;
+          }
+        }
+        if (bigEl) bigEl.textContent = LABEL_MAP[labelKey].big;
+        if (diffEl) diffEl.textContent = '';
+        card.__kwv829_done = labelKey;
+      });
+    }
+
+    setTimeout(zeroCards, 600);
+    setInterval(zeroCards, 2000);
+    // 點到「系統管理」分頁時也跑一次
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var txt = (t.textContent || '').replace(/\s+/g,'');
+      if (txt.indexOf('系統管理') >= 0) setTimeout(zeroCards, 300);
+    }, true);
+
+    console.log('[KW v8.29] ✓ Dashboard 模擬數據歸零');
+  });
+})();
+</script>
+<!-- ===== [v8.29] dashboard 模擬數據歸零 結束 ===== -->
+
+<!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
