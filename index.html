@@ -14869,6 +14869,236 @@
 </script>
 <!-- ===== [v8.40] 醫師照片位置調整 結束 ===== -->
 
+<!-- ===== [v8.41] 三大 bug 修正 + 門診表美化 開始 ===== -->
+<style id="kw-v841-style">
+  /* 門診表美化 */
+  #kw-v838-schedule-view table {
+    font-size: 15px !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06) !important;
+  }
+  #kw-v838-schedule-view table th {
+    font-size: 15px !important;
+    padding: 14px 10px !important;
+    background: linear-gradient(135deg, #6d28d9, #7c3aed) !important;
+    color: #fff !important;
+    border: none !important;
+    border-bottom: 2px solid #5b21b6 !important;
+    font-weight: 700 !important;
+    letter-spacing: 1px !important;
+  }
+  #kw-v838-schedule-view table td {
+    font-size: 14.5px !important;
+    padding: 12px !important;
+    border: 1px solid #f1f5f9 !important;
+    vertical-align: top !important;
+    background: #fff !important;
+    transition: background 0.15s !important;
+  }
+  #kw-v838-schedule-view table tbody td:first-child {
+    background: linear-gradient(135deg, #faf5ff, #f3e8ff) !important;
+    font-weight: 700 !important;
+    font-size: 15px !important;
+    color: #6d28d9 !important;
+    text-align: center !important;
+    min-width: 100px !important;
+  }
+  #kw-v838-schedule-view table tbody td:not(:first-child):hover {
+    background: #faf5ff !important;
+  }
+  #kw-v838-schedule-view table [data-kw-doctor] {
+    font-size: 14.5px !important;
+    color: #6d28d9 !important;
+    font-weight: 700 !important;
+    border-bottom: 2px dashed #c4b5fd !important;
+    padding-bottom: 1px !important;
+    transition: all 0.15s !important;
+  }
+  #kw-v838-schedule-view table [data-kw-doctor]:hover {
+    color: #fff !important;
+    background: #6d28d9 !important;
+    border-bottom-color: #6d28d9 !important;
+    padding: 2px 6px !important;
+    border-radius: 6px !important;
+  }
+  #kw-v838-schedule-view table small {
+    font-size: 13px !important;
+    color: #475569 !important;
+    display: inline-block !important;
+    margin-top: 2px !important;
+    background: #f1f5f9 !important;
+    padding: 1px 6px !important;
+    border-radius: 4px !important;
+  }
+  #kw-v838-schedule-view table hr {
+    border: none !important;
+    border-top: 1px dashed #e2e8f0 !important;
+    margin: 8px 0 !important;
+  }
+  /* schedule view 上方標題 */
+  #kw-v838-schedule-view > div:first-child {
+    font-size: 17px !important;
+    color: #6d28d9 !important;
+    margin-bottom: 6px !important;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api) cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+
+    // ===== 1. window 層 capture 處理「預約這位醫師」bypass =====
+    // window capture > document capture，可在 v8.31 之前攔下
+    window.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var card = t.closest('.doctor-card');
+      if (!card) return;
+      if (card.__kwv841_bookBypass) {
+        card.__kwv841_bookBypass = false;
+        // 立即阻止 v8.31 跳 modal，但讓原本流程跑
+        e.stopImmediatePropagation();
+        // 不 preventDefault — 讓原本 click 行為（如有）繼續
+        // 順便：嘗試常見的 state 鍵
+        var info = card.querySelector('.doctor-info') || card;
+        var m = (info.textContent||'').match(/([一-龥]{2,4})\s*醫師/);
+        if (m && typeof state !== 'undefined') {
+          var sn = m[1];
+          state.selectedDoctor = sn;
+          state.selectedDoctorName = sn;
+          state.bookingDoctor = sn;
+          state.patientDoctor = sn;
+          var dr = (DOCTORS||[]).find(function(d){ return (d.shortName||(d.name||'').replace(/\s*醫師\s*$/,''))===sn; });
+          if (dr) {
+            state.selectedDoctorObj = dr;
+            state.selectedDoctorId = dr.id;
+          }
+        }
+        // 主動推進到 Step 2
+        if (typeof window.patientNext === 'function') {
+          try { window.patientNext(1); } catch (err) {}
+        }
+      }
+    }, true);
+
+    // ===== 2. v8.31 modal 開啟後：自動補上頭像照片 =====
+    function fixModalPhoto() {
+      var modal = document.getElementById('kw-v831-profile');
+      if (!modal || modal.__kwv841PhotoDone) return;
+      // 取出 modal 的標題醫師全名（如「蕭捷健 醫師」）
+      var titleEl = modal.querySelector('div[style*="font-size:20px"]') || modal.querySelector('div[style*="font-size: 20px"]');
+      var titleTxt = (titleEl ? titleEl.textContent : '') || '';
+      var m = titleTxt.match(/([一-龥]{2,4})\s*醫師/);
+      if (!m) return;
+      var shortName = m[1];
+      // 找對應的 doctor-card 拿 img
+      var imgUrl = '';
+      document.querySelectorAll('.doctor-card').forEach(function(card) {
+        if (imgUrl) return;
+        var info = card.querySelector('.doctor-info') || card;
+        if ((info.textContent||'').indexOf(shortName + ' 醫師') < 0 &&
+            (info.textContent||'').indexOf(shortName + '醫師') < 0) return;
+        var img = card.querySelector('img');
+        if (img && img.src) imgUrl = img.src;
+        else {
+          var av = card.querySelector('.doctor-avatar, [class*="doctor-avatar"]');
+          if (av) {
+            var bg = (av.style.backgroundImage || getComputedStyle(av).backgroundImage || '');
+            var bgm = bg.match(/url\(["']?(.*?)["']?\)/);
+            if (bgm) imgUrl = bgm[1];
+          }
+        }
+      });
+      if (!imgUrl) return;
+      // 找 modal 內第一個 80px 圓形 div
+      var divs = modal.querySelectorAll('div');
+      for (var i = 0; i < divs.length; i++) {
+        var d = divs[i];
+        var cs = getComputedStyle(d);
+        var w = parseInt(cs.width, 10);
+        var h = parseInt(cs.height, 10);
+        if (w >= 70 && w <= 100 && h >= 70 && h <= 100 && cs.borderRadius && cs.borderRadius.indexOf('50%') >= 0) {
+          var pos = (typeof POSITIONS_REF !== 'undefined' && POSITIONS_REF[shortName]) || 'center 22%';
+          d.style.cssText += ';background-image:url("' + imgUrl + '") !important; background-size:cover !important; background-position:' + pos + ' !important; background-repeat:no-repeat !important; color:transparent !important;';
+          d.textContent = '';
+          modal.__kwv841PhotoDone = true;
+          break;
+        }
+      }
+    }
+    setInterval(fixModalPhoto, 200);
+
+    // ===== 3. v8.31 modal 的「預約這位醫師」按鈕：改成觸發 bypass =====
+    function fixBookButton() {
+      var modal = document.getElementById('kw-v831-profile');
+      if (!modal || modal.__kwv841BtnFixed) return;
+      var bookBtn = modal.querySelector('#kw-v831-book');
+      if (!bookBtn) return;
+      modal.__kwv841BtnFixed = true;
+      bookBtn.onclick = function() {
+        modal.remove();
+        // 找標題裡的醫師名
+        var titleEl = modal.querySelector('div[style*="font-size:20px"]') || modal.querySelector('div[style*="font-size: 20px"]');
+        var titleTxt = (titleEl ? titleEl.textContent : '') || '';
+        var m = titleTxt.match(/([一-龥]{2,4})\s*醫師/);
+        if (!m) return;
+        var shortName = m[1];
+        // 找對應 card，設 bypass flag 並 click
+        var cards = document.querySelectorAll('.doctor-card');
+        for (var i = 0; i < cards.length; i++) {
+          var info = cards[i].querySelector('.doctor-info') || cards[i];
+          if ((info.textContent||'').indexOf(shortName + ' 醫師') >= 0 ||
+              (info.textContent||'').indexOf(shortName + '醫師') >= 0) {
+            cards[i].__kwv841_bookBypass = true;
+            cards[i].click();
+            return;
+          }
+        }
+      };
+    }
+    setInterval(fixBookButton, 200);
+
+    // ===== 4. 加速 v8.40 POSITIONS 載入週期 =====
+    // 取得 v8.40 的 POSITIONS map（透過自己再撈一次並讓 v8.40 應用）
+    window.POSITIONS_REF = {};
+    function reloadPositions() {
+      KW.api._post('getAllDoctorProfiles', {}, true).then(function(res) {
+        if (!res || !res.ok) return;
+        (res.data || []).forEach(function(d) {
+          if (d.shortName && d.photoPos) window.POSITIONS_REF[d.shortName] = d.photoPos;
+        });
+        // 主動套用到所有可見 img
+        document.querySelectorAll('.doctor-card').forEach(function(card) {
+          var info = card.querySelector('.doctor-info') || card;
+          var mm = (info.textContent||'').match(/([一-龥]{2,4})\s*醫師/);
+          if (!mm) return;
+          var pos = window.POSITIONS_REF[mm[1]];
+          if (!pos) return;
+          var img = card.querySelector('img');
+          if (img) { img.style.objectPosition = pos; img.style.objectFit = 'cover'; }
+          var av = card.querySelector('.doctor-avatar, [class*="doctor-avatar"]');
+          if (av) { av.style.backgroundPosition = pos; av.style.backgroundSize = 'cover'; }
+        });
+      });
+    }
+    reloadPositions();
+    setInterval(reloadPositions, 8000);
+
+    console.log('[KW v8.41] ✓ 三大 bug 修正 + 門診表美化啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.41] 三大 bug 修正 + 門診表美化 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
