@@ -13127,6 +13127,7 @@
       });
       if (!dr) return;
       e.preventDefault();
+      e.stopImmediatePropagation();   // 阻止原本卡片的 onclick
       e.stopPropagation();
       openProfileModal(dr);
     }, true);
@@ -13212,17 +13213,16 @@
       tables.forEach(function(tbl) {
         var heads = tbl.querySelectorAll('thead th');
         var headTexts = Array.prototype.map.call(heads, function(h){return h.textContent.replace(/\s+/g,'');});
-        if (headTexts.indexOf('看診醫師') < 0 && headTexts.indexOf('姓名') < 0) return;
-        if (headTexts.indexOf('每時段限額') < 0 && headTexts.indexOf('時段限額') < 0) return;
+        // 用 some 部分比對，避免「時段限額」被副標 concat 失敗
+        var hasName = headTexts.some(function(t){ return t.indexOf('姓名') >= 0 || t.indexOf('看診醫師') >= 0; });
+        var hasSlot = headTexts.some(function(t){ return t.indexOf('時段限額') >= 0; });
+        var hasDoctorId = headTexts.some(function(t){ return t.indexOf('醫師編號') >= 0; });
+        if (!hasName || (!hasSlot && !hasDoctorId)) return;
         var rows = tbl.querySelectorAll('tbody tr');
         rows.forEach(function(tr) {
           if (tr.__kwv831) return;
           var actCell = tr.querySelector('td:last-child');
           if (!actCell) return;
-          var editBtn = Array.prototype.find.call(actCell.querySelectorAll('button,a'), function(b){
-            return (b.textContent||'').replace(/\s+/g,'').indexOf('編輯') >= 0;
-          });
-          if (!editBtn) return;
           tr.__kwv831 = true;
           var btn = document.createElement('button');
           btn.type = 'button';
@@ -13230,11 +13230,14 @@
           btn.style.cssText = 'padding:4px 9px; background:#6d28d9; color:#fff; border:none; border-radius:5px; font-size:11.5px; cursor:pointer; margin-left:4px;';
           actCell.appendChild(btn);
           btn.onclick = function() {
-            // 取得醫師短名
+            // 取得醫師短名：找該 row 內非空格、最像中文姓名的儲存格
             var cells = tr.querySelectorAll('td');
-            var nameTxt = (cells[1] && cells[1].textContent || '').replace(/\s+/g,'');
-            var m = nameTxt.match(/([一-龥]{2,4})/);
-            var shortName = m ? m[0] : '';
+            var shortName = '';
+            for (var i = 0; i < cells.length; i++) {
+              var txt = (cells[i].textContent || '').replace(/[\s上傳照片]/g,'');
+              var m = txt.match(/([一-龥]{2,4})/);
+              if (m && !/醫師|管理|減重門診|院區/.test(m[0])) { shortName = m[0]; break; }
+            }
             if (!shortName) { alert('找不到醫師短名'); return; }
             openAdminEditor(shortName);
           };
@@ -13332,19 +13335,19 @@
     }
 
     function findDoctorsContainer(step1) {
-      // 找放醫師卡的 grid（含「駐診院區」字樣的內層 div）
+      // 找放醫師卡的 grid：直接子元素 「大部分」都是醫師卡（含「駐診院區」字樣）
       var candidates = step1.querySelectorAll('div');
       var hit = null;
       for (var i = 0; i < candidates.length; i++) {
         var c = candidates[i];
-        var t = c.textContent || '';
-        if (t.indexOf('駐診院區') < 0) continue;
-        // 找最外層 grid（多卡片的容器）
-        var parent = c.parentElement;
-        if (!parent) continue;
-        // 確認 parent 內有多張 含「醫師」的卡
-        var docCards = parent.querySelectorAll(':scope > div');
-        if (docCards.length >= 3) { hit = parent; break; }
+        var children = c.children;
+        if (children.length < 5) continue;  // 醫師 grid 至少幾張卡
+        var docCardCount = 0;
+        for (var j = 0; j < children.length; j++) {
+          if ((children[j].textContent || '').indexOf('駐診院區') >= 0) docCardCount++;
+        }
+        // 大於 70% 的子元素都是醫師卡 → 這才是 grid
+        if (docCardCount >= children.length * 0.7) { hit = c; break; }
       }
       return hit;
     }
@@ -13501,6 +13504,239 @@
 })();
 </script>
 <!-- ===== [v8.32] 病人端 Step 1 加院區/醫師切換 結束 ===== -->
+
+<!-- ===== [v8.33] 醫師管理頁編輯/新增醫師接管 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+
+    function isInDoctorMgmtPage() {
+      var page = document.querySelector('[data-page="admin-doctors"]') ||
+                 (state && state.adminTab === 'doctors');
+      if (page) return true;
+      // 用 header 字串判斷：頁面同時有「醫師管理」「+ 新增醫師」「批次上傳照片」
+      var bodyTxt = document.body.textContent || '';
+      return bodyTxt.indexOf('+ 新增醫師') >= 0 || bodyTxt.indexOf('新增醫師') >= 0;
+    }
+
+    // ===== 攔截「編輯」與「+ 新增醫師」按鈕 =====
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      var btn = (t.tagName==='BUTTON' || t.tagName==='A') ? t : (t.closest ? t.closest('button,a') : null);
+      if (!btn) return;
+      var txt = (btn.textContent || '').replace(/\s+/g, '');
+
+      // + 新增醫師
+      if (txt === '+新增醫師' || txt === '新增醫師') {
+        // 限定於 醫師管理 頁
+        if (!isInDoctorMgmtPage()) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        openDoctorEditor(null);
+        return;
+      }
+
+      // 編輯：必須在醫師管理表格 row 內
+      if (txt === '編輯') {
+        var tr = btn.closest && btn.closest('tr');
+        if (!tr) return;
+        var tbl = tr.closest('table');
+        if (!tbl) return;
+        var heads = tbl.querySelectorAll('thead th');
+        var headTxts = Array.prototype.map.call(heads, function(h){return h.textContent.replace(/\s+/g,'');});
+        var isDoctorTable = headTxts.some(function(t){return t.indexOf('醫師編號') >= 0;}) ||
+                            (headTxts.some(function(t){return t.indexOf('看診醫師') >= 0;}) && headTxts.some(function(t){return t.indexOf('時段限額') >= 0;}));
+        if (!isDoctorTable) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        openEditFromRow(tr);
+      }
+    }, true);
+
+    function openEditFromRow(tr) {
+      var cells = tr.querySelectorAll('td');
+      function clean(s){ return String(s||'').replace(/[\s上傳照片]/g,''); }
+      var employeeId = clean((cells[0] && cells[0].textContent || ''));
+      // 姓名儲存格內可能有上傳照片字樣，要剝掉
+      var nameCell = cells[1] && cells[1].textContent || '';
+      var nameMatch = nameCell.match(/([一-龥]{2,4})/);
+      var shortName = nameMatch ? nameMatch[0] : '';
+      openDoctorEditor({ employeeId: employeeId, shortName: shortName });
+    }
+
+    function openDoctorEditor(initial) {
+      var isNew = !initial;
+      var employeeId = initial ? initial.employeeId : '';
+      var shortName  = initial ? initial.shortName  : '';
+      // 載入既有資料
+      Promise.all([
+        isNew ? Promise.resolve(null) : KW.api._post('getEmployees', {}, true),
+        isNew || !shortName ? Promise.resolve(null) : KW.api._post('getDoctorProfile', { shortName: shortName }, false),
+        isNew ? Promise.resolve(null) : KW.api._post('getDoctorSettings', {}, true)
+      ]).then(function(rs) {
+        var emp = null;
+        if (rs[0] && rs[0].ok && Array.isArray(rs[0].data)) {
+          emp = rs[0].data.find(function(e){ return String(e.employeeId) === String(employeeId); });
+        }
+        var prof = (rs[1] && rs[1].ok) ? rs[1].data : null;
+        var sets = (rs[2] && rs[2].ok && Array.isArray(rs[2].data)) ? rs[2].data : [];
+        var dset = sets.find(function(s){ return s.name === shortName; }) || {};
+        buildModal({
+          isNew: isNew,
+          employeeId: employeeId || '',
+          fullName: emp ? emp.name : '',
+          clinics: emp ? emp.clinic : '',
+          isActive: emp ? emp.isActive : true,
+          note: emp ? emp.note : '',
+          shortName: shortName,
+          // 時段
+          slotMinutes: dset.slotMinutes || 10,
+          maxNew: (dset.maxNew != null) ? dset.maxNew : 1,
+          maxFollow: (dset.maxFollow != null) ? dset.maxFollow : 2,
+          status: dset.status || '開診',
+          // 介紹
+          fullDoctorName: (prof && prof.fullName) || '',
+          tagline: (prof && prof.tagline) || '',
+          bio: (prof && prof.bio) || '',
+          folderId: (prof && prof.folderId) || ''
+        });
+      });
+    }
+
+    function buildModal(d) {
+      var old = document.getElementById('kw-v833-modal'); if (old) old.remove();
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-v833-modal';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.55); z-index:100001; display:flex; align-items:center; justify-content:center; padding:16px;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:680px; max-height:92vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,.3);';
+      function inp(){ return 'width:100%; padding:8px 10px; border:1px solid #cbd5e1; border-radius:8px; font-size:14px; box-sizing:border-box;'; }
+      function row(label, field, hint){
+        return '<div><label style="display:block; font-size:12.5px; color:#64748b; margin-bottom:4px;">'+label+'</label>'+field+(hint?'<div style="margin-top:3px; font-size:11.5px; color:#94a3b8;">'+hint+'</div>':'')+'</div>';
+      }
+      card.innerHTML =
+        '<div style="padding:16px 22px; border-bottom:1px solid #e2e8f0;">'
+        + '<div style="font-size:18px; font-weight:700; color:#0f172a;">' + (d.isNew ? '➕ 新增醫師' : '✏️ 編輯醫師：' + esc(d.shortName||'')) + '</div>'
+        + '</div>'
+        + '<div style="padding:18px 22px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">'
+
+        +   '<div style="grid-column:1/-1; font-size:13px; color:#1e40af; background:#eff6ff; padding:8px 12px; border-radius:6px;">📋 基本資料</div>'
+        +   row('員工編號', '<input id="kw-v833-id" type="text" value="' + esc(d.employeeId) + '" '+(d.isNew?'':'readonly')+' placeholder="D14" style="' + inp() + (d.isNew?'':' background:#f1f5f9;') + '">', d.isNew ? '不填會自動產生' : '建立後不可改')
+        +   row('員工姓名（不含「醫師」二字）', '<input id="kw-v833-name" type="text" value="' + esc(d.fullName.replace(/\s*醫師\s*$/,'')) + '" placeholder="例：黃炯達" style="' + inp() + '">')
+        +   '<div style="grid-column:1/-1;">' + row('所屬院區（多院區用「、」隔開）', '<input id="kw-v833-clinics" type="text" value="' + esc(d.clinics) + '" placeholder="例：八德院區、埔心院區" style="' + inp() + '">', '院區管理頁的 14 院區名稱') + '</div>'
+        +   row('啟用', '<select id="kw-v833-active" style="' + inp() + '"><option value="TRUE"' + (d.isActive ? ' selected' : '') + '>啟用</option><option value="FALSE"' + (!d.isActive ? ' selected' : '') + '>停用</option></select>')
+        +   row('開診狀態', '<select id="kw-v833-status" style="' + inp() + '"><option value="開診"' + (d.status==='開診'?' selected':'') + '>🟢 開診中</option><option value="停診"' + (d.status==='停診'?' selected':'') + '>⛔ 停診</option></select>')
+
+        +   '<div style="grid-column:1/-1; font-size:13px; color:#1e40af; background:#eff6ff; padding:8px 12px; border-radius:6px; margin-top:6px;">⏱ 時段限額</div>'
+        +   row('時段間隔（分鐘）', '<select id="kw-v833-slot" style="' + inp() + '">' + [10,15,20,30,60].map(function(n){return '<option value="'+n+'"'+(d.slotMinutes==n?' selected':'')+'>'+n+' 分</option>';}).join('') + '</select>')
+        +   row('每時段初診上限', '<input id="kw-v833-mn" type="number" min="0" max="20" value="' + d.maxNew + '" style="' + inp() + '">')
+        +   row('每時段複診上限', '<input id="kw-v833-mf" type="number" min="0" max="20" value="' + d.maxFollow + '" style="' + inp() + '">')
+
+        +   '<div style="grid-column:1/-1; font-size:13px; color:#6d28d9; background:#f5f3ff; padding:8px 12px; border-radius:6px; margin-top:6px;">📖 醫師介紹（病人端會看到）</div>'
+        +   '<div style="grid-column:1/-1;">' + row('醫師全名（用於 modal 標題）', '<input id="kw-v833-fname" type="text" value="' + esc(d.fullDoctorName) + '" placeholder="例：黃炯達 醫師" style="' + inp() + '">') + '</div>'
+        +   '<div style="grid-column:1/-1;">' + row('一句話', '<input id="kw-v833-tag" type="text" value="' + esc(d.tagline) + '" placeholder="例：陪伴每位病患找回理想的自己" style="' + inp() + '">') + '</div>'
+        +   '<div style="grid-column:1/-1;">' + row('介紹文字（可多行）', '<textarea id="kw-v833-bio" rows="5" placeholder="專長、學經歷、減重理念..." style="' + inp() + '; resize:vertical;">' + esc(d.bio) + '</textarea>') + '</div>'
+        +   '<div style="grid-column:1/-1;">' + row('Drive 作品集資料夾 ID', '<input id="kw-v833-folder" type="text" value="' + esc(d.folderId) + '" placeholder="從 drive.google.com/drive/folders/XXX 取 XXX" style="' + inp() + '">') + '</div>'
+
+        +   '<div style="grid-column:1/-1;">' + row('備註(選填)', '<input id="kw-v833-note" type="text" value="' + esc(d.note) + '" style="' + inp() + '">') + '</div>'
+        + '</div>'
+        + '<div style="padding:14px 22px; border-top:1px solid #e2e8f0; display:flex; gap:8px; justify-content:flex-end;">'
+        +   '<button id="kw-v833-close" type="button" style="padding:9px 16px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer;">關閉</button>'
+        +   '<button id="kw-v833-save" type="button" style="padding:9px 18px; background:#2563eb; color:#fff; border:none; border-radius:8px; font-weight:600; cursor:pointer;">' + (d.isNew ? '➕ 建立醫師' : '✓ 存檔') + '</button>'
+        + '</div>';
+
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      card.querySelector('#kw-v833-close').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+
+      card.querySelector('#kw-v833-save').onclick = function() {
+        var btn = this;
+        btn.disabled = true; var orig = btn.textContent; btn.textContent = '存檔中…';
+        var employeeId = card.querySelector('#kw-v833-id').value.trim();
+        var name = card.querySelector('#kw-v833-name').value.trim();
+        if (!name) { alert('請填寫員工姓名'); btn.disabled = false; btn.textContent = orig; return; }
+        // 員工編號自動產生（新增時）
+        if (d.isNew && !employeeId) {
+          // 找下一個 Dnn
+          var nextNum = 14;
+          KW.api._post('getEmployees', {}, true).then(function(res) {
+            if (res && res.ok && Array.isArray(res.data)) {
+              var maxN = 0;
+              res.data.forEach(function(e) {
+                var m = String(e.employeeId).match(/^D(\d+)$/);
+                if (m) maxN = Math.max(maxN, Number(m[1]));
+              });
+              nextNum = maxN + 1;
+            }
+            employeeId = 'D' + String(nextNum).padStart(2,'0');
+            doSave(employeeId);
+          });
+        } else {
+          doSave(employeeId);
+        }
+
+        function doSave(empId) {
+          var clinics = card.querySelector('#kw-v833-clinics').value.trim();
+          var isActive = card.querySelector('#kw-v833-active').value;
+          var status = card.querySelector('#kw-v833-status').value;
+          var slot = Number(card.querySelector('#kw-v833-slot').value) || 10;
+          var mn = Number(card.querySelector('#kw-v833-mn').value) || 0;
+          var mf = Number(card.querySelector('#kw-v833-mf').value) || 0;
+          var fname = card.querySelector('#kw-v833-fname').value.trim();
+          var tag = card.querySelector('#kw-v833-tag').value;
+          var bio = card.querySelector('#kw-v833-bio').value;
+          var folder = card.querySelector('#kw-v833-folder').value.trim();
+          var note = card.querySelector('#kw-v833-note').value;
+          var shortName = name.replace(/\s*醫師\s*$/,'');
+          // 1. saveEmployee
+          var empPayload = {
+            '員工編號': empId, '員工姓名': name + ' 醫師', '職位': '醫師',
+            '所屬院區': clinics, '啟用': isActive, '備註': note, '密碼': '0000'
+          };
+          var cu = state.counterUser || state.currentUser || {};
+          Promise.all([
+            KW.api._post('saveEmployee', empPayload, true),
+            KW.api._post('saveDoctorSetting', {
+              '醫師短名': shortName, '看診狀態': status,
+              '時段間隔': slot, '每時段初診上限': mn, '每時段複診上限': mf,
+              '更新者': cu.name || 'admin'
+            }, true),
+            KW.api._post('saveDoctorProfile', {
+              '醫師短名': shortName, '醫師全名': fname,
+              '一句話': tag, '介紹文字': bio, 'Drive資料夾ID': folder
+            }, true)
+          ]).then(function(results) {
+            btn.disabled = false; btn.textContent = orig;
+            var allOk = results.every(function(r){ return r && r.ok; });
+            if (allOk) {
+              overlay.remove();
+              if (typeof showToast === 'function') showToast(d.isNew ? '醫師已建立' : '醫師資料已存檔', 'success');
+              else alert('已存檔');
+              setTimeout(function(){ window.location.reload(); }, 600);
+            } else {
+              var errs = results.filter(function(r){return !(r&&r.ok);}).map(function(r){return r && r.error || '?';}).join('、');
+              alert('存檔失敗：' + errs);
+            }
+          })['catch'](function(e){ btn.disabled = false; btn.textContent = orig; alert('存檔失敗：' + e); });
+        }
+      };
+    }
+
+    console.log('[KW v8.33] ✓ 醫師管理頁編輯/新增接管啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.33] 醫師管理頁編輯/新增醫師接管 結束 ===== -->
 
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
