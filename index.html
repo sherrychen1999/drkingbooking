@@ -15297,42 +15297,21 @@
 
   waitReady(function() {
 
-    // === 在每張 .doctor-card 注入 📋 介紹按鈕 ===
-    function injectInfoButtons() {
-      document.querySelectorAll('.doctor-card').forEach(function(card) {
-        if (card.querySelector('.kw-info-btn')) return;
-        var info = card.querySelector('.doctor-info');
-        if (!info) return;
-        // 找 info 內標題列（含「醫師」字樣的元素）
-        var leaves = info.querySelectorAll('*');
-        var nameEl = null;
-        for (var i = 0; i < leaves.length; i++) {
-          var el = leaves[i];
-          if (el.children.length === 0 && (el.textContent || '').indexOf('醫師') >= 0) {
-            nameEl = el; break;
-          }
-        }
-        if (!nameEl) nameEl = info.firstElementChild || info;
-        // 包成 flex（保留原本內容）
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'kw-info-btn';
-        btn.title = '查看醫師介紹';
-        btn.innerHTML = '📋';
-        // 加在 nameEl 的後面（或內部）
-        if (nameEl.parentElement) {
-          // 包一層 wrapper 確保並排
-          if (!nameEl.parentElement.style.display || nameEl.parentElement.style.display.indexOf('flex') < 0) {
-            nameEl.parentElement.style.display = 'flex';
-            nameEl.parentElement.style.alignItems = 'center';
-            nameEl.parentElement.style.justifyContent = 'space-between';
-          }
-          nameEl.parentElement.appendChild(btn);
+    // v8.45：移除 v8.43 強塞 flex + 📋 鈕邏輯（會把原卡片排版搞壞），改成清除已注入的痕跡
+    function cleanupOldInjects() {
+      // 移除已注入的 .kw-info-btn
+      document.querySelectorAll('.kw-info-btn').forEach(function(b){ b.remove(); });
+      // 還原被強改成 flex 的 parent
+      document.querySelectorAll('.doctor-info > div').forEach(function(d) {
+        if (d.style.display === 'flex' && d.style.justifyContent === 'space-between') {
+          d.style.display = '';
+          d.style.alignItems = '';
+          d.style.justifyContent = '';
         }
       });
     }
-    setInterval(injectInfoButtons, 2000);
-    setTimeout(injectInfoButtons, 600);
+    setInterval(cleanupOldInjects, 3000);
+    setTimeout(cleanupOldInjects, 500);
 
     console.log('[KW v8.43] ✓ 架構整理 + 咖色門診表 + 介紹按鈕分離啟用');
   });
@@ -15430,32 +15409,79 @@
 
   waitReady(function() {
 
-    // 隱藏「減重門診」副標、「駐診院區:」前綴文字
-    function hideLabels() {
-      document.querySelectorAll('.doctor-card, .doctor-info').forEach(function(el) {
-        var leaves = el.querySelectorAll('*');
-        for (var i = 0; i < leaves.length; i++) {
-          var leaf = leaves[i];
-          if (leaf.children.length !== 0) continue;
-          var t = (leaf.textContent || '').trim();
-          // 減重門診副標 → 隱藏
-          if (t === '減重門診' || t === '駐診院區：' || t === '駐診院區:') {
-            if (!leaf.__kw844_hidden) {
-              leaf.style.display = 'none';
-              leaf.__kw844_hidden = true;
-            }
-          }
+    // v8.45：撤回 v8.44 隱藏 label 邏輯（使用者偏好原本「減重門診/駐診院區:」layout）
+    // 若已被前一版隱藏 → 還原
+    function restoreLabels() {
+      document.querySelectorAll('[style*="display: none"]').forEach(function(el) {
+        if (el.__kw844_hidden) {
+          el.style.display = '';
+          el.__kw844_hidden = false;
         }
       });
     }
-    setInterval(hideLabels, 2000);
-    setTimeout(hideLabels, 500);
+    setInterval(restoreLabels, 3000);
+    setTimeout(restoreLabels, 500);
 
     console.log('[KW v8.44] ✓ 卡片清乾淨 + 門診表排版啟用');
   });
 })();
 </script>
 <!-- ===== [v8.44] 卡片清乾淨 + 門診表排版咖色版 結束 ===== -->
+
+<!-- ===== [v8.46] 門診表多醫師同格改垂直堆疊 開始 ===== -->
+<style>
+  /* v8.46：把 v8.44 渲染的 .kw-cell-flex 從橫排改成直排
+     原本 display:flex; flex-wrap:wrap 會讓 2 位以上醫師左右並排
+     再用 .kw-cell-item 之間加分隔線，閱讀更清楚 */
+  .kw-cell-flex {
+    flex-direction: column !important;
+    flex-wrap: nowrap !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+  }
+  .kw-cell-item {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 4px 0 !important;
+    border-bottom: 1px dotted #d4b896 !important;
+  }
+  .kw-cell-item:last-child {
+    border-bottom: none !important;
+    padding-bottom: 0 !important;
+  }
+  .kw-cell-item:first-child {
+    padding-top: 0 !important;
+  }
+  /* 時間範圍從原本 br 拆三行（10:00 / ~ / 11:00）改成單行 10:00 ~ 11:00，省空間 */
+  .kw-time-range br {
+    display: none !important;
+  }
+  .kw-time-range {
+    white-space: nowrap !important;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+  // 同時把已渲染出來的「<br>~<br>」就地換成空白「 ~ 」，避免 CSS 沒生效時也能讀
+  function normalizeTimeRange() {
+    document.querySelectorAll('.kw-time-range').forEach(function(el) {
+      if (el.__kw846Normalized) return;
+      // 把 <br>~<br> 變成「 ~ 」純文字
+      if (el.innerHTML.indexOf('<br>') >= 0) {
+        var txt = el.textContent.replace(/\s+/g, ' ').trim();
+        // textContent 已經把 br 變空白，再壓掉多餘空白
+        el.textContent = txt.replace(/\s*~\s*/, ' ~ ');
+        el.__kw846Normalized = true;
+      }
+    });
+  }
+  setInterval(normalizeTimeRange, 1500);
+  setTimeout(normalizeTimeRange, 500);
+  console.log('[KW v8.46] ✓ 門診表多醫師格改垂直堆疊');
+})();
+</script>
+<!-- ===== [v8.46] 門診表多醫師同格改垂直堆疊 結束 ===== -->
 
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
