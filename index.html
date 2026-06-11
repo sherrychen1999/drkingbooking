@@ -15837,6 +15837,282 @@
 </script>
 <!-- ===== [v8.54] 預約全流程修補 結束 ===== -->
 
+<!-- ===== [v8.55] 修日曆：用真實當月＋強制狀態物件化 開始 ===== -->
+<style>
+  /* v8.55 月曆 cell（沿用既有 .day-cell 樣式，但確保 has-slots 看得到） */
+  #patient-calendar .day-cell.kw-v855-clickable {
+    cursor: pointer;
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 700;
+  }
+  #patient-calendar .day-cell.kw-v855-clickable:hover {
+    background: #c8e6c9;
+    transform: scale(1.05);
+  }
+  #patient-calendar .day-cell.kw-v855-today {
+    box-shadow: 0 0 0 2px #f97316 inset;
+  }
+  #patient-calendar .day-cell.kw-v855-selected {
+    background: #5d8366 !important;
+    color: #fff !important;
+  }
+  /* 月份切換鈕 */
+  .kw-v855-monthnav {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 16px; font-weight: 700;
+  }
+  .kw-v855-monthnav button {
+    background: #f1f5f9; border: 1px solid #cbd5e1;
+    width: 32px; height: 32px; border-radius: 6px;
+    cursor: pointer; font-size: 18px;
+  }
+  .kw-v855-monthnav button:hover { background: #e2e8f0; }
+</style>
+<script>
+(function() {
+  'use strict';
+
+  /* ─────────── 狀態：當前月曆顯示哪個月 ─────────── */
+  var calState = {
+    year: null,
+    month: null  // 1-12
+  };
+
+  /* ─────────── 工具：把字串型 doctor / clinic 轉成物件 ─────────── */
+  function ensureStateObjects() {
+    try {
+      if (typeof state === 'undefined' || !state) return;
+      // selectedDoctor：可能是 string (shortName) 或 物件 → 統一成物件
+      if (state.selectedDoctor && typeof state.selectedDoctor === 'string' && typeof DOCTORS !== 'undefined') {
+        var sn = state.selectedDoctor;
+        var docObj = DOCTORS.find(function(d){
+          var name = (d.name || '').replace(/\s*醫師\s*$/, '').trim();
+          return name === sn || d.shortName === sn || d.name === sn;
+        });
+        if (docObj) state.selectedDoctor = docObj;
+      }
+      // selectedClinic：可能是 string (院區名) 或 物件 → 統一成物件
+      if (state.selectedClinic && typeof state.selectedClinic === 'string' && typeof CLINICS !== 'undefined') {
+        var cn = state.selectedClinic;
+        var cObj = CLINICS.find(function(c){
+          return c.name === cn || c.name === cn.replace(/院區$/,'') + '院區';
+        });
+        if (cObj) state.selectedClinic = cObj;
+      }
+    } catch(_) {}
+  }
+
+  /* ─────────── 取得 weekday 1-7 (週一=1, 週日=7) ─────────── */
+  function getISOWd(y, m, d) {
+    var js = new Date(y, m - 1, d).getDay();  // 0=日
+    return js === 0 ? 7 : js;
+  }
+
+  /* ─────────── 取得指定月份第一天是星期幾（0=日）─────────── */
+  function getFirstDayOffset(y, m) {
+    return new Date(y, m - 1, 1).getDay();  // 0-6
+  }
+
+  /* ─────────── 取得指定月份天數 ─────────── */
+  function getDaysInMonth(y, m) {
+    return new Date(y, m, 0).getDate();
+  }
+
+  /* ─────────── 取得「該醫師＋院區」開診的 weekday 集合 ─────────── */
+  function getAvailableWeekdays() {
+    var s = new Set();
+    if (typeof state === 'undefined' || !state) return s;
+    if (typeof FIXED_SCHEDULE === 'undefined') return s;
+    var doc = state.selectedDoctor;
+    var cli = state.selectedClinic;
+    var doctorName = doc ? (typeof doc === 'object' ? (doc.name||'').replace(/\s*醫師\s*$/,'') : String(doc).replace(/\s*醫師\s*$/,'')) : null;
+    var clinicName = cli ? (typeof cli === 'object' ? cli.name : String(cli)) : null;
+    if (!doctorName || !clinicName) {
+      // 沒選齊 → 全部 weekday 都當開診（讓所有日期可點）
+      [1,2,3,4,5,6,7].forEach(function(n){ s.add(n); });
+      return s;
+    }
+    FIXED_SCHEDULE.forEach(function(sc){
+      if (sc.enabled && sc.doctor === doctorName && sc.clinic === clinicName) {
+        s.add(sc.weekday);
+      }
+    });
+    return s;
+  }
+
+  /* ─────────── 渲染日曆（v8.55 版）─────────── */
+  function renderCalendar() {
+    var grid = document.getElementById('patient-calendar');
+    if (!grid) return;
+
+    ensureStateObjects();
+
+    // 月份預設：用今天
+    if (calState.year == null || calState.month == null) {
+      var today = new Date();
+      calState.year = today.getFullYear();
+      calState.month = today.getMonth() + 1;
+    }
+
+    var Y = calState.year, M = calState.month;
+    var todayJs = new Date();
+    var isCurMonth = (Y === todayJs.getFullYear() && M === todayJs.getMonth() + 1);
+    var todayD = todayJs.getDate();
+
+    // 處理月份標題（替換原本的 "2026 年 4 月"）
+    var titleHost = grid.parentElement;
+    if (titleHost) {
+      // 移除舊的月份顯示與導覽
+      var oldTitle = titleHost.querySelector('.kw-v855-monthnav, [data-kw-v855-title]');
+      while (oldTitle) { oldTitle.remove(); oldTitle = titleHost.querySelector('.kw-v855-monthnav, [data-kw-v855-title]'); }
+      // 找原始 "2026 年 4 月" 並隱藏
+      var allDivs = titleHost.querySelectorAll('div, span');
+      allDivs.forEach(function(d){
+        if (d === grid) return;
+        var txt = (d.textContent || '').trim();
+        if (/^\d{4}\s*年\s*\d+\s*月$/.test(txt) && !d.querySelector('div')) {
+          d.style.display = 'none';
+        }
+      });
+      // 插月份導覽
+      var nav = document.createElement('div');
+      nav.className = 'kw-v855-monthnav';
+      nav.innerHTML =
+        '<button id="kw-v855-prev" type="button">‹</button>'
+      + '<span data-kw-v855-title>' + Y + ' 年 ' + M + ' 月</span>'
+      + '<button id="kw-v855-next" type="button">›</button>';
+      titleHost.insertBefore(nav, grid);
+      nav.querySelector('#kw-v855-prev').onclick = function(){
+        calState.month--;
+        if (calState.month < 1) { calState.month = 12; calState.year--; }
+        renderCalendar();
+      };
+      nav.querySelector('#kw-v855-next').onclick = function(){
+        calState.month++;
+        if (calState.month > 12) { calState.month = 1; calState.year++; }
+        renderCalendar();
+      };
+    }
+
+    grid.innerHTML = '';
+
+    // 週幾標頭
+    var weekdays = ['日','一','二','三','四','五','六'];
+    weekdays.forEach(function(d, i) {
+      var el = document.createElement('div');
+      el.className = 'weekday' + (i === 0 ? ' sun' : i === 6 ? ' sat' : '');
+      el.textContent = d;
+      grid.appendChild(el);
+    });
+
+    // 留白格
+    var offset = getFirstDayOffset(Y, M);
+    for (var k = 0; k < offset; k++) {
+      var em = document.createElement('div');
+      em.className = 'day-cell other-month';
+      grid.appendChild(em);
+    }
+
+    var daysInM = getDaysInMonth(Y, M);
+    var availWds = getAvailableWeekdays();
+
+    for (var d = 1; d <= daysInM; d++) {
+      var cell = document.createElement('div');
+      cell.className = 'day-cell';
+      var dateStr = Y + '-' + String(M).padStart(2,'0') + '-' + String(d).padStart(2,'0');
+      cell.dataset.date = dateStr;
+      var wd = getISOWd(Y, M, d);
+
+      var isPast = isCurMonth ? d < todayD : (Y < todayJs.getFullYear() || (Y === todayJs.getFullYear() && M < todayJs.getMonth() + 1));
+      var isToday = isCurMonth && d === todayD;
+      var hasSlots = availWds.has(wd) && !isPast;
+
+      if (isPast) cell.classList.add('disabled');
+      if (isToday) cell.classList.add('today', 'kw-v855-today');
+      if (hasSlots) cell.classList.add('has-slots', 'kw-v855-clickable');
+
+      cell.textContent = d;
+
+      if (!isPast && hasSlots) {
+        (function(d_, dateStr_, wd_, cell_) {
+          cell_.addEventListener('click', function() {
+            grid.querySelectorAll('.day-cell').forEach(function(c){
+              c.classList.remove('selected', 'kw-v855-selected');
+            });
+            cell_.classList.add('selected', 'kw-v855-selected');
+            try {
+              state.selectedDate = dateStr_;
+              state.selectedWeekday = wd_;
+              if (typeof renderTimeSlots === 'function') renderTimeSlots();
+            } catch(_) {}
+          });
+        })(d, dateStr, wd, cell);
+      } else if (!isPast) {
+        cell.classList.add('disabled');
+      }
+
+      grid.appendChild(cell);
+    }
+  }
+
+  /* ─────────── 覆蓋全域 buildPatientCalendar ─────────── */
+  // 等 page ready
+  function applyOverride() {
+    try {
+      window.buildPatientCalendar = renderCalendar;
+      console.log('[KW v8.55] ✓ buildPatientCalendar override 完成');
+    } catch(e) {
+      console.warn('[KW v8.55] override fail:', e);
+    }
+  }
+  applyOverride();
+
+  /* ─────────── 當 Step 3 顯示時，重新跑一次 ─────────── */
+  function watchStep3() {
+    var c3 = document.getElementById('p-content-3');
+    if (!c3) return;
+    if (c3.__kwv855Watched) return;
+    c3.__kwv855Watched = true;
+    var obs = new MutationObserver(function() {
+      if (c3.style.display !== 'none' && c3.offsetParent !== null) {
+        ensureStateObjects();
+        renderCalendar();
+      }
+    });
+    obs.observe(c3, { attributes: true, attributeFilter: ['style'] });
+  }
+  setInterval(watchStep3, 800);
+
+  /* ─────────── 用 setInterval 兜底：偵測「2026 年 4 月」這種寫死字串就強制重渲染 ─────────── */
+  setInterval(function() {
+    var grid = document.getElementById('patient-calendar');
+    if (!grid || grid.offsetParent === null) return;
+    var host = grid.parentElement;
+    if (!host) return;
+    // 偵測 host 內有沒有 "2026 年 4 月" 或 "年 X 月" 且該 X 跟現在月份不符
+    var realMonth = new Date().getMonth() + 1;
+    var realYear = new Date().getFullYear();
+    var txt = (host.textContent || '');
+    var m = txt.match(/(\d{4})\s*年\s*(\d+)\s*月/);
+    if (m) {
+      var shownYear = parseInt(m[1], 10);
+      var shownMonth = parseInt(m[2], 10);
+      // 如果沒有 v8.55 導覽，但顯示月份跟現在不同 → 重渲染
+      if (!host.querySelector('.kw-v855-monthnav')) {
+        calState.year = realYear;
+        calState.month = realMonth;
+        renderCalendar();
+      }
+    }
+  }, 1200);
+
+  console.log('[KW v8.55] ✓ 真實月份日曆 + 狀態物件化 啟用');
+})();
+</script>
+<!-- ===== [v8.55] 修日曆 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
