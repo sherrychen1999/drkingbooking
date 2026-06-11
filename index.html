@@ -2621,12 +2621,249 @@
   // ===== 固定班表（由「金鶯診所_各院區減重門診表_已填寫.xlsx」匯入）=====
   // 共 242 筆排班；enabled=false 即代表該時段已被「時段開關」關閉，病人端不會看到
   // 欄位：id, clinic（院區）, startDate, weekday（1~7）, session（早/午/晚診）, start, end, doctor, note, enabled
-  // ===== FIXED_SCHEDULE (v9.0 改革) =====
-  // 班表資料源：以後端 API (KW.api.getSchedules) 為唯一真實資料。
-  // v8.57 KW857 cache 會在啟動時打 API 載入 → 後台從 Drive 同步來的最新班表。
-  // 這個陣列保留為空，僅作為 type hint / fallback 結構。
-  // 若 API 失敗，本陣列為空 → 前端會顯示「請刷新班表」提示。
-  const FIXED_SCHEDULE = [];
+  const FIXED_SCHEDULE = [
+{ id:'S001', clinic:'觀音院區', startDate:'4/8', weekday:1, session:'早診', start:'09:00', end:'11:00', doctor:'蕭捷存', note:'', enabled:true },
+    { id:'S002', clinic:'觀音院區', startDate:'4/8', weekday:1, session:'午診', start:'15:00', end:'17:00', doctor:'黃錦崧', note:'', enabled:true },
+    { id:'S003', clinic:'觀音院區', startDate:'4/8', weekday:1, session:'晚診', start:'19:00', end:'20:00', doctor:'黃錦崧', note:'', enabled:true },
+    { id:'S004', clinic:'觀音院區', startDate:'4/8', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S005', clinic:'觀音院區', startDate:'4/8', weekday:3, session:'早診', start:'09:00', end:'11:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S006', clinic:'觀音院區', startDate:'4/8', weekday:3, session:'午診', start:'15:00', end:'17:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S007', clinic:'觀音院區', startDate:'4/8', weekday:3, session:'晚診', start:'19:00', end:'20:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S008', clinic:'觀音院區', startDate:'4/8', weekday:4, session:'早診', start:'09:00', end:'11:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S009', clinic:'觀音院區', startDate:'4/8', weekday:4, session:'午診', start:'15:00', end:'16:30', doctor:'黃錦崧', note:'', enabled:true },
+    { id:'S010', clinic:'觀音院區', startDate:'4/8', weekday:4, session:'晚診', start:'19:30', end:'20:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S011', clinic:'觀音院區', startDate:'4/8', weekday:5, session:'早診', start:'09:00', end:'11:00', doctor:'蕭捷存', note:'', enabled:true },
+    { id:'S012', clinic:'觀音院區', startDate:'4/8', weekday:5, session:'午診', start:'15:00', end:'17:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S013', clinic:'觀音院區', startDate:'4/8', weekday:5, session:'晚診', start:'19:00', end:'20:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S014', clinic:'觀音院區', startDate:'4/8', weekday:6, session:'早診', start:'09:00', end:'11:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S015', clinic:'觀音院區', startDate:'4/8', weekday:6, session:'午診', start:'15:00', end:'17:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S016', clinic:'觀音院區', startDate:'4/8', weekday:6, session:'晚診', start:'19:00', end:'20:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S017', clinic:'觀音院區', startDate:'4/8', weekday:7, session:'早診', start:'09:00', end:'11:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S018', clinic:'觀音院區', startDate:'4/8', weekday:7, session:'午診', start:'15:00', end:'17:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S019', clinic:'埔心院區', startDate:'4/8', weekday:1, session:'早診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S020', clinic:'埔心院區', startDate:'4/8', weekday:1, session:'午診', start:'15:00', end:'17:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S021', clinic:'埔心院區', startDate:'4/8', weekday:1, session:'晚診', start:'19:00', end:'20:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S022', clinic:'埔心院區', startDate:'4/8', weekday:2, session:'早診', start:'09:00', end:'11:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S023', clinic:'埔心院區', startDate:'4/8', weekday:2, session:'午診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S024', clinic:'埔心院區', startDate:'4/8', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S025', clinic:'埔心院區', startDate:'4/8', weekday:3, session:'早診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S026', clinic:'埔心院區', startDate:'4/8', weekday:3, session:'午診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S027', clinic:'埔心院區', startDate:'4/8', weekday:3, session:'晚診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S028', clinic:'埔心院區', startDate:'4/8', weekday:4, session:'早診', start:'09:00', end:'11:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S029', clinic:'埔心院區', startDate:'4/8', weekday:4, session:'午診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S030', clinic:'埔心院區', startDate:'4/8', weekday:4, session:'晚診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S031', clinic:'埔心院區', startDate:'4/8', weekday:5, session:'早診', start:'09:00', end:'11:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S032', clinic:'埔心院區', startDate:'4/8', weekday:5, session:'午診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S033', clinic:'埔心院區', startDate:'4/8', weekday:5, session:'晚診', start:'19:00', end:'20:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S034', clinic:'埔心院區', startDate:'4/8', weekday:6, session:'早診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S035', clinic:'埔心院區', startDate:'4/8', weekday:6, session:'午診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S036', clinic:'埔心院區', startDate:'4/8', weekday:6, session:'晚診', start:'19:00', end:'20:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S037', clinic:'埔心院區', startDate:'4/8', weekday:7, session:'早診', start:'09:00', end:'11:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S038', clinic:'埔心院區', startDate:'4/8', weekday:7, session:'午診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'S039', clinic:'埔心院區', startDate:'4/8', weekday:7, session:'晚診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S040', clinic:'平鎮院區', startDate:'4/8', weekday:1, session:'午診', start:'15:00', end:'17:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S041', clinic:'平鎮院區', startDate:'4/8', weekday:1, session:'晚診', start:'19:00', end:'20:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S042', clinic:'平鎮院區', startDate:'4/8', weekday:2, session:'午診', start:'15:00', end:'17:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S043', clinic:'平鎮院區', startDate:'4/8', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S044', clinic:'平鎮院區', startDate:'4/8', weekday:3, session:'早診', start:'09:00', end:'11:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S045', clinic:'平鎮院區', startDate:'4/8', weekday:3, session:'午診', start:'15:00', end:'17:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S046', clinic:'平鎮院區', startDate:'4/8', weekday:4, session:'早診', start:'09:00', end:'11:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S047', clinic:'平鎮院區', startDate:'4/8', weekday:4, session:'午診', start:'14:00', end:'18:00', doctor:'蕭捷健', note:'隔週休', enabled:true },
+    { id:'S048', clinic:'平鎮院區', startDate:'4/8', weekday:4, session:'晚診', start:'19:00', end:'20:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S049', clinic:'平鎮院區', startDate:'4/8', weekday:5, session:'午診', start:'15:00', end:'17:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S050', clinic:'平鎮院區', startDate:'4/8', weekday:5, session:'晚診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S051', clinic:'平鎮院區', startDate:'4/8', weekday:6, session:'早診', start:'09:00', end:'11:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S052', clinic:'平鎮院區', startDate:'4/8', weekday:6, session:'晚診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S053', clinic:'平鎮院區', startDate:'4/8', weekday:7, session:'晚診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S054', clinic:'大湳院區', startDate:'4/8', weekday:1, session:'早診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'S055', clinic:'大湳院區', startDate:'4/8', weekday:1, session:'晚診', start:'19:00', end:'20:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S056', clinic:'大湳院區', startDate:'4/8', weekday:2, session:'早診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'S057', clinic:'大湳院區', startDate:'4/8', weekday:2, session:'午診', start:'15:00', end:'17:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S058', clinic:'大湳院區', startDate:'4/8', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S059', clinic:'大湳院區', startDate:'4/8', weekday:3, session:'早診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'S060', clinic:'大湳院區', startDate:'4/8', weekday:3, session:'午診', start:'15:00', end:'17:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S061', clinic:'大湳院區', startDate:'4/8', weekday:3, session:'晚診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S062', clinic:'大湳院區', startDate:'4/8', weekday:4, session:'早診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S063', clinic:'大湳院區', startDate:'4/8', weekday:4, session:'午診', start:'15:00', end:'17:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S064', clinic:'大湳院區', startDate:'4/8', weekday:4, session:'晚診', start:'19:00', end:'20:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S065', clinic:'大湳院區', startDate:'4/8', weekday:5, session:'早診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'S066', clinic:'大湳院區', startDate:'4/8', weekday:5, session:'午診', start:'15:00', end:'17:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S067', clinic:'大湳院區', startDate:'4/8', weekday:5, session:'晚診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S068', clinic:'大湳院區', startDate:'4/8', weekday:6, session:'早診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'S069', clinic:'大湳院區', startDate:'4/8', weekday:6, session:'午診', start:'15:00', end:'17:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S070', clinic:'大湳院區', startDate:'4/8', weekday:6, session:'晚診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S071', clinic:'大湳院區', startDate:'4/8', weekday:7, session:'早診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S072', clinic:'大湳院區', startDate:'4/8', weekday:7, session:'早診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'S073', clinic:'大湳院區', startDate:'4/8', weekday:7, session:'午診', start:'14:00', end:'17:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S074', clinic:'大湳院區', startDate:'4/8', weekday:7, session:'午診', start:'15:00', end:'17:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'S075', clinic:'大湳院區', startDate:'4/8', weekday:7, session:'晚診', start:'19:00', end:'20:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S076', clinic:'大竹院區', startDate:'3/1', weekday:1, session:'早診', start:'09:00', end:'11:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S077', clinic:'大竹院區', startDate:'3/1', weekday:1, session:'午診', start:'15:00', end:'17:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'S078', clinic:'大竹院區', startDate:'3/1', weekday:1, session:'晚診', start:'19:00', end:'20:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'S079', clinic:'大竹院區', startDate:'3/1', weekday:1, session:'晚診', start:'19:00', end:'20:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S080', clinic:'大竹院區', startDate:'3/1', weekday:2, session:'早診', start:'09:00', end:'11:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'S081', clinic:'大竹院區', startDate:'3/1', weekday:2, session:'午診', start:'15:00', end:'17:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S082', clinic:'大竹院區', startDate:'3/1', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S083', clinic:'大竹院區', startDate:'3/1', weekday:3, session:'早診', start:'09:00', end:'11:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'S084', clinic:'大竹院區', startDate:'3/1', weekday:3, session:'晚診', start:'19:00', end:'20:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S085', clinic:'大竹院區', startDate:'3/1', weekday:4, session:'早診', start:'09:00', end:'11:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S086', clinic:'大竹院區', startDate:'3/1', weekday:4, session:'午診', start:'15:00', end:'17:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'S087', clinic:'大竹院區', startDate:'3/1', weekday:4, session:'晚診', start:'19:00', end:'20:00', doctor:'彭榆真', note:'', enabled:true },
+    { id:'S088', clinic:'大竹院區', startDate:'3/1', weekday:5, session:'早診', start:'09:00', end:'11:00', doctor:'彭榆真', note:'', enabled:true },
+    { id:'S089', clinic:'大竹院區', startDate:'3/1', weekday:5, session:'晚診', start:'19:00', end:'20:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'S090', clinic:'大竹院區', startDate:'3/1', weekday:6, session:'早診', start:'09:00', end:'11:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'S091', clinic:'大竹院區', startDate:'3/1', weekday:6, session:'午診', start:'15:00', end:'17:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S092', clinic:'大竹院區', startDate:'3/1', weekday:6, session:'晚診', start:'19:00', end:'20:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S093', clinic:'大竹院區', startDate:'3/1', weekday:7, session:'早診', start:'09:00', end:'11:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S094', clinic:'大竹院區', startDate:'3/1', weekday:7, session:'午診', start:'15:00', end:'17:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'S095', clinic:'大溪院區', startDate:'4/20', weekday:1, session:'午診', start:'16:00', end:'18:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S096', clinic:'大溪院區', startDate:'4/20', weekday:1, session:'晚診', start:'19:00', end:'20:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S097', clinic:'大溪院區', startDate:'4/20', weekday:2, session:'早診', start:'09:00', end:'11:30', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'S098', clinic:'大溪院區', startDate:'4/20', weekday:3, session:'午診', start:'15:30', end:'17:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S099', clinic:'大溪院區', startDate:'4/20', weekday:4, session:'午診', start:'15:00', end:'16:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S100', clinic:'大溪院區', startDate:'4/20', weekday:5, session:'午診', start:'16:00', end:'18:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S101', clinic:'大溪院區', startDate:'4/20', weekday:5, session:'晚診', start:'19:00', end:'20:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S102', clinic:'大溪院區', startDate:'4/20', weekday:5, session:'晚診', start:'19:00', end:'20:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S103', clinic:'大溪院區', startDate:'4/20', weekday:7, session:'早診', start:'10:00', end:'11:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S104', clinic:'大溪院區', startDate:'4/20', weekday:7, session:'早診', start:'10:00', end:'12:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'S105', clinic:'龍潭院區', startDate:'4/13', weekday:1, session:'午診', start:'15:00', end:'17:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S106', clinic:'龍潭院區', startDate:'4/13', weekday:1, session:'晚診', start:'18:30', end:'20:00', doctor:'蕭捷存', note:'', enabled:true },
+    { id:'S107', clinic:'龍潭院區', startDate:'4/13', weekday:1, session:'晚診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S108', clinic:'龍潭院區', startDate:'4/13', weekday:2, session:'午診', start:'17:00', end:'18:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S109', clinic:'龍潭院區', startDate:'4/13', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S110', clinic:'龍潭院區', startDate:'4/13', weekday:3, session:'午診', start:'14:00', end:'16:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S111', clinic:'龍潭院區', startDate:'4/13', weekday:5, session:'午診', start:'16:30', end:'18:30', doctor:'何冠達', note:'', enabled:true },
+    { id:'S112', clinic:'龍潭院區', startDate:'4/13', weekday:5, session:'晚診', start:'19:00', end:'20:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S113', clinic:'龍潭院區', startDate:'4/13', weekday:6, session:'午診', start:'13:00', end:'15:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'S114', clinic:'龍潭院區', startDate:'4/13', weekday:7, session:'早診', start:'09:00', end:'11:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'S115', clinic:'八德院區', startDate:'4/13', weekday:1, session:'早診', start:'09:00', end:'10:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S116', clinic:'八德院區', startDate:'4/13', weekday:1, session:'午診', start:'15:00', end:'17:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S117', clinic:'八德院區', startDate:'4/13', weekday:2, session:'早診', start:'09:00', end:'11:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S118', clinic:'八德院區', startDate:'4/13', weekday:2, session:'午診', start:'15:00', end:'16:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S119', clinic:'八德院區', startDate:'4/13', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S120', clinic:'八德院區', startDate:'4/13', weekday:3, session:'早診', start:'09:00', end:'11:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S121', clinic:'八德院區', startDate:'4/13', weekday:3, session:'午診', start:'14:00', end:'16:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S122', clinic:'八德院區', startDate:'4/13', weekday:3, session:'晚診', start:'19:00', end:'20:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S123', clinic:'八德院區', startDate:'4/13', weekday:4, session:'早診', start:'09:00', end:'10:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S124', clinic:'八德院區', startDate:'4/13', weekday:4, session:'午診', start:'15:00', end:'17:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S125', clinic:'八德院區', startDate:'4/13', weekday:4, session:'晚診', start:'19:00', end:'20:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S126', clinic:'八德院區', startDate:'4/13', weekday:6, session:'早診', start:'09:00', end:'12:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S127', clinic:'八德院區', startDate:'4/13', weekday:6, session:'午診', start:'16:00', end:'17:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S128', clinic:'八德院區', startDate:'4/13', weekday:6, session:'晚診', start:'18:00', end:'20:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S129', clinic:'八德院區', startDate:'4/13', weekday:7, session:'早診', start:'09:00', end:'12:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'S130', clinic:'八德院區', startDate:'4/13', weekday:7, session:'晚診', start:'18:00', end:'20:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'S131', clinic:'土城院區', startDate:'4/1', weekday:1, session:'早診', start:'09:00', end:'13:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'S132', clinic:'土城院區', startDate:'4/1', weekday:1, session:'早診', start:'09:00', end:'11:00', doctor:'何中誠', note:'', enabled:true },
+    { id:'S133', clinic:'土城院區', startDate:'4/1', weekday:1, session:'午診', start:'13:30', end:'15:30', doctor:'林秉承', note:'', enabled:true },
+    { id:'S134', clinic:'土城院區', startDate:'4/1', weekday:2, session:'晚診', start:'16:00', end:'20:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'S135', clinic:'土城院區', startDate:'4/1', weekday:3, session:'早診', start:'09:00', end:'11:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'S136', clinic:'土城院區', startDate:'4/1', weekday:3, session:'午診', start:'10:00', end:'12:00', doctor:'蕭捷健', note:'', enabled:true },
+    { id:'S137', clinic:'土城院區', startDate:'4/1', weekday:4, session:'早診', start:'09:00', end:'11:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'S138', clinic:'土城院區', startDate:'4/1', weekday:4, session:'晚診', start:'19:00', end:'20:00', doctor:'陳麒中', note:'', enabled:true },
+    { id:'S139', clinic:'土城院區', startDate:'4/1', weekday:5, session:'早診', start:'09:00', end:'12:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'S140', clinic:'土城院區', startDate:'4/1', weekday:5, session:'午診', start:'14:00', end:'17:00', doctor:'陳麒中', note:'', enabled:true },
+    { id:'S141', clinic:'土城院區', startDate:'4/1', weekday:6, session:'早診', start:'10:00', end:'12:00', doctor:'何中誠', note:'', enabled:true },
+    { id:'S142', clinic:'土城院區', startDate:'4/1', weekday:6, session:'早診', start:'10:30', end:'12:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'S143', clinic:'土城院區', startDate:'4/1', weekday:6, session:'午診', start:'13:00', end:'15:00', doctor:'林秉承', note:'隔週休', enabled:true },
+    { id:'S144', clinic:'土城院區', startDate:'4/1', weekday:6, session:'晚診', start:'18:00', end:'20:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'S145', clinic:'土城院區', startDate:'4/1', weekday:7, session:'早診', start:'09:00', end:'11:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'S146', clinic:'土城院區', startDate:'4/1', weekday:7, session:'早診', start:'11:00', end:'13:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'S147', clinic:'土城院區', startDate:'4/1', weekday:7, session:'午診', start:'13:00', end:'14:30', doctor:'陳麒中', note:'', enabled:true },
+    { id:'S148', clinic:'土城院區', startDate:'4/1', weekday:7, session:'晚診', start:'19:00', end:'20:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'S149', clinic:'桃園院區', startDate:'1/10', weekday:1, session:'早診', start:'09:00', end:'13:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'S150', clinic:'桃園院區', startDate:'1/10', weekday:1, session:'午診', start:'15:00', end:'17:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'S151', clinic:'桃園院區', startDate:'1/10', weekday:1, session:'晚診', start:'19:00', end:'20:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'S152', clinic:'桃園院區', startDate:'1/10', weekday:2, session:'早診', start:'09:00', end:'11:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'S153', clinic:'桃園院區', startDate:'1/10', weekday:2, session:'午診', start:'15:00', end:'17:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'S154', clinic:'桃園院區', startDate:'1/10', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'S155', clinic:'桃園院區', startDate:'1/10', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'陳韋思', note:'', enabled:true },
+    { id:'S156', clinic:'桃園院區', startDate:'1/10', weekday:3, session:'早診', start:'09:00', end:'13:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'S157', clinic:'桃園院區', startDate:'1/10', weekday:3, session:'午診', start:'15:00', end:'17:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'S158', clinic:'桃園院區', startDate:'1/10', weekday:3, session:'晚診', start:'19:00', end:'20:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'S159', clinic:'桃園院區', startDate:'1/10', weekday:3, session:'晚診', start:'19:00', end:'20:00', doctor:'陳韋思', note:'', enabled:true },
+    { id:'S160', clinic:'桃園院區', startDate:'1/10', weekday:4, session:'早診', start:'09:00', end:'11:00', doctor:'陳韋思', note:'', enabled:true },
+    { id:'S161', clinic:'桃園院區', startDate:'1/10', weekday:4, session:'午診', start:'14:00', end:'18:00', doctor:'蕭捷健', note:'隔週休', enabled:true },
+    { id:'S162', clinic:'桃園院區', startDate:'1/10', weekday:4, session:'晚診', start:'19:00', end:'20:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'S163', clinic:'桃園院區', startDate:'1/10', weekday:5, session:'早診', start:'09:00', end:'12:00', doctor:'陳韋思', note:'', enabled:true },
+    { id:'S164', clinic:'桃園院區', startDate:'1/10', weekday:5, session:'午診', start:'14:00', end:'17:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S165', clinic:'桃園院區', startDate:'1/10', weekday:5, session:'晚診', start:'18:30', end:'20:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S166', clinic:'桃園院區', startDate:'1/10', weekday:5, session:'晚診', start:'18:30', end:'20:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'S167', clinic:'桃園院區', startDate:'1/10', weekday:6, session:'早診', start:'09:00', end:'11:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'S168', clinic:'桃園院區', startDate:'1/10', weekday:6, session:'午診', start:'15:00', end:'17:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'S169', clinic:'桃園院區', startDate:'1/10', weekday:6, session:'晚診', start:'19:00', end:'20:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'S170', clinic:'桃園院區', startDate:'1/10', weekday:6, session:'晚診', start:'19:00', end:'20:00', doctor:'陳韋思', note:'', enabled:true },
+    { id:'S171', clinic:'桃園院區', startDate:'1/10', weekday:7, session:'早診', start:'09:00', end:'11:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'S172', clinic:'桃園院區', startDate:'1/10', weekday:7, session:'早診', start:'09:00', end:'11:00', doctor:'陳韋思', note:'', enabled:true },
+    { id:'S173', clinic:'桃園院區', startDate:'1/10', weekday:7, session:'午診', start:'15:00', end:'17:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'S174', clinic:'桃園院區', startDate:'1/10', weekday:7, session:'晚診', start:'19:00', end:'20:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'S175', clinic:'樹林院區', startDate:'4/1', weekday:1, session:'早診', start:'10:00', end:'12:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'S177', clinic:'樹林院區', startDate:'4/1', weekday:1, session:'午診', start:'16:00', end:'17:00', doctor:'何中誠', note:'', enabled:true },
+    { id:'S178', clinic:'樹林院區', startDate:'4/1', weekday:1, session:'晚診', start:'18:00', end:'20:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'S179', clinic:'樹林院區', startDate:'4/1', weekday:2, session:'早診', start:'08:00', end:'13:00', doctor:'何中誠', note:'', enabled:true },
+    { id:'S180', clinic:'樹林院區', startDate:'4/1', weekday:2, session:'午診', start:'13:00', end:'19:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'S181', clinic:'樹林院區', startDate:'4/1', weekday:2, session:'午診', start:'16:00', end:'18:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'S182', clinic:'樹林院區', startDate:'4/1', weekday:2, session:'晚診', start:'19:00', end:'21:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'S183', clinic:'樹林院區', startDate:'4/1', weekday:2, session:'晚診', start:'19:00', end:'21:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'S184', clinic:'樹林院區', startDate:'4/1', weekday:3, session:'早診', start:'11:00', end:'12:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'S185', clinic:'樹林院區', startDate:'4/1', weekday:3, session:'午診', start:'16:00', end:'18:30', doctor:'林秉承', note:'', enabled:true },
+    { id:'S186', clinic:'樹林院區', startDate:'4/1', weekday:3, session:'晚診', start:'19:00', end:'21:00', doctor:'何中誠', note:'', enabled:true },
+    { id:'S187', clinic:'樹林院區', startDate:'4/1', weekday:3, session:'晚診', start:'19:00', end:'21:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'S188', clinic:'樹林院區', startDate:'4/1', weekday:4, session:'早診', start:'09:00', end:'11:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'S189', clinic:'樹林院區', startDate:'4/1', weekday:4, session:'午診', start:'13:00', end:'17:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'S190', clinic:'樹林院區', startDate:'4/1', weekday:4, session:'晚診', start:'19:00', end:'21:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'S191', clinic:'樹林院區', startDate:'4/1', weekday:5, session:'早診', start:'08:00', end:'11:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'S192', clinic:'樹林院區', startDate:'4/1', weekday:5, session:'午診', start:'12:00', end:'15:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'S193', clinic:'樹林院區', startDate:'4/1', weekday:5, session:'晚診', start:'17:30', end:'20:30', doctor:'何中誠', note:'', enabled:true },
+    { id:'S194', clinic:'樹林院區', startDate:'4/1', weekday:6, session:'早診', start:'10:00', end:'12:00', doctor:'林秉承', note:'隔週休', enabled:true },
+    { id:'S195', clinic:'樹林院區', startDate:'4/1', weekday:6, session:'午診', start:'10:00', end:'12:00', doctor:'廖崇淵', note:'隔週休', enabled:true },
+    { id:'S196', clinic:'樹林院區', startDate:'4/1', weekday:6, session:'晚診', start:'17:30', end:'18:30', doctor:'何中誠', note:'', enabled:true },
+    { id:'S197', clinic:'樹林院區', startDate:'4/1', weekday:7, session:'早診', start:'08:30', end:'12:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'S198', clinic:'樹林院區', startDate:'4/1', weekday:7, session:'早診', start:'08:00', end:'13:00', doctor:'何中誠', note:'', enabled:true },
+    { id:'S199', clinic:'樹林院區', startDate:'4/1', weekday:7, session:'午診', start:'12:00', end:'16:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'S200', clinic:'三樹院區', startDate:'4/13', weekday:1, session:'早診', start:'09:00', end:'12:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'S201', clinic:'三樹院區', startDate:'4/13', weekday:1, session:'午診', start:'17:00', end:'18:00', doctor:'張覲麟', note:'', enabled:true },
+    { id:'S202', clinic:'三樹院區', startDate:'4/13', weekday:1, session:'晚診', start:'18:00', end:'20:00', doctor:'張覲麟', note:'', enabled:true },
+    { id:'S203', clinic:'三樹院區', startDate:'4/13', weekday:2, session:'早診', start:'09:00', end:'12:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'S204', clinic:'三樹院區', startDate:'4/13', weekday:2, session:'午診', start:'17:00', end:'20:00', doctor:'闕壯理', note:'', enabled:true },
+    { id:'S205', clinic:'三樹院區', startDate:'4/13', weekday:2, session:'晚診', start:'17:00', end:'21:30', doctor:'蕭捷健', note:'', enabled:true },
+    { id:'S206', clinic:'三樹院區', startDate:'4/13', weekday:3, session:'早診', start:'13:00', end:'15:00', doctor:'張覲麟', note:'', enabled:true },
+    { id:'S207', clinic:'三樹院區', startDate:'4/13', weekday:3, session:'午診', start:'17:00', end:'20:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'S208', clinic:'三樹院區', startDate:'4/13', weekday:3, session:'晚診', start:'18:00', end:'20:00', doctor:'闕壯理', note:'', enabled:true },
+    { id:'S209', clinic:'三樹院區', startDate:'4/13', weekday:4, session:'早診', start:'10:00', end:'11:00', doctor:'蕭捷存', note:'', enabled:true },
+    { id:'S210', clinic:'三樹院區', startDate:'4/13', weekday:4, session:'午診', start:'11:00', end:'13:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'S211', clinic:'三樹院區', startDate:'4/13', weekday:4, session:'午診', start:'11:00', end:'13:00', doctor:'黃允玫', note:'', enabled:true },
+    { id:'S212', clinic:'三樹院區', startDate:'4/13', weekday:4, session:'晚診', start:'14:00', end:'15:00', doctor:'闕壯理', note:'', enabled:true },
+    { id:'S213', clinic:'三樹院區', startDate:'4/13', weekday:4, session:'晚診', start:'18:30', end:'21:30', doctor:'黃錦崧', note:'', enabled:true },
+    { id:'S214', clinic:'三樹院區', startDate:'4/13', weekday:5, session:'早診', start:'09:00', end:'12:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'S215', clinic:'三樹院區', startDate:'4/13', weekday:5, session:'早診', start:'09:00', end:'12:00', doctor:'張覲麟', note:'', enabled:true },
+    { id:'S216', clinic:'三樹院區', startDate:'4/13', weekday:5, session:'午診', start:'10:00', end:'13:00', doctor:'蕭捷健', note:'', enabled:true },
+    { id:'S217', clinic:'三樹院區', startDate:'4/13', weekday:5, session:'晚診', start:'17:00', end:'20:00', doctor:'闕壯理', note:'', enabled:true },
+    { id:'S218', clinic:'三樹院區', startDate:'4/13', weekday:5, session:'晚診', start:'17:00', end:'20:00', doctor:'黃允玫', note:'', enabled:true },
+    { id:'S219', clinic:'三樹院區', startDate:'4/13', weekday:6, session:'早診', start:'09:00', end:'12:00', doctor:'張覲麟', note:'', enabled:true },
+    { id:'S220', clinic:'三樹院區', startDate:'4/13', weekday:6, session:'早診', start:'09:00', end:'12:00', doctor:'黃允玫', note:'', enabled:true },
+    { id:'S221', clinic:'三樹院區', startDate:'4/13', weekday:6, session:'午診', start:'10:00', end:'14:00', doctor:'蕭捷健', note:'', enabled:true },
+    { id:'S222', clinic:'三樹院區', startDate:'4/13', weekday:6, session:'晚診', start:'16:00', end:'20:00', doctor:'闕壯理', note:'', enabled:true },
+    { id:'S223', clinic:'三樹院區', startDate:'4/13', weekday:7, session:'早診', start:'10:00', end:'13:00', doctor:'闕壯理', note:'', enabled:true },
+    { id:'S224', clinic:'三樹院區', startDate:'4/13', weekday:7, session:'午診', start:'15:00', end:'17:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'S225', clinic:'三樹院區', startDate:'4/13', weekday:7, session:'晚診', start:'18:00', end:'20:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'S226', clinic:'三樹院區', startDate:'4/13', weekday:7, session:'晚診', start:'18:00', end:'20:00', doctor:'黃允玫', note:'', enabled:true },
+    { id:'S227', clinic:'鶯歌院區', startDate:'4/8', weekday:1, session:'早診', start:'09:00', end:'12:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'S228', clinic:'鶯歌院區', startDate:'4/8', weekday:1, session:'晚診', start:'19:00', end:'21:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S229', clinic:'鶯歌院區', startDate:'4/8', weekday:2, session:'午診', start:'13:00', end:'15:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S230', clinic:'鶯歌院區', startDate:'4/8', weekday:2, session:'晚診', start:'19:00', end:'20:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'S231', clinic:'鶯歌院區', startDate:'4/8', weekday:3, session:'早診', start:'08:00', end:'10:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S232', clinic:'鶯歌院區', startDate:'4/8', weekday:3, session:'午診', start:'12:00', end:'14:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'S233', clinic:'鶯歌院區', startDate:'4/8', weekday:4, session:'午診', start:'17:30', end:'19:30', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S234', clinic:'鶯歌院區', startDate:'4/8', weekday:4, session:'晚診', start:'19:30', end:'20:30', doctor:'蕭捷存', note:'', enabled:true },
+    { id:'S235', clinic:'鶯歌院區', startDate:'4/8', weekday:5, session:'午診', start:'15:00', end:'18:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'S236', clinic:'鶯歌院區', startDate:'4/8', weekday:5, session:'晚診', start:'18:00', end:'20:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'S237', clinic:'鶯歌院區', startDate:'4/8', weekday:6, session:'早診', start:'09:00', end:'12:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S238', clinic:'鶯歌院區', startDate:'4/8', weekday:6, session:'早診', start:'09:00', end:'12:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'S239', clinic:'鶯歌院區', startDate:'4/8', weekday:6, session:'午診', start:'12:00', end:'14:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S240', clinic:'鶯歌院區', startDate:'4/8', weekday:7, session:'早診', start:'09:00', end:'12:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'S241', clinic:'鶯歌院區', startDate:'4/8', weekday:7, session:'午診', start:'15:00', end:'17:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'S242', clinic:'鶯歌院區', startDate:'4/8', weekday:7, session:'晚診', start:'19:00', end:'20:00', doctor:'林永昌', note:'', enabled:true }
+  ];
   // ===== 員工帳號（後續會由 google sheet 匯入；預設密碼為員工身分證後 4 碼）=====
   // 角色 role：admin（系統管理員）/ counter（櫃台）/ manager（院區主管）
   // 改為 let 以便 Excel 匯入時動態擴增/更新
@@ -3649,15 +3886,56 @@
       return (h >>> 0) / 4294967296;
     };
   }
-  // [v9.0] DEMO_PATIENT_NAMES 已移除（不再產 demo 病人）
-  const DEMO_PATIENT_NAMES = [];
+  // 預設病人姓名池（demo 用）
+  const DEMO_PATIENT_NAMES = [
+    '李俊傑','王美華','張家豪','陳淑芬','周小琪','吳家銘','高淑華','林大偉','趙建宇','謝雅婷',
+    '劉文政','黃志強','蔡佳芸','蘇冠廷','何志明','陳美玲','徐美如','郭美月','方志平','陸怡君',
+    '邱昭毅','潘建國','楊雅婷','朱家興','葉曉雯','范家豪','鄭佩珊','傅志偉','湯美如','童惠雯',
+    '田俊宏','馮淑娟','詹宗翰','唐若芸','曾家齊','賴怡君','簡淑芬','韋佳玲','蔣雨彤','駱建華',
+    '倪文哲','嚴依婷','莊景翔','沈安琪','雷宏文','連美玲','凌曉彤','范倩如','蕭婉婷','蔡明哲',
+    '廖振宇','江淑華','杜彥翔','卓德賢','龔依玲','尹宗翰','池宜君','余思賢','岑佳佩','金敏華'
+  ];
   // ===== 病人資料庫（demo） =====
   // 在 prototype 階段先用記憶體陣列；上線後改為從 Google Sheets 拉資料
   // 每筆病人含：id、姓名、電話、生日、身分證、所屬院區（caseLetter）、病例號數字、一組過去/未來預約
   const PATIENTS = [];
   function buildDemoPatients() {
-    // [v9.0] demo 病人產生已停用 — 改由後端 API 提供
-  }
+    if (PATIENTS.length > 0) return;
+    const rng = makeRng('PATIENT_DB_2026');
+    // 每位病人對應一個院區；每個院區產 5~9 位
+    CLINICS.forEach((clinic, ci) => {
+      const count = 5 + Math.floor(rng() * 5); // 5~9
+      for (let i = 0; i < count; i++) {
+        const nameIdx = Math.floor(rng() * DEMO_PATIENT_NAMES.length);
+        const name = DEMO_PATIENT_NAMES[nameIdx];
+        // 病例號：4 碼數字
+        const caseDigits = String(1000 + Math.floor(rng() * 9000));
+        // 電話：09 開頭
+        const phone = '09' + String(Math.floor(10000000 + rng() * 90000000)).slice(0,8);
+        const phoneFmt = `${phone.slice(0,4)}-${phone.slice(4,7)}-${phone.slice(7)}`;
+        // 生日：1955~2000
+        const year = 1955 + Math.floor(rng() * 46);
+        const month = 1 + Math.floor(rng() * 12);
+        const day = 1 + Math.floor(rng() * 28);
+        const birthday = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        // 身分證：1 letter + 9 digits（demo 假號）
+        const idLetter = 'ABCDEFGHJKLMNPQRSTUVXYWZIO'[Math.floor(rng() * 26)];
+        const idDigits = String(Math.floor(100000000 + rng() * 900000000));
+        const idNo = idLetter + idDigits;
+        // 是否 Line 綁定
+        const lineBound = rng() < 0.55;
+        const id = `P${String(PATIENTS.length + 1).padStart(4,'0')}`;
+        PATIENTS.push({
+          id, name, phone: phoneFmt,
+          birthday, idNo,
+          clinicCode: clinic.caseLetter,
+          clinicName: clinic.name,
+          caseDigits,
+          caseFull: clinic.caseLetter + caseDigits,
+          lineBound,
+          appointments: [],
+        });
+      }
     });
     // 為每位病人生成 1~6 筆預約（過去/未來混合）
     const today = new Date();
@@ -3734,8 +4012,40 @@
   }
   // 對單一班表時段生成 demo 預約（10 分鐘為 1 格；初診=2 格、複診=1 格）
   function generateDemoAppointmentsForSlot(schedule, dateStr, nameOffset) {
-    // [v9.0] demo 預約產生已停用 — 改由後端 API 提供真實預約
-    return [];
+    const rng = makeRng(`${schedule.id}|${dateStr}`);
+    const startMin = timeToMinutes(schedule.start);
+    const endMin = timeToMinutes(schedule.end);
+    const totalSlots = Math.floor((endMin - startMin) / 10);
+    if (totalSlots <= 0) return [];
+    const used = new Array(totalSlots).fill(false);
+    const appts = [];
+    let cursor = 0;
+    let nameIdx = nameOffset;
+    while (cursor < totalSlots) {
+      // 約 70% 機率該格被預約，30% 留空
+      if (rng() > 0.7) { cursor += 1; continue; }
+      // 隨機選類型：初診 30%、複診 70%（且需有空間連續放下）
+      const wantInitial = rng() < 0.3 && cursor + 2 <= totalSlots;
+      const span = wantInitial ? 2 : 1;
+      if (cursor + span > totalSlots) break;
+      // 標記佔用
+      for (let k=0; k<span; k++) used[cursor+k] = true;
+      const apptStart = startMin + cursor * 10;
+      const apptEnd = apptStart + span * 10;
+      const isVip = rng() < 0.06;
+      const isDone = rng() < 0.18;
+      appts.push({
+        name: DEMO_PATIENT_NAMES[nameIdx % DEMO_PATIENT_NAMES.length],
+        type: wantInitial ? '初診' : '複診',
+        startMin: apptStart,
+        endMin: apptEnd,
+        spanSlots: span,
+        flag: isVip ? 'vip' : (isDone ? 'done' : 'normal'),
+      });
+      nameIdx += 1;
+      cursor += span;
+    }
+    return { appts, nextNameIdx: nameIdx };
   }
   function fmtTime(min) {
     const h = String(Math.floor(min/60)).padStart(2,'0');
@@ -13457,8 +13767,422 @@
 })();
 </script>
 <!-- ===== [v8.39] 院區名 normalize + modal avatar 修補 結束 ===== -->
-<!-- [v8.40] 已被後續 patch 取代，v9.0 移除 -->
-<!-- [v8.41] 已被後續 patch 取代，v9.0 移除 -->
+<!-- ===== [v8.40] 醫師照片位置調整 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api && typeof KW.api._post === 'function') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+    var POSITIONS = {};   // shortName → "X% Y%"
+    function loadPositions() {
+      return KW.api._post('getAllDoctorProfiles', {}, true).then(function(res) {
+        if (!res || !res.ok) return;
+        (res.data || []).forEach(function(d) {
+          if (d.shortName && d.photoPos) POSITIONS[d.shortName] = d.photoPos;
+        });
+      });
+    }
+    loadPositions();
+    setInterval(loadPositions, 30000);
+    // ===== 自動套用 object-position 到所有醫師卡 / modal 頭像 =====
+    function applyPositions() {
+      // 病人端 .doctor-card
+      document.querySelectorAll('.doctor-card').forEach(function(card) {
+        var info = card.querySelector('.doctor-info') || card;
+        var txt = info.textContent || '';
+        var m = txt.match(/([一-龥]{2,4})\s*醫師/);
+        if (!m) return;
+        var name = m[1];
+        var pos = POSITIONS[name];
+        var img = card.querySelector('img');
+        if (img && pos) {
+          img.style.objectPosition = pos;
+          img.style.objectFit = 'cover';
+        }
+        // background-image 路徑也套
+        var av = card.querySelector('.doctor-avatar, [class*="doctor-avatar"]');
+        if (av && pos) {
+          av.style.backgroundPosition = pos;
+          av.style.backgroundSize = 'cover';
+        }
+      });
+      // 系統管理 醫師管理 table 內的頭像
+      document.querySelectorAll('table tbody tr').forEach(function(tr) {
+        var cells = tr.querySelectorAll('td');
+        var nameCell = cells[1];
+        if (!nameCell) return;
+        var name = '';
+        var tx = (nameCell.textContent || '').replace(/[\s上傳照片移除更換]/g, '');
+        var mm = tx.match(/[一-龥]{2,4}/);
+        if (mm) name = mm[0];
+        var pos = POSITIONS[name];
+        var img = nameCell.querySelector('img');
+        if (img && pos) {
+          img.style.objectPosition = pos;
+          img.style.objectFit = 'cover';
+        }
+      });
+    }
+    setInterval(applyPositions, 1500);
+    // ===== 系統管理 醫師管理：點頭像 → 開放大調整 modal =====
+    document.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t) return;
+      // 必須在醫師管理頁的 table 內
+      var tr = (t.closest ? t.closest('tr') : null);
+      if (!tr) return;
+      var tbl = tr.closest('table');
+      if (!tbl) return;
+      var heads = tbl.querySelectorAll('thead th');
+      var headTxts = Array.prototype.map.call(heads, function(h){ return h.textContent.replace(/\s+/g,''); });
+      var hasDocId = headTxts.some(function(s){ return s.indexOf('醫師編號') >= 0; });
+      var hasSlot = headTxts.some(function(s){ return s.indexOf('時段限額') >= 0; });
+      if (!hasDocId && !hasSlot) return;
+      // 點的必須是頭像 cell / 圖片 / 圓圈
+      var nameCell = tr.querySelectorAll('td')[1];
+      if (!nameCell || !nameCell.contains(t)) return;
+      // 是否點到 img 或 avatar 圓圈
+      var avatar = t.closest && (t.closest('img') || t.closest('.doctor-avatar, [class*="avatar"]'));
+      if (!avatar && t.tagName !== 'IMG') {
+        // 也容許點到「上傳照片/移除/更換」以外的部分
+        var clickedTxt = (t.textContent || '').replace(/\s+/g,'');
+        if (clickedTxt === '上傳照片' || clickedTxt === '移除' || clickedTxt === '更換') return;
+        // 找頭像
+        avatar = nameCell.querySelector('img') || nameCell.querySelector('.doctor-avatar, [class*="avatar"]');
+      }
+      if (!avatar) return;
+      // 取醫師名
+      var nameTxt = (nameCell.textContent || '').replace(/[\s上傳照片移除更換]/g, '');
+      var nm = nameTxt.match(/[一-龥]{2,4}/);
+      if (!nm) return;
+      var shortName = nm[0];
+      // 取得圖片 URL
+      var imgUrl = '';
+      if (avatar.tagName === 'IMG') imgUrl = avatar.src;
+      else {
+        var img2 = avatar.querySelector('img');
+        if (img2) imgUrl = img2.src;
+        else {
+          var bg = getComputedStyle(avatar).backgroundImage;
+          var bgm = bg && bg.match(/url\(["']?(.*?)["']?\)/);
+          if (bgm) imgUrl = bgm[1];
+        }
+      }
+      if (!imgUrl) { alert('此醫師尚未上傳照片，請先上傳照片再調整位置'); return; }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openPositionModal(shortName, imgUrl);
+    }, true);
+    function openPositionModal(shortName, imgUrl) {
+      var existing = document.getElementById('kw-v840-pos'); if (existing) existing.remove();
+      var startPos = POSITIONS[shortName] || '50% 22%';
+      var pm = startPos.match(/(-?\d+(?:\.\d+)?)%\s+(-?\d+(?:\.\d+)?)%/);
+      var px = pm ? Number(pm[1]) : 50;
+      var py = pm ? Number(pm[2]) : 22;
+      var overlay = document.createElement('div');
+      overlay.id = 'kw-v840-pos';
+      overlay.style.cssText = 'position:fixed; inset:0; background:rgba(15,23,42,.6); z-index:100001; display:flex; align-items:center; justify-content:center; padding:16px;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff; border-radius:14px; width:100%; max-width:520px; box-shadow:0 20px 60px rgba(0,0,0,.3);';
+      card.innerHTML =
+        '<div style="padding:14px 20px; border-bottom:1px solid #e2e8f0;">'
+        + '<div style="font-size:17px; font-weight:700;">🖼 調整照片位置：' + esc(shortName) + '</div>'
+        + '<div style="font-size:12.5px; color:#94a3b8; margin-top:4px;">用方向鈕微調照片在頭像圓圈內的位置，存檔後病人端同步生效</div>'
+        + '</div>'
+        + '<div style="padding:20px; display:flex; flex-direction:column; align-items:center; gap:14px;">'
+        +   '<div id="kw-v840-preview" style="width:260px; height:260px; border-radius:50%; overflow:hidden; background:#f1f5f9; border:3px solid #cbd5e1;">'
+        +     '<img src="' + esc(imgUrl) + '" id="kw-v840-img" style="width:100%; height:100%; object-fit:cover; object-position:' + esc(px) + '% ' + esc(py) + '%;">'
+        +   '</div>'
+        +   '<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; max-width:220px; width:100%;">'
+        +     '<div></div>'
+        +     '<button data-dir="up" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:16px;">▲</button>'
+        +     '<div></div>'
+        +     '<button data-dir="left" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:16px;">◀</button>'
+        +     '<button data-dir="reset" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:11.5px;">重置</button>'
+        +     '<button data-dir="right" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:16px;">▶</button>'
+        +     '<div></div>'
+        +     '<button data-dir="down" type="button" style="padding:10px; background:#fff; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer; font-size:16px;">▼</button>'
+        +     '<div></div>'
+        +   '</div>'
+        +   '<div style="font-size:12px; color:#64748b;">位置：<span id="kw-v840-coord">' + px + '% / ' + py + '%</span></div>'
+        +   '<div style="font-size:11.5px; color:#94a3b8;">每次按鍵移動 2%</div>'
+        + '</div>'
+        + '<div style="padding:14px 20px; border-top:1px solid #e2e8f0; display:flex; gap:8px; justify-content:flex-end;">'
+        +   '<button id="kw-v840-cancel" style="padding:9px 16px; background:#fff; color:#475569; border:1px solid #cbd5e1; border-radius:8px; cursor:pointer;">關閉</button>'
+        +   '<button id="kw-v840-save" style="padding:9px 18px; background:#2563eb; color:#fff; border:none; border-radius:8px; font-weight:600; cursor:pointer;">✓ 存檔</button>'
+        + '</div>';
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      card.querySelector('#kw-v840-cancel').onclick = function(){ overlay.remove(); };
+      overlay.addEventListener('click', function(e){ if (e.target === overlay) overlay.remove(); });
+      var imgPrev = card.querySelector('#kw-v840-img');
+      var coord = card.querySelector('#kw-v840-coord');
+      function update() {
+        imgPrev.style.objectPosition = px + '% ' + py + '%';
+        coord.textContent = px + '% / ' + py + '%';
+      }
+      card.querySelectorAll('[data-dir]').forEach(function(b) {
+        b.addEventListener('click', function() {
+          var d = b.dataset.dir;
+          if (d === 'up')    py = Math.max(0, py - 2);
+          if (d === 'down')  py = Math.min(100, py + 2);
+          if (d === 'left')  px = Math.max(0, px - 2);
+          if (d === 'right') px = Math.min(100, px + 2);
+          if (d === 'reset') { px = 50; py = 22; }
+          update();
+        });
+      });
+      // 鍵盤支援
+      var keyHandler = function(e) {
+        if (e.key === 'ArrowUp') { e.preventDefault(); py = Math.max(0, py-2); update(); }
+        if (e.key === 'ArrowDown') { e.preventDefault(); py = Math.min(100, py+2); update(); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); px = Math.max(0, px-2); update(); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); px = Math.min(100, px+2); update(); }
+      };
+      document.addEventListener('keydown', keyHandler);
+      overlay.__cleanup = function(){ document.removeEventListener('keydown', keyHandler); };
+      var origRemove = overlay.remove.bind(overlay);
+      overlay.remove = function() { if (overlay.__cleanup) overlay.__cleanup(); origRemove(); };
+      card.querySelector('#kw-v840-save').onclick = function() {
+        var posStr = px + '% ' + py + '%';
+        var b = this; b.disabled = true; b.textContent = '存檔中…';
+        // 先撈現有 profile，避免覆寫其他欄
+        KW.api._post('getDoctorProfile', { shortName: shortName }, false).then(function(res) {
+          var prev = (res && res.ok && res.data) || {};
+          return KW.api._post('saveDoctorProfile', {
+            '醫師短名': shortName,
+            '醫師全名': prev.fullName || '',
+            '一句話': prev.tagline || '',
+            '介紹文字': prev.bio || '',
+            'Drive資料夾ID': prev.folderId || '',
+            '照片位置': posStr
+          }, true);
+        }).then(function(rs) {
+          b.disabled = false; b.textContent = '✓ 存檔';
+          if (rs && rs.ok) {
+            POSITIONS[shortName] = posStr;
+            applyPositions();
+            overlay.remove();
+            if (typeof showToast === 'function') showToast('位置已存檔', 'success');
+          } else {
+            alert('存檔失敗：' + (rs && rs.error ? rs.error : '未知'));
+          }
+        });
+      };
+    }
+    console.log('[KW v8.40] ✓ 醫師照片位置調整啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.40] 醫師照片位置調整 結束 ===== -->
+<!-- ===== [v8.41] 三大 bug 修正 + 門診表美化 開始 ===== -->
+<style id="kw-v841-style">
+  /* 門診表美化 */
+  #kw-v838-schedule-view table {
+    font-size: 15px !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,.06) !important;
+  }
+  #kw-v838-schedule-view table th {
+    font-size: 15px !important;
+    padding: 14px 10px !important;
+    background: linear-gradient(135deg, #6d28d9, #7c3aed) !important;
+    color: #fff !important;
+    border: none !important;
+    border-bottom: 2px solid #5b21b6 !important;
+    font-weight: 700 !important;
+    letter-spacing: 1px !important;
+  }
+  #kw-v838-schedule-view table td {
+    font-size: 14.5px !important;
+    padding: 12px !important;
+    border: 1px solid #f1f5f9 !important;
+    vertical-align: top !important;
+    background: #fff !important;
+    transition: background 0.15s !important;
+  }
+  #kw-v838-schedule-view table tbody td:first-child {
+    background: linear-gradient(135deg, #faf5ff, #f3e8ff) !important;
+    font-weight: 700 !important;
+    font-size: 15px !important;
+    color: #6d28d9 !important;
+    text-align: center !important;
+    min-width: 100px !important;
+  }
+  #kw-v838-schedule-view table tbody td:not(:first-child):hover {
+    background: #faf5ff !important;
+  }
+  #kw-v838-schedule-view table [data-kw-doctor] {
+    font-size: 14.5px !important;
+    color: #6d28d9 !important;
+    font-weight: 700 !important;
+    border-bottom: 2px dashed #c4b5fd !important;
+    padding-bottom: 1px !important;
+    transition: all 0.15s !important;
+  }
+  #kw-v838-schedule-view table [data-kw-doctor]:hover {
+    color: #fff !important;
+    background: #6d28d9 !important;
+    border-bottom-color: #6d28d9 !important;
+    padding: 2px 6px !important;
+    border-radius: 6px !important;
+  }
+  #kw-v838-schedule-view table small {
+    font-size: 13px !important;
+    color: #475569 !important;
+    display: inline-block !important;
+    margin-top: 2px !important;
+    background: #f1f5f9 !important;
+    padding: 1px 6px !important;
+    border-radius: 4px !important;
+  }
+  #kw-v838-schedule-view table hr {
+    border: none !important;
+    border-top: 1px dashed #e2e8f0 !important;
+    margin: 8px 0 !important;
+  }
+  /* schedule view 上方標題 */
+  #kw-v838-schedule-view > div:first-child {
+    font-size: 17px !important;
+    color: #6d28d9 !important;
+    margin-bottom: 6px !important;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && KW.api) cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+  waitReady(function() {
+    // ===== 1. window 層 capture 處理「預約這位醫師」bypass =====
+    // window capture > document capture，可在 v8.31 之前攔下
+    window.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      var card = t.closest('.doctor-card');
+      if (!card) return;
+      if (card.__kwv841_bookBypass) {
+        // 不 stop / preventDefault — 讓事件正常冒泡到原本委派 handler（grid 上）
+        // v8.31 那邊靠相同的 bypass flag 跳過攔截，原始流程會自己處理 state + patientNext
+        return;
+      }
+    }, true);
+    // ===== 2. v8.31 modal 開啟後：自動補上頭像照片 =====
+    function fixModalPhoto() {
+      var modal = document.getElementById('kw-v831-profile');
+      if (!modal || modal.__kwv841PhotoDone) return;
+      // 取出 modal 的標題醫師全名（如「蕭捷健 醫師」）
+      var titleEl = modal.querySelector('div[style*="font-size:20px"]') || modal.querySelector('div[style*="font-size: 20px"]');
+      var titleTxt = (titleEl ? titleEl.textContent : '') || '';
+      var m = titleTxt.match(/([一-龥]{2,4})\s*醫師/);
+      if (!m) return;
+      var shortName = m[1];
+      // 找對應的 doctor-card 拿 img
+      var imgUrl = '';
+      document.querySelectorAll('.doctor-card').forEach(function(card) {
+        if (imgUrl) return;
+        var info = card.querySelector('.doctor-info') || card;
+        if ((info.textContent||'').indexOf(shortName + ' 醫師') < 0 &&
+            (info.textContent||'').indexOf(shortName + '醫師') < 0) return;
+        var img = card.querySelector('img');
+        if (img && img.src) imgUrl = img.src;
+        else {
+          var av = card.querySelector('.doctor-avatar, [class*="doctor-avatar"]');
+          if (av) {
+            var bg = (av.style.backgroundImage || getComputedStyle(av).backgroundImage || '');
+            var bgm = bg.match(/url\(["']?(.*?)["']?\)/);
+            if (bgm) imgUrl = bgm[1];
+          }
+        }
+      });
+      if (!imgUrl) return;
+      // 找 modal 內第一個 80px 圓形 div
+      var divs = modal.querySelectorAll('div');
+      for (var i = 0; i < divs.length; i++) {
+        var d = divs[i];
+        var cs = getComputedStyle(d);
+        var w = parseInt(cs.width, 10);
+        var h = parseInt(cs.height, 10);
+        if (w >= 70 && w <= 100 && h >= 70 && h <= 100 && cs.borderRadius && cs.borderRadius.indexOf('50%') >= 0) {
+          var pos = (typeof POSITIONS_REF !== 'undefined' && POSITIONS_REF[shortName]) || 'center 22%';
+          d.style.cssText += ';background-image:url("' + imgUrl + '") !important; background-size:cover !important; background-position:' + pos + ' !important; background-repeat:no-repeat !important; color:transparent !important;';
+          d.textContent = '';
+          modal.__kwv841PhotoDone = true;
+          break;
+        }
+      }
+    }
+    setInterval(fixModalPhoto, 1500);
+    // ===== 3. v8.31 modal 的「預約這位醫師」按鈕：改成觸發 bypass =====
+    function fixBookButton() {
+      var modal = document.getElementById('kw-v831-profile');
+      if (!modal || modal.__kwv841BtnFixed) return;
+      var bookBtn = modal.querySelector('#kw-v831-book');
+      if (!bookBtn) return;
+      modal.__kwv841BtnFixed = true;
+      bookBtn.onclick = function() {
+        modal.remove();
+        // 找標題裡的醫師名
+        var titleEl = modal.querySelector('div[style*="font-size:20px"]') || modal.querySelector('div[style*="font-size: 20px"]');
+        var titleTxt = (titleEl ? titleEl.textContent : '') || '';
+        var m = titleTxt.match(/([一-龥]{2,4})\s*醫師/);
+        if (!m) return;
+        var shortName = m[1];
+        // 找對應 card，設 bypass flag 並 click
+        var cards = document.querySelectorAll('.doctor-card');
+        for (var i = 0; i < cards.length; i++) {
+          var info = cards[i].querySelector('.doctor-info') || cards[i];
+          if ((info.textContent||'').indexOf(shortName + ' 醫師') >= 0 ||
+              (info.textContent||'').indexOf(shortName + '醫師') >= 0) {
+            cards[i].__kwv841_bookBypass = true;
+            cards[i].click();
+            return;
+          }
+        }
+      };
+    }
+    setInterval(fixBookButton, 1500);
+    // ===== 4. 加速 v8.40 POSITIONS 載入週期 =====
+    // 取得 v8.40 的 POSITIONS map（透過自己再撈一次並讓 v8.40 應用）
+    window.POSITIONS_REF = {};
+    function reloadPositions() {
+      KW.api._post('getAllDoctorProfiles', {}, true).then(function(res) {
+        if (!res || !res.ok) return;
+        (res.data || []).forEach(function(d) {
+          if (d.shortName && d.photoPos) window.POSITIONS_REF[d.shortName] = d.photoPos;
+        });
+        // 主動套用到所有可見 img
+        document.querySelectorAll('.doctor-card').forEach(function(card) {
+          var info = card.querySelector('.doctor-info') || card;
+          var mm = (info.textContent||'').match(/([一-龥]{2,4})\s*醫師/);
+          if (!mm) return;
+          var pos = window.POSITIONS_REF[mm[1]];
+          if (!pos) return;
+          var img = card.querySelector('img');
+          if (img) { img.style.objectPosition = pos; img.style.objectFit = 'cover'; }
+          var av = card.querySelector('.doctor-avatar, [class*="doctor-avatar"]');
+          if (av) { av.style.backgroundPosition = pos; av.style.backgroundSize = 'cover'; }
+        });
+      });
+    }
+    reloadPositions();
+    setInterval(reloadPositions, 15000);
+    console.log('[KW v8.41] ✓ 三大 bug 修正 + 門診表美化啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.41] 三大 bug 修正 + 門診表美化 結束 ===== -->
 <!-- ===== [v8.42] 醫師照片位置 !important 衝突修正 開始 ===== -->
 <script>
 (function() {
@@ -13546,8 +14270,246 @@
 })();
 </script>
 <!-- ===== [v8.42] 醫師照片位置 !important 衝突修正 結束 ===== -->
-<!-- [v8.43] 已被後續 patch 取代，v9.0 移除 -->
-<!-- [v8.44] 已被後續 patch 取代，v9.0 移除 -->
+<!-- ===== [v8.43] 架構整理：介紹按鈕分離 + 咖色門診表 + 位置即時生效 開始 ===== -->
+<style id="kw-v843-style">
+  /* 介紹小按鈕 */
+  .kw-info-btn {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(109, 40, 217, 0.1);
+    color: #6d28d9;
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-left: 6px;
+    flex-shrink: 0;
+    border: none;
+  }
+  .kw-info-btn:hover {
+    background: #6d28d9;
+    color: #fff;
+    transform: scale(1.1);
+  }
+  /* === 咖色門診表（覆寫 v8.41 紫色版） === */
+  #kw-v838-schedule-view {
+    background: #fdfaf6 !important;
+    padding: 18px !important;
+    border-radius: 14px !important;
+    border: 1px solid #e8dccc !important;
+  }
+  #kw-v838-schedule-view > div:first-child {
+    font-size: 17px !important;
+    color: #8b6f47 !important;
+    margin-bottom: 10px !important;
+  }
+  #kw-v838-schedule-view > div:nth-child(2) {
+    font-size: 13px !important;
+    color: #a89070 !important;
+    margin-bottom: 12px !important;
+  }
+  #kw-v838-schedule-view table {
+    font-size: 15px !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+  #kw-v838-schedule-view table th {
+    font-size: 14.5px !important;
+    padding: 11px 8px !important;
+    background: #f5ede0 !important;
+    color: #8b6f47 !important;
+    border: 1px solid #e8dccc !important;
+    font-weight: 600 !important;
+    letter-spacing: normal !important;
+  }
+  #kw-v838-schedule-view table td {
+    font-size: 14px !important;
+    padding: 10px !important;
+    border: 1px solid #f0e6d6 !important;
+    vertical-align: top !important;
+    background: #fff !important;
+  }
+  #kw-v838-schedule-view table tbody td:first-child {
+    background: #faf3e8 !important;
+    font-weight: 700 !important;
+    font-size: 14.5px !important;
+    color: #8b6f47 !important;
+    text-align: center !important;
+    min-width: 80px !important;
+  }
+  #kw-v838-schedule-view table tbody td:not(:first-child):hover {
+    background: #fdfaf6 !important;
+  }
+  #kw-v838-schedule-view table [data-kw-doctor] {
+    font-size: 14.5px !important;
+    color: #6b4f2c !important;
+    font-weight: 600 !important;
+    border-bottom: 1px dashed #c4a682 !important;
+    padding-bottom: 1px !important;
+    cursor: pointer !important;
+    background: transparent !important;
+  }
+  #kw-v838-schedule-view table [data-kw-doctor]:hover {
+    color: #fff !important;
+    background: #8b6f47 !important;
+    border-bottom-color: #8b6f47 !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+  }
+  #kw-v838-schedule-view table small {
+    font-size: 12.5px !important;
+    color: #8b6f47 !important;
+    display: inline-block !important;
+    margin-top: 4px !important;
+    background: #faf3e8 !important;
+    padding: 1px 6px !important;
+    border-radius: 4px !important;
+  }
+  #kw-v838-schedule-view table hr {
+    border: none !important;
+    border-top: 1px dashed #e8dccc !important;
+    margin: 8px 0 !important;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+  waitReady(function() {
+    // v8.45：移除 v8.43 強塞 flex + 📋 鈕邏輯（會把原卡片排版搞壞），改成清除已注入的痕跡
+    function cleanupOldInjects() {
+      // 移除已注入的 .kw-info-btn
+      document.querySelectorAll('.kw-info-btn').forEach(function(b){ b.remove(); });
+      // 還原被強改成 flex 的 parent
+      document.querySelectorAll('.doctor-info > div').forEach(function(d) {
+        if (d.style.display === 'flex' && d.style.justifyContent === 'space-between') {
+          d.style.display = '';
+          d.style.alignItems = '';
+          d.style.justifyContent = '';
+        }
+      });
+    }
+    setInterval(cleanupOldInjects, 3000);
+    setTimeout(cleanupOldInjects, 500);
+    console.log('[KW v8.43] ✓ 架構整理 + 咖色門診表 + 介紹按鈕分離啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.43] 架構整理：介紹按鈕分離 + 咖色門診表 + 位置即時生效 結束 ===== -->
+<!-- ===== [v8.44] 卡片清乾淨 + 門診表排版咖色版 開始 ===== -->
+<style id="kw-v844-style">
+  /* 隱藏 📋 介紹圖示 */
+  .kw-info-btn { display: none !important; }
+  /* 門診表咖色版 — 細節調整 */
+  #kw-v838-schedule-view {
+    background: #faf5ec !important;
+    padding: 18px !important;
+    border-radius: 12px !important;
+    border: 1px solid #e0d3bb !important;
+  }
+  #kw-v838-schedule-view table {
+    width: 100% !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    background: #fff !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+    box-shadow: 0 2px 6px rgba(139, 111, 71, 0.08) !important;
+  }
+  #kw-v838-schedule-view table th {
+    background: #f0e4cf !important;
+    color: #6b4f2c !important;
+    font-size: 14.5px !important;
+    font-weight: 600 !important;
+    padding: 11px 6px !important;
+    border: 1px solid #e0d3bb !important;
+    letter-spacing: 1px !important;
+    text-align: center !important;
+  }
+  #kw-v838-schedule-view table td {
+    padding: 12px 6px !important;
+    border: 1px solid #ede1cb !important;
+    vertical-align: middle !important;
+    background: #fff !important;
+    text-align: center !important;
+  }
+  #kw-v838-schedule-view table tbody td:first-child {
+    background: #f7ecd6 !important;
+    color: #6b4f2c !important;
+    font-weight: 700 !important;
+    font-size: 15px !important;
+    width: 60px !important;
+    min-width: 60px !important;
+    letter-spacing: 4px !important;
+    writing-mode: vertical-rl !important;
+    text-orientation: upright !important;
+    padding: 16px 4px !important;
+  }
+  /* 每個醫師區塊 */
+  .kw-cell-item {
+    padding: 4px 6px !important;
+  }
+  .kw-doc-name {
+    color: #6b4f2c !important;
+    font-weight: 600 !important;
+    font-size: 14px !important;
+    border-bottom: 1px dashed #c4a682 !important;
+    padding-bottom: 1px !important;
+    cursor: pointer !important;
+    display: inline-block !important;
+    margin-bottom: 4px !important;
+  }
+  .kw-doc-name:hover {
+    color: #fff !important;
+    background: #8b6f47 !important;
+    border-bottom-color: #8b6f47 !important;
+    padding: 1px 6px !important;
+    border-radius: 4px !important;
+  }
+  .kw-time-range {
+    font-size: 13px !important;
+    color: #8b6f47 !important;
+    line-height: 1.3 !important;
+    margin-top: 2px !important;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+  waitReady(function() {
+    // v8.45：撤回 v8.44 隱藏 label 邏輯（使用者偏好原本「減重門診/駐診院區:」layout）
+    // 若已被前一版隱藏 → 還原
+    function restoreLabels() {
+      document.querySelectorAll('[style*="display: none"]').forEach(function(el) {
+        if (el.__kw844_hidden) {
+          el.style.display = '';
+          el.__kw844_hidden = false;
+        }
+      });
+    }
+    setInterval(restoreLabels, 3000);
+    setTimeout(restoreLabels, 500);
+    console.log('[KW v8.44] ✓ 卡片清乾淨 + 門診表排版啟用');
+  });
+})();
+</script>
+<!-- ===== [v8.44] 卡片清乾淨 + 門診表排版咖色版 結束 ===== -->
 <!-- ===== [v8.46] 門診表多醫師同格改垂直堆疊 開始 ===== -->
 <style>
   /* v8.46：把 v8.44 渲染的 .kw-cell-flex 從橫排改成直排
