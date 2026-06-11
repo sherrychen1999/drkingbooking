@@ -16113,6 +16113,691 @@
 </script>
 <!-- ===== [v8.55] 修日曆 結束 ===== -->
 
+<!-- ===== [v8.56] 對 Drive 115.06 蕭捷健班表 + 3 UI bug 修補 開始 ===== -->
+<style>
+  /* 預約詳情 modal 友善時間 */
+  .kw-v856-friendly-time {
+    color: #16a34a; font-weight: 600;
+  }
+  /* 隱藏所有原本寫死的 "2026 年 4 月" 文字 */
+  .kw-v856-hide-legacy { display: none !important; }
+</style>
+<script>
+(function() {
+  'use strict';
+
+  /* ────────────────────────────────────────────────────
+   * 1. 蕭捷健 醫師 真實班表（依 Drive 115.06）
+   * ──────────────────────────────────────────────────── */
+  // weekday: 1=週一 .. 7=週日（系統格式）
+  var XIAO_JIE_JIAN_SCHEDULE = [
+    // 三樹院區
+    { clinic:'三樹院區', weekday:2, session:'晚診', start:'17:00', end:'20:00', note:'減重專診' },
+    { clinic:'三樹院區', weekday:5, session:'早診', start:'10:00', end:'13:00', note:'減重專診' },
+    { clinic:'三樹院區', weekday:6, session:'早診', start:'10:00', end:'14:00', note:'減重專診' },
+    // 土城院區
+    { clinic:'土城院區', weekday:3, session:'早診', start:'10:00', end:'12:00', note:'減重專診' },
+    // 桃園院區 (隔週休)
+    { clinic:'桃園院區', weekday:4, session:'午診', start:'14:00', end:'18:00', note:'隔週休（與平鎮輪流）' },
+    // 平鎮院區 (隔週休)
+    { clinic:'平鎮院區', weekday:4, session:'午診', start:'14:00', end:'18:00', note:'隔週休（與桃園輪流）' }
+  ];
+  var DOCTOR_NAME = '蕭捷健';
+
+  /* 把蕭捷健班表注入 FIXED_SCHEDULE（如果尚未存在則 push）*/
+  function injectXiaoSchedule() {
+    try {
+      if (typeof FIXED_SCHEDULE === 'undefined' || !Array.isArray(FIXED_SCHEDULE)) return;
+      // 移除舊的蕭捷健記錄
+      for (var i = FIXED_SCHEDULE.length - 1; i >= 0; i--) {
+        if (FIXED_SCHEDULE[i] && FIXED_SCHEDULE[i].doctor === DOCTOR_NAME) {
+          FIXED_SCHEDULE.splice(i, 1);
+        }
+      }
+      // 加新班表
+      XIAO_JIE_JIAN_SCHEDULE.forEach(function(s, idx) {
+        FIXED_SCHEDULE.push({
+          id: 'S_XIAO_' + (idx+1),
+          clinic: s.clinic,
+          startDate: '6/1',
+          weekday: s.weekday,
+          session: s.session,
+          start: s.start,
+          end: s.end,
+          doctor: DOCTOR_NAME,
+          note: s.note,
+          enabled: true
+        });
+      });
+      console.log('[KW v8.56] FIXED_SCHEDULE 蕭捷健 6 筆已替換');
+    } catch(e) {
+      console.warn('[KW v8.56] injectXiaoSchedule fail:', e);
+    }
+  }
+  // 確保 DOCTORS 陣列有蕭捷健的 4 院區
+  function ensureXiaoClinics() {
+    try {
+      if (typeof DOCTORS === 'undefined') return;
+      var d = DOCTORS.find(function(x){ return (x.name||'').indexOf(DOCTOR_NAME) >= 0; });
+      if (d) {
+        d.clinics = ['三樹院區','土城院區','桃園院區','平鎮院區'];
+      }
+    } catch(_) {}
+  }
+  // 等 FIXED_SCHEDULE / DOCTORS 載入
+  function waitAndInject() {
+    if (typeof FIXED_SCHEDULE !== 'undefined' && Array.isArray(FIXED_SCHEDULE) && FIXED_SCHEDULE.length > 0) {
+      injectXiaoSchedule();
+      ensureXiaoClinics();
+    } else {
+      setTimeout(waitAndInject, 200);
+    }
+  }
+  waitAndInject();
+
+  /* ────────────────────────────────────────────────────
+   * 2. v8.50 modal：fallback 用 FIXED_SCHEDULE 撈班表
+   *    (原邏輯先打後端 getSchedules，撈失敗或為空才 fallback)
+   * ──────────────────────────────────────────────────── */
+  function getFromFixedSchedule(shortName) {
+    if (typeof FIXED_SCHEDULE === 'undefined') return [];
+    return FIXED_SCHEDULE
+      .filter(function(s) {
+        if (!s.enabled) return false;
+        var sn = String(s.doctor||'').replace(/\s*醫師\s*$/,'').trim();
+        return sn === shortName;
+      })
+      .map(function(s) {
+        return {
+          doctor: s.doctor,
+          clinic: s.clinic,
+          weekday: s.weekday,
+          // v8.50 預期 weekday 0=日 1=一... 6=六；但這裡 1-7 (週一=1, 週日=7) → 轉換
+          // 但 v8.50 WD_MAP 是 { 1:0, 2:1, ..., 0:6 } → 接受 0-6
+          // 所以我們把 weekday=7 (週日) 轉成 0
+          start: s.start,
+          end: s.end,
+          note: s.note || '',
+          enabled: true
+        };
+      })
+      .map(function(s) {
+        // 確保 weekday 是 v8.50 WD_MAP 期望的 0-6
+        if (s.weekday === 7) s.weekday = 0;
+        return s;
+      });
+  }
+
+  // 補強 v8.50 modal：監測 modal 開出來且為空時，從 FIXED_SCHEDULE 補渲染
+  function fillModalFromFixedSchedule() {
+    var modal = document.getElementById('kw-v850-schedule');
+    if (!modal) return;
+    if (modal.__kwv856Filled) return;
+
+    var titleEl = modal.querySelector('.kw-v850-title');
+    if (!titleEl) return;
+    var mm = (titleEl.textContent || '').match(/([一-龥]{2,4})\s*減重醫師/);
+    if (!mm) return;
+    var shortName = mm[1];
+
+    // 等 modal 開啟 1.5 秒看 API 是否撈到
+    var openedAt = modal.__kwv856Opened || (modal.__kwv856Opened = Date.now());
+    if (Date.now() - openedAt < 1500) return;
+
+    var grid = modal.querySelector('#kw-v850-grid');
+    if (!grid) return;
+    var realSlots = grid.querySelectorAll('.kw-v850-slot:not(.empty)');
+    // 已有 slot → 也補：用 FIXED_SCHEDULE 比對，若 FIXED 更多就用 FIXED 整個重渲
+    var fixedSlots = getFromFixedSchedule(shortName);
+    if (fixedSlots.length === 0) return;
+    if (realSlots.length >= fixedSlots.length) {
+      modal.__kwv856Filled = true;
+      return;
+    }
+
+    // 清空現有 slot，重新渲染
+    var cols = grid.querySelectorAll('.kw-v850-daycol');
+    var WD_MAP = { 1:0, 2:1, 3:2, 4:3, 5:4, 6:5, 0:6 };
+    cols.forEach(function(col){
+      // 保留 dayhead
+      var head = col.querySelector('.kw-v850-dayhead');
+      col.innerHTML = '';
+      if (head) col.appendChild(head);
+    });
+
+    // group by weekday
+    var byCol = [[],[],[],[],[],[],[]];
+    fixedSlots.forEach(function(s) {
+      var ci = WD_MAP[s.weekday];
+      if (ci == null) return;
+      byCol[ci].push(s);
+    });
+    byCol.forEach(function(arr){
+      arr.sort(function(a,b){ return a.start < b.start ? -1 : 1; });
+    });
+    var maxRows = Math.max(1, Math.max.apply(null, byCol.map(function(a){return a.length;})));
+
+    byCol.forEach(function(arr, ci) {
+      var col = cols[ci];
+      if (!col) return;
+      arr.forEach(function(s) {
+        var slot = document.createElement('div');
+        slot.className = 'kw-v850-slot';
+        var noteHTML = s.note ? '<div class="kw-v850-note">('+esc(s.note)+')</div>' : '';
+        slot.innerHTML =
+          '<div class="kw-v850-clinic">'+esc(String(s.clinic).replace(/院區$/,'減重'))+'</div>'
+        + noteHTML
+        + '<div class="kw-v850-time">'+esc(s.start)+'<span class="sep">|</span>'+esc(s.end)+'</div>';
+        col.appendChild(slot);
+      });
+      for (var j = arr.length; j < maxRows; j++) {
+        var pad = document.createElement('div');
+        pad.className = 'kw-v850-slot empty';
+        col.appendChild(pad);
+      }
+    });
+
+    // 移除 v8.53 容錯警告（既然我們重新填了 slot）
+    var emptyHint = grid.querySelector('.kw-v850-empty');
+    if (emptyHint) emptyHint.remove();
+
+    modal.__kwv856Filled = true;
+    console.log('[KW v8.56] 用 FIXED_SCHEDULE 重新渲染 v8.50 modal:', shortName, fixedSlots.length, '個 slot');
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  setInterval(fillModalFromFixedSchedule, 600);
+
+  /* ────────────────────────────────────────────────────
+   * 3. UI Bug 修正
+   * ──────────────────────────────────────────────────── */
+
+  /* 3a. 隱藏 Step 3 日曆殘留的「2026 年 4 月」字串 */
+  function hideLegacyMonth() {
+    var c3 = document.getElementById('p-content-3');
+    if (!c3) return;
+    var grid = document.getElementById('patient-calendar');
+    if (!grid) return;
+    var host = grid.parentElement;
+    if (!host) return;
+    // 找出所有直接子節點裡 textContent 是 "20XX 年 X 月" 的 element（且不是 v8.55 導覽的）
+    var children = host.querySelectorAll('div, span, p, h2, h3');
+    children.forEach(function(el) {
+      if (el === grid) return;
+      if (el.classList.contains('kw-v855-monthnav')) return;
+      if (el.closest('.kw-v855-monthnav')) return;
+      // leaf node only
+      if (el.children.length > 0) return;
+      var txt = (el.textContent || '').trim();
+      if (/^\d{4}\s*年\s*\d+\s*月$/.test(txt)) {
+        // 真的把它移除
+        el.classList.add('kw-v856-hide-legacy');
+        // 連同前後的 < > 按鈕容器也藏掉
+        var parent = el.parentElement;
+        if (parent && parent !== host && parent.childElementCount <= 3) {
+          parent.classList.add('kw-v856-hide-legacy');
+        }
+      }
+    });
+  }
+  setInterval(hideLegacyMonth, 800);
+
+  /* 3b. 預約詳情 modal 時間格式：ISO → 「今天 17:26」/「3 小時前」 */
+  function friendlyTimeAgo(iso) {
+    try {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      var now = new Date();
+      var diff = (now - d) / 1000;  // sec
+      if (diff < 60) return '剛剛';
+      if (diff < 3600) return Math.floor(diff/60) + ' 分鐘前';
+      if (diff < 86400) return Math.floor(diff/3600) + ' 小時前';
+      if (diff < 86400 * 7) return Math.floor(diff/86400) + ' 天前';
+      // 超過一週 → 顯示日期 + 時間
+      var y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+      var hh = String(d.getHours()).padStart(2,'0'), mm = String(d.getMinutes()).padStart(2,'0');
+      return y + '/' + m + '/' + day + ' ' + hh + ':' + mm;
+    } catch(e) {
+      return iso;
+    }
+  }
+  function beautifyApptDetail() {
+    // 預約詳情 modal 內含 ISO 字串的 element
+    var all = document.querySelectorAll('div, span, td, p');
+    all.forEach(function(el) {
+      if (el.children.length > 0) return;
+      if (el.dataset.kwv856Beautified) return;
+      var txt = (el.textContent || '').trim();
+      var m = txt.match(/^(.*?)(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:[\+\-]\d{2}:?\d{2}|Z)?)(.*?)$/);
+      if (!m) return;
+      var iso = m[2];
+      var pretty = friendlyTimeAgo(iso);
+      if (pretty === iso) return;
+      el.dataset.kwv856Beautified = '1';
+      // 取代
+      el.innerHTML = esc(m[1]) + '<span class="kw-v856-friendly-time">' + esc(pretty) + '</span>' + esc(m[3]);
+    });
+  }
+  setInterval(beautifyApptDetail, 1000);
+
+  /* 3c. v8.53 容錯警告框：只在真的沒班表時顯示 */
+  function suppressFalseV853Warning() {
+    var modal = document.getElementById('kw-v850-schedule');
+    if (!modal) return;
+    var grid = modal.querySelector('#kw-v850-grid');
+    if (!grid) return;
+    var realSlots = grid.querySelectorAll('.kw-v850-slot:not(.empty)');
+    if (realSlots.length > 0) {
+      // 有 slot 但 v8.53 警告也在 → 移除警告
+      var hint = grid.querySelector('.kw-v850-empty');
+      if (hint) {
+        hint.remove();
+        console.log('[KW v8.56] 移除誤觸發的 v8.53 警告（已有 slot）');
+      }
+    }
+  }
+  setInterval(suppressFalseV853Warning, 500);
+
+  console.log('[KW v8.56] ✓ 蕭捷健班表 + 3 UI bug 修正 啟用');
+})();
+</script>
+<!-- ===== [v8.56] 對 Drive 115.06 蕭捷健班表 + 3 UI bug 修補 結束 ===== -->
+
+<!-- ===== [v8.57] 統一改用後端 API 當班表唯一資料源 開始 ===== -->
+<style>
+  /* 刷新班表按鈕 */
+  .kw-v857-refresh-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 6px 12px;
+    background: #f0f9ff; color: #0369a1;
+    border: 1px solid #7dd3fc; border-radius: 8px;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all .15s;
+  }
+  .kw-v857-refresh-btn:hover {
+    background: #e0f2fe; transform: translateY(-1px);
+  }
+  .kw-v857-refresh-btn.loading {
+    pointer-events: none; opacity: .6;
+  }
+  .kw-v857-refresh-btn.loading::before {
+    content: '⏳ ';
+  }
+  .kw-v857-stale-warn {
+    display: inline-block;
+    padding: 2px 8px;
+    background: #fef3c7; color: #92400e;
+    border-radius: 4px; font-size: 11px;
+    margin-left: 8px;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+
+  /* ════════════════════════════════════════════════════════════════
+   * v8.57 班表雲端快取（單一資料源）
+   *
+   * 設計原則：
+   * ─ 來源：getSchedules() API（後端已從 Drive 同步）
+   * ─ 異動：嘗試 getScheduleOverrides() / getOverrides() / getScheduleExceptions()
+   * ─ 快取：sessionStorage（保留到瀏覽器關閉）+ 記憶體
+   * ─ Fallback：API 失敗 → 用前端 FIXED_SCHEDULE
+   * ─ 重新整理：手動「刷新班表」按鈕 OR 自動 5 分鐘失效
+   * ════════════════════════════════════════════════════════════════ */
+
+  var CACHE_KEY = 'kw_v857_schedule_cache';
+  var CACHE_TTL_MS = 5 * 60 * 1000;  // 5 分鐘自動失效
+
+  var KW857 = window.KW857 = {
+    /* 記憶體快取 */
+    schedules: null,   // 已 normalize 的陣列
+    overrides: null,   // 異動陣列（若後端有）
+    loadedAt: 0,
+    loading: false,
+
+    /* 監聽更新事件 */
+    listeners: [],
+    onUpdate: function(fn) { this.listeners.push(fn); },
+    fire: function() {
+      this.listeners.forEach(function(fn){ try { fn(); } catch(e) { console.warn('[KW v8.57]', e); } });
+    }
+  };
+
+  /* normalize: 把 backend 回傳的 schedule 整成統一格式 */
+  function normSched(s) {
+    if (!s) return null;
+    var weekday = Number(s.weekday);
+    // backend 可能 1-7 (週一=1, 週日=7) 或 0-6 (週日=0)
+    // 統一成「1-7, 週一=1, 週日=7」（跟 FIXED_SCHEDULE 一致）
+    if (weekday === 0) weekday = 7;
+    return {
+      id: s.id || ('SX_' + Math.random().toString(36).slice(2, 8)),
+      clinic: String(s.clinic || '').trim(),
+      doctor: String(s.doctor || '').replace(/\s*醫師\s*$/, '').trim(),
+      weekday: weekday,
+      session: s.session || '',
+      start: fmtTime(s.start),
+      end: fmtTime(s.end),
+      note: s.note || '',
+      enabled: s.enabled !== false,
+      startDate: s.startDate || '',
+      endDate: s.endDate || ''
+    };
+  }
+  function fmtTime(v) {
+    if (!v) return '';
+    var s = String(v);
+    var m = s.match(/T(\d{2}):(\d{2})/);
+    if (m) {
+      var h = (parseInt(m[1], 10) + 8) % 24;
+      return String(h).padStart(2, '0') + ':' + m[2];
+    }
+    var m2 = s.match(/(\d{1,2}):(\d{2})/);
+    if (m2) return String(m2[1]).padStart(2, '0') + ':' + m2[2];
+    return s;
+  }
+
+  /* 從 sessionStorage 載入快取 */
+  function loadFromStorage() {
+    try {
+      var raw = sessionStorage.getItem(CACHE_KEY);
+      if (!raw) return false;
+      var obj = JSON.parse(raw);
+      if (!obj || !Array.isArray(obj.schedules)) return false;
+      if (Date.now() - (obj.loadedAt || 0) > CACHE_TTL_MS) return false;
+      KW857.schedules = obj.schedules;
+      KW857.overrides = obj.overrides || [];
+      KW857.loadedAt = obj.loadedAt;
+      console.log('[KW v8.57] 從 sessionStorage 載入快取', KW857.schedules.length, '筆');
+      return true;
+    } catch(e) {
+      return false;
+    }
+  }
+  /* 存入 sessionStorage */
+  function saveToStorage() {
+    try {
+      sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+        schedules: KW857.schedules,
+        overrides: KW857.overrides,
+        loadedAt: KW857.loadedAt
+      }));
+    } catch(_) {}
+  }
+
+  /* 從後端載入 */
+  function fetchFromBackend(force) {
+    if (KW857.loading) return Promise.resolve();
+    if (!force && KW857.schedules && Date.now() - KW857.loadedAt < CACHE_TTL_MS) {
+      return Promise.resolve();
+    }
+    if (typeof KW === 'undefined' || !KW.api || !KW.api.enabled || !KW.api.enabled()) {
+      console.warn('[KW v8.57] KW.api 未就緒，跳過後端載入，將用 FIXED_SCHEDULE');
+      return Promise.resolve();
+    }
+    KW857.loading = true;
+    var markBtnLoading = function(loading) {
+      document.querySelectorAll('.kw-v857-refresh-btn').forEach(function(b){
+        if (loading) b.classList.add('loading'); else b.classList.remove('loading');
+      });
+    };
+    markBtnLoading(true);
+
+    // 1. 班表
+    var p1 = KW.api._get('getSchedules', {}).then(function(res) {
+      if (res && res.ok && Array.isArray(res.data)) {
+        KW857.schedules = res.data.map(normSched).filter(Boolean);
+        console.log('[KW v8.57] 後端載入', KW857.schedules.length, '筆班表');
+      }
+    }).catch(function(err) {
+      console.warn('[KW v8.57] getSchedules 失敗:', err);
+    });
+
+    // 2. 異動（嘗試多個 endpoint 名稱）
+    var tryOverrides = function(name) {
+      return KW.api._get(name, {}).then(function(res) {
+        if (res && res.ok && Array.isArray(res.data)) {
+          KW857.overrides = res.data;
+          console.log('[KW v8.57] 後端載入', res.data.length, '筆異動 (' + name + ')');
+          return true;
+        }
+        return false;
+      }).catch(function() { return false; });
+    };
+    var p2 = tryOverrides('getScheduleOverrides')
+      .then(function(ok) { return ok ? true : tryOverrides('getOverrides'); })
+      .then(function(ok) { return ok ? true : tryOverrides('getScheduleExceptions'); })
+      .then(function(ok) {
+        if (!ok) {
+          KW857.overrides = [];
+          console.log('[KW v8.57] 後端無異動 API，將不套用異動覆蓋');
+        }
+      });
+
+    return Promise.all([p1, p2]).then(function() {
+      KW857.loadedAt = Date.now();
+      KW857.loading = false;
+      saveToStorage();
+      KW857.fire();
+      markBtnLoading(false);
+      console.log('[KW v8.57] ✓ 班表快取更新完成');
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+   * 查詢 API（供前端各處呼叫）
+   * ════════════════════════════════════════════════════════════════ */
+  function getActiveSchedules() {
+    // 優先後端，沒有就 fallback FIXED_SCHEDULE
+    if (KW857.schedules && KW857.schedules.length > 0) return KW857.schedules;
+    if (typeof FIXED_SCHEDULE !== 'undefined' && Array.isArray(FIXED_SCHEDULE)) {
+      return FIXED_SCHEDULE.map(normSched).filter(Boolean);
+    }
+    return [];
+  }
+
+  /* 套用異動 override 到當日班表 */
+  function applyOverrides(dailySchedules, dateStr) {
+    if (!KW857.overrides || KW857.overrides.length === 0) return dailySchedules;
+    var todayOverrides = KW857.overrides.filter(function(o) {
+      return (o.date === dateStr) || (o.targetDate === dateStr);
+    });
+    if (todayOverrides.length === 0) return dailySchedules;
+    var result = dailySchedules.slice();
+    todayOverrides.forEach(function(o) {
+      var type = o.type || o.changeType || '';
+      if (/leave|休假|請假|cancel/i.test(type)) {
+        // 移除該醫師當日班
+        result = result.filter(function(s) {
+          return !(s.doctor === o.doctor && s.clinic === o.clinic);
+        });
+      } else if (/sub|代班|代/i.test(type)) {
+        // 把該醫師班改成代班醫師
+        result.forEach(function(s) {
+          if (s.doctor === o.originalDoctor && s.clinic === o.clinic) {
+            s.doctor = o.doctor;
+            s.note = (s.note || '') + ' (代班)';
+          }
+        });
+      } else if (/add|加診/i.test(type)) {
+        // 加一筆新班
+        result.push(normSched(o));
+      }
+    });
+    return result;
+  }
+
+  /* 公開 API：依醫師 + 院區 + weekday 查 */
+  KW857.getSlotsFor = function(doctorName, clinicName, weekday, dateStr) {
+    var doctorN = String(doctorName || '').replace(/\s*醫師\s*$/,'').trim();
+    var schedules = getActiveSchedules().filter(function(s) {
+      return s.enabled && s.doctor === doctorN && s.clinic === clinicName && s.weekday === weekday;
+    });
+    if (dateStr) schedules = applyOverrides(schedules, dateStr);
+    return schedules;
+  };
+
+  /* 公開 API：依醫師查全部班 */
+  KW857.getByDoctor = function(doctorName) {
+    var doctorN = String(doctorName || '').replace(/\s*醫師\s*$/,'').trim();
+    return getActiveSchedules().filter(function(s) {
+      return s.enabled && s.doctor === doctorN;
+    });
+  };
+
+  /* 公開 API：依院區查全部班 */
+  KW857.getByClinic = function(clinicName) {
+    return getActiveSchedules().filter(function(s) {
+      return s.enabled && s.clinic === clinicName;
+    });
+  };
+
+  /* 公開 API：依醫師 + 院區查 → 算出他有開診的 weekday 集合 */
+  KW857.getAvailableWeekdays = function(doctorName, clinicName) {
+    var set = new Set();
+    var doctorN = String(doctorName || '').replace(/\s*醫師\s*$/,'').trim();
+    getActiveSchedules().forEach(function(s) {
+      if (s.enabled && s.doctor === doctorN && s.clinic === clinicName) {
+        set.add(s.weekday);
+      }
+    });
+    return set;
+  };
+
+  /* 公開 API：取得整個院區的週班表（給門診表渲染用） */
+  KW857.getClinicWeekTable = function(clinicName) {
+    var all = getActiveSchedules().filter(function(s) {
+      return s.enabled && s.clinic === clinicName;
+    });
+    // 按 weekday + session 分組
+    return all;
+  };
+
+  /* 公開 API：手動刷新 */
+  KW857.refresh = function() {
+    return fetchFromBackend(true);
+  };
+
+  /* ════════════════════════════════════════════════════════════════
+   * 取代既有渲染函式：呼叫 KW857 cache 而非 FIXED_SCHEDULE
+   * ════════════════════════════════════════════════════════════════ */
+
+  /* 取代 getSlotsFor（原版用 FIXED_SCHEDULE）*/
+  function overrideGetSlotsFor() {
+    try {
+      if (typeof window.getSlotsFor === 'function' || typeof getSlotsFor === 'function') {
+        window.__kw_originalGetSlotsFor = window.getSlotsFor;
+      }
+      window.getSlotsFor = function(doctorName, clinicName, weekday) {
+        return KW857.getSlotsFor(doctorName, clinicName, weekday);
+      };
+      console.log('[KW v8.57] getSlotsFor 已改用 KW857 cache');
+    } catch(e) {
+      console.warn('[KW v8.57] override getSlotsFor fail:', e);
+    }
+  }
+
+  /* 取代 buildPatientCalendar 內部的 availableWeekdays 算法（透過 v8.55 已有 override）*/
+  // 直接 monkey-patch：v8.55 的 renderCalendar 用 FIXED_SCHEDULE，我們改成用 KW857
+  // 做法：定義全域 hook 讓 v8.55 偵測到
+  window.__kw857_getAvailableWeekdays = function(doctorName, clinicName) {
+    return KW857.getAvailableWeekdays(doctorName, clinicName);
+  };
+
+  /* 取代 v8.50 modal 內部從 API 撈班表的邏輯 → 改從 cache 取（已快取，不打 API）*/
+  // v8.50 直接 query KW.api._get('getSchedules'), 我們 hook KW.api._get
+  function hookApiGet() {
+    try {
+      if (!KW || !KW.api || !KW.api._get) return;
+      if (KW.api.__kw857Hooked) return;
+      var origGet = KW.api._get.bind(KW.api);
+      KW.api._get = function(endpoint, params) {
+        // getSchedules 直接從 cache 回
+        if (endpoint === 'getSchedules' && KW857.schedules && KW857.schedules.length > 0) {
+          return Promise.resolve({ ok: true, data: KW857.schedules });
+        }
+        return origGet(endpoint, params);
+      };
+      KW.api.__kw857Hooked = true;
+      console.log('[KW v8.57] KW.api._get hook 完成（getSchedules 改走 cache）');
+    } catch(e) {
+      console.warn('[KW v8.57] hook fail:', e);
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+   * UI：刷新按鈕 + 上次更新時間
+   * ════════════════════════════════════════════════════════════════ */
+  function injectRefreshButton() {
+    // 找到 Step 1 標題（指定預約的醫師）
+    var step1Header = null;
+    document.querySelectorAll('h2, h3').forEach(function(h){
+      if ((h.textContent || '').indexOf('Step 1') >= 0 && !h.querySelector('.kw-v857-refresh-btn')) {
+        step1Header = h;
+      }
+    });
+    if (!step1Header) return;
+    if (step1Header.querySelector('.kw-v857-refresh-btn')) return;
+
+    var btn = document.createElement('button');
+    btn.className = 'kw-v857-refresh-btn';
+    btn.type = 'button';
+    btn.style.cssText = 'float: right; font-weight: 400;';
+    btn.title = '從後台重新載入班表（包含 Drive 異動）';
+    var updateBtnLabel = function() {
+      var ago = KW857.loadedAt ? Math.floor((Date.now() - KW857.loadedAt) / 60000) : null;
+      btn.innerHTML = '🔄 刷新班表' + (ago != null ? ' <span style="font-size:11px;color:#64748b;">('+ago+' 分前更新)</span>' : '');
+    };
+    updateBtnLabel();
+    btn.onclick = function() {
+      KW857.refresh().then(updateBtnLabel);
+    };
+    KW857.onUpdate(updateBtnLabel);
+    step1Header.appendChild(btn);
+  }
+  setInterval(injectRefreshButton, 1500);
+
+  /* ════════════════════════════════════════════════════════════════
+   * 啟動流程
+   * ════════════════════════════════════════════════════════════════ */
+  function bootstrap() {
+    // 1. 先試 sessionStorage 快取
+    loadFromStorage();
+    // 2. hook API
+    var hookInterval = setInterval(function() {
+      if (typeof KW !== 'undefined' && KW.api) {
+        hookApiGet();
+        clearInterval(hookInterval);
+      }
+    }, 200);
+    // 3. 取代 getSlotsFor
+    var fnInterval = setInterval(function() {
+      if (typeof FIXED_SCHEDULE !== 'undefined') {
+        overrideGetSlotsFor();
+        clearInterval(fnInterval);
+      }
+    }, 200);
+    // 4. 從後端撈一次
+    setTimeout(function() {
+      fetchFromBackend(false).then(function() {
+        // 觸發各畫面重渲染
+        try { if (typeof window.buildPatientCalendar === 'function') window.buildPatientCalendar(); } catch(_) {}
+        try { if (typeof window.renderClinicsForDoctor === 'function') window.renderClinicsForDoctor(); } catch(_) {}
+      });
+    }, 800);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrap);
+  } else {
+    bootstrap();
+  }
+
+  console.log('[KW v8.57] ✓ 單一資料源班表系統啟用 — 後端 API 為主，FIXED_SCHEDULE 為 fallback');
+})();
+</script>
+<!-- ===== [v8.57] 統一資料源 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
