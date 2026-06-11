@@ -15836,6 +15836,353 @@
 </script>
 <!-- ===== [v8.57] 統一資料源 結束 ===== -->
 
+<!-- ===== [v9.1] 不指定醫師改成聚合該院區所有醫師時段 開始 ===== -->
+<style>
+  /* 不指定醫師模式：日曆 cell 顯示「N 位醫師可約」 */
+  #patient-calendar .day-cell.kw-v910-multi {
+    background: #fef3c7;
+    border-color: #f59e0b;
+  }
+  #patient-calendar .day-cell.kw-v910-multi::after {
+    content: attr(data-docs);
+    display: block;
+    font-size: 10px;
+    color: #92400e;
+    line-height: 1;
+    margin-top: 2px;
+  }
+  /* Step 3 時段表「不指定醫師」聚合模式 */
+  .kw-v910-anydoc-banner {
+    background: #dbeafe; color: #1e3a8a;
+    padding: 8px 12px; border-radius: 6px;
+    margin-bottom: 12px; font-size: 13px;
+    font-weight: 600;
+  }
+  .kw-v910-anydoc-banner small {
+    font-weight: 400; color: #475569; margin-left: 8px;
+  }
+  .kw-v910-slot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .kw-v910-slot {
+    background: #f0fdf4; border: 2px solid #86efac;
+    border-radius: 8px; padding: 10px 8px;
+    text-align: center; cursor: pointer;
+    transition: all .12s;
+  }
+  .kw-v910-slot:hover {
+    background: #bbf7d0; transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(34,197,94,.25);
+  }
+  .kw-v910-slot .kw-time {
+    font-weight: 700; font-size: 16px; color: #15803d;
+  }
+  .kw-v910-slot .kw-doc {
+    font-size: 12px; color: #166534; margin-top: 4px;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+
+  /* ════════════════════════════════════════
+   * 1. 取代 v8.51 不指定醫師按鈕：不再挑假醫師
+   * ════════════════════════════════════════ */
+  document.addEventListener('click', function(e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var btn = t.closest('.kw-v851-nodoc-btn');
+    if (!btn) return;
+
+    // 高優先攔截，蓋過 v8.54 / v8.51 邏輯
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+
+    var clinicName = btn.dataset.clinic || '';
+    if (!clinicName) return;
+
+    try {
+      if (typeof state !== 'undefined' && state) {
+        state.preferAnyDoctor = true;
+        state.selectedDoctor = null;  // 不挑醫師
+        // selectedClinic 設成該院區物件
+        if (typeof CLINICS !== 'undefined') {
+          var cObj = CLINICS.find(function(c){
+            return c.name === clinicName || c.name === clinicName.replace(/院區$/,'') + '院區';
+          });
+          if (cObj) state.selectedClinic = cObj;
+        }
+        state.selectedDate = null;
+        state.selectedWeekday = null;
+        state.selectedSlotStart = null;
+      }
+    } catch(_) {}
+
+    jumpToStep3AnyDoc(clinicName);
+
+    // toast 提示
+    var oldToast = document.querySelector('.kw-v854-toast');
+    if (oldToast) oldToast.remove();
+    var t2 = document.createElement('div');
+    t2.className = 'kw-v854-toast';
+    t2.style.background = '#1e3a8a';
+    t2.textContent = '🏥 已切到 ' + clinicName + ' 不指定醫師模式 — 請從下方挑可約時段';
+    document.body.appendChild(t2);
+    setTimeout(function(){ t2.remove(); }, 3000);
+  }, true);  // capture，最高優先
+
+  /* 切 Step 3 + 渲染「不指定醫師」聚合畫面 */
+  function jumpToStep3AnyDoc(clinicName) {
+    // 切 panel
+    var c1 = document.getElementById('p-content-1');
+    var c2 = document.getElementById('p-content-2');
+    var c3 = document.getElementById('p-content-3');
+    if (c1) c1.style.display = 'none';
+    if (c2) c2.style.display = 'none';
+    if (c3) c3.style.display = 'block';
+    ['1','2'].forEach(function(n) {
+      var st = document.getElementById('p-step-' + n);
+      var ln = document.getElementById('p-line-' + n);
+      if (st) { st.classList.remove('active'); st.classList.add('done'); }
+      if (ln) ln.classList.add('done');
+    });
+    var st3 = document.getElementById('p-step-3');
+    if (st3) st3.classList.add('active');
+
+    // 重渲染日曆（會用 anyDoc 模式）
+    try {
+      if (typeof window.buildPatientCalendar === 'function') {
+        window.buildPatientCalendar();
+      }
+    } catch(_) {}
+
+    // 加 banner（如果 Step 3 還沒有）
+    addAnyDocBanner(clinicName);
+
+    // 滾過去
+    setTimeout(function(){
+      if (c3) c3.scrollIntoView({behavior:'smooth', block:'start'});
+    }, 150);
+  }
+
+  function addAnyDocBanner(clinicName) {
+    var c3 = document.getElementById('p-content-3');
+    if (!c3) return;
+    // 先移除舊 banner
+    var old = c3.querySelector('.kw-v910-anydoc-banner');
+    if (old) old.remove();
+    var banner = document.createElement('div');
+    banner.className = 'kw-v910-anydoc-banner';
+    banner.innerHTML = '🏥 ' + clinicName + ' · 不指定醫師模式 <small>挑時段時系統會自動配對該時段的醫師</small>';
+    c3.insertBefore(banner, c3.firstChild);
+  }
+
+  /* ════════════════════════════════════════
+   * 2. 改寫日曆：preferAnyDoctor 模式下顯示
+   *    該院區「任何醫師有開診」的 weekday
+   * ════════════════════════════════════════ */
+  // 用 setInterval 監測：state.preferAnyDoctor === true 時，重渲染 cell
+  function enhanceCalendarForAnyDoc() {
+    if (typeof state === 'undefined' || !state || !state.preferAnyDoctor) return;
+    var grid = document.getElementById('patient-calendar');
+    if (!grid) return;
+    if (grid.offsetParent === null) return;
+    if (grid.__kwv910Enhanced === Date.now()) return;  // throttle
+
+    var cells = grid.querySelectorAll('.day-cell[data-date]');
+    if (cells.length === 0) return;
+
+    var clinic = state.selectedClinic;
+    var clinicName = clinic ? (typeof clinic === 'object' ? clinic.name : clinic) : null;
+    if (!clinicName) return;
+
+    // 取得 KW857 cache 的該院區班表
+    var allClinicSlots = [];
+    try {
+      if (window.KW857 && typeof KW857.getByClinic === 'function') {
+        allClinicSlots = KW857.getByClinic(clinicName);
+      } else if (typeof FIXED_SCHEDULE !== 'undefined') {
+        allClinicSlots = FIXED_SCHEDULE.filter(function(s){
+          return s.enabled && s.clinic === clinicName;
+        });
+      }
+    } catch(_) {}
+    if (allClinicSlots.length === 0) return;
+
+    // 算出該院區「每個 weekday 有幾位醫師開診」
+    var wdToDocs = {};
+    allClinicSlots.forEach(function(s){
+      var wd = Number(s.weekday);
+      if (wd === 0) wd = 7;
+      if (!wdToDocs[wd]) wdToDocs[wd] = new Set();
+      wdToDocs[wd].add(s.doctor);
+    });
+
+    // 把日曆上每個未過期日 cell 標為「N 位醫師可約」
+    cells.forEach(function(cell) {
+      if (cell.classList.contains('disabled') && !cell.classList.contains('has-slots')) return;
+      var dateStr = cell.dataset.date;
+      if (!dateStr) return;
+      var parts = dateStr.split('-').map(Number);
+      var js = new Date(parts[0], parts[1]-1, parts[2]).getDay();
+      var wd = js === 0 ? 7 : js;
+      var docs = wdToDocs[wd];
+      if (docs && docs.size > 0) {
+        cell.classList.add('has-slots', 'kw-v855-clickable', 'kw-v910-multi');
+        cell.dataset.docs = docs.size + ' 位醫師';
+        cell.classList.remove('disabled');
+        // 補回 click handler (因為日曆可能用了舊的)
+        if (!cell.__kwv910Handler) {
+          cell.__kwv910Handler = function() {
+            grid.querySelectorAll('.day-cell').forEach(function(c){
+              c.classList.remove('selected','kw-v855-selected');
+            });
+            cell.classList.add('selected','kw-v855-selected');
+            state.selectedDate = dateStr;
+            state.selectedWeekday = wd;
+            renderAnyDocTimeSlots(clinicName, dateStr, wd);
+          };
+          cell.addEventListener('click', cell.__kwv910Handler);
+        }
+      }
+    });
+
+    grid.__kwv910Enhanced = Date.now();
+  }
+  setInterval(enhanceCalendarForAnyDoc, 600);
+
+  /* ════════════════════════════════════════
+   * 3. 渲染「不指定醫師」聚合時段
+   * ════════════════════════════════════════ */
+  function renderAnyDocTimeSlots(clinicName, dateStr, weekday) {
+    var container = document.getElementById('patient-time-slots-container');
+    if (!container) return;
+
+    var slots = [];
+    try {
+      if (window.KW857 && typeof KW857.getByClinic === 'function') {
+        slots = KW857.getByClinic(clinicName).filter(function(s){
+          var wd = Number(s.weekday);
+          if (wd === 0) wd = 7;
+          return wd === weekday;
+        });
+      } else if (typeof FIXED_SCHEDULE !== 'undefined') {
+        slots = FIXED_SCHEDULE.filter(function(s){
+          var wd = Number(s.weekday);
+          if (wd === 0) wd = 7;
+          return s.enabled && s.clinic === clinicName && wd === weekday;
+        });
+      }
+    } catch(_) {}
+
+    if (slots.length === 0) {
+      container.innerHTML = '<div style="padding:24px;text-align:center;color:#94a3b8;">本日 '+clinicName+' 無醫師開診，請另選日期</div>';
+      return;
+    }
+
+    // 展開每筆 schedule 成 10 分鐘小時段
+    var fineSlots = [];  // { start, end, doctor, schedId }
+    slots.forEach(function(s){
+      var startM = timeToMin(s.start);
+      var endM = timeToMin(s.end);
+      // 每 10 分鐘一個 slot
+      for (var t = startM; t + 10 <= endM; t += 10) {
+        fineSlots.push({
+          startMin: t,
+          endMin: t + 10,
+          start: minToHHMM(t),
+          end: minToHHMM(t + 10),
+          doctor: s.doctor,
+          session: s.session || '',
+          note: s.note || ''
+        });
+      }
+    });
+
+    // 排序 + 分組（依時段 早/午/晚 group）
+    fineSlots.sort(function(a, b){ return a.startMin - b.startMin; });
+
+    // 渲染：分早/午/晚診
+    var html = '<div style="color:#475569;font-size:13px;margin-bottom:10px;">' + dateStr + ' · ' + clinicName + ' · 共 ' + fineSlots.length + ' 個可預約時段（10 分鐘/格）</div>';
+
+    var groups = { '早診': [], '午診': [], '晚診': [] };
+    fineSlots.forEach(function(fs){
+      // 時段以 12, 18 為界
+      var hr = Math.floor(fs.startMin / 60);
+      var key = hr < 12 ? '早診' : hr < 18 ? '午診' : '晚診';
+      groups[key].push(fs);
+    });
+
+    Object.keys(groups).forEach(function(k){
+      if (groups[k].length === 0) return;
+      html += '<h4 style="margin:14px 0 6px 0;color:#2c3e50;font-size:14px;">' + k + '</h4>';
+      html += '<div class="kw-v910-slot-grid">';
+      groups[k].forEach(function(fs){
+        html += '<div class="kw-v910-slot" data-doctor="'+esc(fs.doctor)+'" data-start="'+esc(fs.start)+'">'
+              + '<div class="kw-time">' + esc(fs.start) + '</div>'
+              + '<div class="kw-doc">' + esc(fs.doctor) + ' 醫師</div>'
+              + '</div>';
+      });
+      html += '</div>';
+    });
+
+    container.innerHTML = html;
+
+    // bind click
+    container.querySelectorAll('.kw-v910-slot').forEach(function(el){
+      el.addEventListener('click', function(){
+        var doctor = el.dataset.doctor;
+        var start = el.dataset.start;
+        try {
+          // 找醫師物件
+          var docObj = (typeof DOCTORS !== 'undefined') ? DOCTORS.find(function(d){
+            var sn = (d.name||'').replace(/\s*醫師\s*$/,'').trim();
+            return sn === doctor || d.shortName === doctor;
+          }) : null;
+          if (docObj) state.selectedDoctor = docObj;
+          state.selectedSlotStart = start;
+          state.preferAnyDoctor = false;  // 已配對到具體醫師，不再 anyDoc
+        } catch(_) {}
+        // 視覺反饋
+        container.querySelectorAll('.kw-v910-slot').forEach(function(s){
+          s.style.borderColor = '#86efac'; s.style.background = '#f0fdf4';
+        });
+        el.style.borderColor = '#16a34a';
+        el.style.background = '#dcfce7';
+        // toast
+        var oldToast = document.querySelector('.kw-v854-toast');
+        if (oldToast) oldToast.remove();
+        var tt = document.createElement('div');
+        tt.className = 'kw-v854-toast';
+        tt.style.cssText = 'background:#16a34a';
+        tt.textContent = '✓ 已選 ' + doctor + ' 醫師 ' + start + ' — 請按下一步繼續';
+        document.body.appendChild(tt);
+        setTimeout(function(){ tt.remove(); }, 2500);
+      });
+    });
+  }
+
+  function timeToMin(t) {
+    if (!t) return 0;
+    var m = String(t).match(/(\d{1,2}):(\d{2})/);
+    if (!m) return 0;
+    return parseInt(m[1],10) * 60 + parseInt(m[2],10);
+  }
+  function minToHHMM(m) {
+    var h = Math.floor(m/60), mm = m%60;
+    return String(h).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  console.log('[KW v9.1] ✓ 不指定醫師聚合時段模式啟用');
+})();
+</script>
+<!-- ===== [v9.1] 不指定醫師聚合時段 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
