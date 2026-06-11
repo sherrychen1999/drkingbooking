@@ -15483,6 +15483,83 @@
 </script>
 <!-- ===== [v8.46] 門診表多醫師同格改垂直堆疊 結束 ===== -->
 
+<!-- ===== [v8.47] 恢復點卡片開介紹 modal（v8.45 把 📋 拔掉後 modal 開不出） 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  function waitReady(cb, retries) {
+    retries = retries || 100;
+    if (typeof state !== 'undefined' && typeof KW !== 'undefined' && typeof DOCTORS !== 'undefined') cb();
+    else if (retries > 0) setTimeout(function(){ waitReady(cb, retries - 1); }, 100);
+  }
+
+  waitReady(function() {
+    var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
+
+    // window-capture 階段攔卡片點擊（比 v8.31 / v8.41 早）
+    // 規則：
+    //   1. 若 card 有 __kwv841_bookBypass（modal 的「預約這位醫師」設的）→ 不攔，讓事件冒泡到原本 grid 委派 handler
+    //   2. 點到表單元素（button/input/a）→ 不攔
+    //   3. 其他情況 → 開介紹 modal
+    window.addEventListener('click', function(e) {
+      var t = e.target;
+      if (!t || !t.closest) return;
+      // v8.47 自己 dispatch 的 fake .kw-info-btn 不能再進來，否則無窮遞迴
+      if (t.closest && t.closest('.kw-info-btn')) return;
+      var card = t.closest('.doctor-card');
+      if (!card) return;
+      if (card.__kwv841_bookBypass) {
+        // 立刻清除 flag，避免下次普通點擊也被誤判
+        try { delete card.__kwv841_bookBypass; } catch(_) { card.__kwv841_bookBypass = false; }
+        return;  // 讓 click 自然冒泡，原本流程接管 → Step 2
+      }
+      // 點到按鈕/連結/input 不攔（例如未來如果有「預約」小鈕）
+      if (t.closest('button, a, input, select, textarea')) return;
+
+      // 取醫師名
+      var info = card.querySelector('.doctor-info') || card;
+      var infoTxt = info.textContent || '';
+      var matches = infoTxt.match(/([一-龥]{2,4})\s*醫師/g) || [];
+      var shortName = '';
+      matches.forEach(function(m) {
+        var sn = m.replace(/\s*醫師\s*$/, '').trim();
+        if (sn.length > shortName.length) shortName = sn;
+      });
+      if (!shortName || shortName.length < 2) return;
+
+      // 找完整 doctor 物件
+      var dr = (DOCTORS || []).find(function(d) {
+        var sn = d.shortName || String(d.name||'').replace(/\s*醫師\s*$/,'').trim();
+        return sn === shortName;
+      }) || { shortName: shortName, name: shortName + ' 醫師', specialty: '減重門診', photoData: '' };
+
+      // 攔住事件，不讓原本流程把人帶到 Step 2
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+
+      // 開 v8.31 的 modal — 直接呼叫全域函式
+      if (typeof window.__kwOpenProfileModal === 'function') {
+        window.__kwOpenProfileModal(dr);
+      } else {
+        // 沒掛全域，用 fallback：模擬「點 .kw-info-btn」(已不存在 → 不會走到)
+        // 改成手動建一個 .kw-info-btn 暫存節點塞進 card 再 click，讓 v8.31 listener 抓
+        var fake = document.createElement('span');
+        fake.className = 'kw-info-btn';
+        fake.style.cssText = 'position:absolute; left:-9999px; opacity:0;';
+        fake.dataset.kwFake = '1';
+        card.appendChild(fake);
+        fake.click();
+        setTimeout(function(){ if (fake.parentNode) fake.parentNode.removeChild(fake); }, 50);
+      }
+    }, true);
+
+    console.log('[KW v8.47] ✓ 恢復點卡片開介紹 modal');
+  });
+})();
+</script>
+<!-- ===== [v8.47] 恢復點卡片開介紹 modal 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
