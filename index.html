@@ -17145,6 +17145,173 @@
 </script>
 <!-- ===== [v9.1] 不指定醫師聚合時段 結束 ===== -->
 
+<!-- ===== [v9.2] 修 v9.1 被 v8.54 搶先攔截的事件競爭 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+
+  /* ════════════════════════════════════════════════════════════
+   * 雙保險策略
+   *  保險 1：window capture (比 document capture 更早觸發)
+   *  保險 2：monkey-patch v8.54 bookingJump 在 anyDoctor 模式跳過
+   *  保險 3：DOMContentLoaded 後重新 wrap v8.51 按鈕注入器
+   * ════════════════════════════════════════════════════════════ */
+
+  /* ─────── 保險 1: window 層 capture，最早攔截 ─────── */
+  window.addEventListener('click', function(e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var btn = t.closest('.kw-v851-nodoc-btn');
+    if (!btn) return;
+
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+
+    var clinicName = btn.dataset.clinic || '';
+    if (!clinicName) return;
+
+    console.log('[KW v9.2] 攔截不指定醫師按鈕 (window capture):', clinicName);
+
+    try {
+      if (typeof state !== 'undefined' && state) {
+        state.preferAnyDoctor = true;
+        state.selectedDoctor = null;
+        state.__kw_v92_anyDoctorClinic = clinicName;  // 旗標
+        if (typeof CLINICS !== 'undefined') {
+          var cObj = CLINICS.find(function(c){
+            return c.name === clinicName || c.name === clinicName.replace(/院區$/,'') + '院區';
+          });
+          if (cObj) state.selectedClinic = cObj;
+        }
+        state.selectedDate = null;
+        state.selectedWeekday = null;
+        state.selectedSlotStart = null;
+      }
+    } catch(_) {}
+
+    // 切 Step 3
+    jumpToStep3();
+    addAnyDocBanner(clinicName);
+
+    // 用藍色 toast 取代任何蕭捷健 toast
+    setTimeout(function(){
+      document.querySelectorAll('.kw-v854-toast').forEach(function(t){ t.remove(); });
+      var t2 = document.createElement('div');
+      t2.className = 'kw-v854-toast';
+      t2.style.background = '#1e3a8a';
+      t2.textContent = '🏥 已切到 ' + clinicName + ' 不指定醫師模式 — 請從下方挑可約時段';
+      document.body.appendChild(t2);
+      setTimeout(function(){ t2.remove(); }, 3500);
+    }, 50);
+
+    // 觸發日曆重渲染，讓 v9.1 enhanceCalendarForAnyDoc 接管
+    try {
+      if (typeof window.buildPatientCalendar === 'function') {
+        window.buildPatientCalendar();
+      }
+    } catch(_) {}
+
+    // 滾過去
+    setTimeout(function(){
+      var c3 = document.getElementById('p-content-3');
+      if (c3) c3.scrollIntoView({behavior:'smooth', block:'start'});
+    }, 200);
+  }, true);  // capture on window
+
+  /* ─────── 保險 2: monkey-patch booking flow ───────
+   * v8.54 的 bookingJump 不會被外部覆蓋（IIFE 私有），
+   * 所以改成攔截 state 變化：若 anyDoctor 旗標已設，後續任何把 selectedDoctor 設成具體醫師的動作都還原 */
+  setInterval(function() {
+    try {
+      if (typeof state === 'undefined' || !state) return;
+      // 若旗標還在但被偷偷設了 selectedDoctor → 還原
+      if (state.preferAnyDoctor && state.__kw_v92_anyDoctorClinic && state.selectedDoctor) {
+        var setDocName = '';
+        try {
+          setDocName = (state.selectedDoctor.name || state.selectedDoctor || '');
+        } catch(_) {}
+        // 若是 v8.54 picker 設的，name 會包含蕭捷健、黃炯達等
+        // 但若是 v9.1 user 點時段設的，我們允許保留（user 已主動配對）
+        // 規則：state.selectedSlotStart 有值代表 user 點時段，保留；否則還原
+        if (!state.selectedSlotStart) {
+          console.log('[KW v9.2] 還原被 v8.54 偷設的 selectedDoctor:', setDocName);
+          state.selectedDoctor = null;
+        }
+      }
+    } catch(_) {}
+  }, 200);
+
+  /* ─────── 保險 3: 攔截綠色 toast 「已帶到 蕭捷健 醫師」 ─────── */
+  setInterval(function() {
+    if (typeof state === 'undefined' || !state) return;
+    if (!state.preferAnyDoctor) return;
+    if (!state.__kw_v92_anyDoctorClinic) return;
+    // 看 toast 是否寫了具體醫師
+    document.querySelectorAll('.kw-v854-toast').forEach(function(t){
+      var txt = t.textContent || '';
+      if (/帶到「.*醫師/.test(txt) && !/不指定/.test(txt)) {
+        t.remove();
+        console.log('[KW v9.2] 移除誤觸的「已帶到 X 醫師」toast');
+      }
+    });
+  }, 200);
+
+  /* ──── helpers (從 v9.1 複製) ──── */
+  function jumpToStep3() {
+    var c1 = document.getElementById('p-content-1');
+    var c2 = document.getElementById('p-content-2');
+    var c3 = document.getElementById('p-content-3');
+    if (c1) c1.style.display = 'none';
+    if (c2) c2.style.display = 'none';
+    if (c3) c3.style.display = 'block';
+    ['1','2'].forEach(function(n) {
+      var st = document.getElementById('p-step-' + n);
+      var ln = document.getElementById('p-line-' + n);
+      if (st) { st.classList.remove('active'); st.classList.add('done'); }
+      if (ln) ln.classList.add('done');
+    });
+    var st3 = document.getElementById('p-step-3');
+    if (st3) st3.classList.add('active');
+  }
+  function addAnyDocBanner(clinicName) {
+    var c3 = document.getElementById('p-content-3');
+    if (!c3) return;
+    var old = c3.querySelector('.kw-v910-anydoc-banner');
+    if (old) old.remove();
+    var banner = document.createElement('div');
+    banner.className = 'kw-v910-anydoc-banner';
+    banner.innerHTML = '🏥 ' + clinicName + ' · 不指定醫師模式 <small>挑時段時系統會自動配對該時段的醫師</small>';
+    c3.insertBefore(banner, c3.firstChild);
+  }
+
+  /* ──── 清除完成預約後的 anyDoctor 旗標 ──── */
+  // 偵測進 Step 4 時，user 已經選好時段、可以保留 selectedDoctor，但要清旗標
+  function watchStep4() {
+    var c4 = document.getElementById('p-content-4');
+    if (!c4) return;
+    if (c4.__kwv92Watched) return;
+    c4.__kwv92Watched = true;
+    var obs = new MutationObserver(function(){
+      if (c4.style.display !== 'none' && c4.offsetParent !== null) {
+        try {
+          if (state && state.__kw_v92_anyDoctorClinic) {
+            delete state.__kw_v92_anyDoctorClinic;
+            state.preferAnyDoctor = false;
+            console.log('[KW v9.2] 進 Step 4，清除 anyDoctor 旗標');
+          }
+        } catch(_) {}
+      }
+    });
+    obs.observe(c4, { attributes: true, attributeFilter: ['style'] });
+  }
+  setInterval(watchStep4, 800);
+
+  console.log('[KW v9.2] ✓ 不指定醫師事件競爭修正啟用（window capture + state 守門）');
+})();
+</script>
+<!-- ===== [v9.2] 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
