@@ -18716,6 +18716,1436 @@
 </script>
 <!-- ===== [v9.7] 結束 ===== -->
 
+<!-- ===== [v9.8] 修查詢預約 + 預約前嚴格驗證 開始 ===== -->
+<style>
+  /* 時段狀態顯示 */
+  .kw-v98-slot {
+    padding: 10px 14px; margin: 4px;
+    border: 2px solid #86efac; background: #f0fdf4;
+    color: #15803d; border-radius: 8px;
+    cursor: pointer; transition: all .12s;
+    text-align: center; font-weight: 600;
+    display: inline-block; min-width: 70px;
+  }
+  .kw-v98-slot:hover { background: #bbf7d0; transform: translateY(-1px); }
+  .kw-v98-slot.full {
+    background: #4b5563; color: #fff; border-color: #374151;
+    cursor: not-allowed; opacity: 0.85;
+    text-decoration: line-through;
+  }
+  .kw-v98-slot.full:hover { transform: none; background: #4b5563; }
+  .kw-v98-slot.selected { background: #16a34a; color: #fff; border-color: #15803d; }
+
+  /* 預約失敗錯誤 modal */
+  .kw-v98-error-modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.5); z-index: 100000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .kw-v98-error-modal .box {
+    background: #fff; border-radius: 16px;
+    padding: 24px; max-width: 480px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  }
+  .kw-v98-error-modal h3 {
+    color: #991b1b; margin: 0 0 12px;
+  }
+  .kw-v98-error-modal .msg {
+    color: #475569; line-height: 1.6; margin-bottom: 16px;
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+
+  function waitFor(check, cb, retries) {
+    retries = retries || 100;
+    if (check()) cb();
+    else if (retries > 0) setTimeout(function(){ waitFor(check, cb, retries-1); }, 100);
+  }
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function normPhone(p) { return String(p || '').replace(/[^0-9]/g, ''); }
+  function fmtDate(d) {
+    if (!(d instanceof Date)) d = new Date(d);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  /* ════════════════════════════════════════════════════════════
+   * 1. 強化 v9.3 lookup：嘗試多個 endpoint + 遍歷院區
+   * ════════════════════════════════════════════════════════════ */
+  window.__kw_v93_lookup = function() {
+    var nameEl = document.getElementById('kw-v93-name');
+    var phoneEl = document.getElementById('kw-v93-phone');
+    var name = nameEl ? (nameEl.value || '').trim() : '';
+    var phone = phoneEl ? (phoneEl.value || '').trim() : '';
+    if (!name || !phone) {
+      alert('請輸入姓名與電話');
+      return;
+    }
+    var phoneClean = normPhone(phone);
+    var resultEl = document.getElementById('kw-v93-result');
+    if (resultEl) resultEl.innerHTML = '<p style="text-align:center;color:#64748b;">查詢中... (跨院區搜尋約需 5 秒)</p>';
+
+    console.log('[KW v9.8] lookup:', name, phone, '(clean:'+phoneClean+')');
+
+    if (!(window.KW && KW.api && KW.api.enabled && KW.api.enabled())) {
+      if (resultEl) resultEl.innerHTML = '<p style="text-align:center;color:#dc2626;">⚠️ 雲端服務未啟用，無法查詢</p>';
+      return;
+    }
+
+    // 策略：依序嘗試
+    var allHits = [];
+
+    // 策略 1：searchPatientHistory（既有）
+    var p1 = KW.api._get('searchPatientHistory', { keyword: name }).then(function(res){
+      if (res && res.ok && Array.isArray(res.data)) {
+        var hits = res.data.filter(function(r){
+          return normPhone(r.phone || r.電話) === phoneClean;
+        });
+        console.log('[KW v9.8] searchPatientHistory hits:', hits.length, hits);
+        return hits;
+      }
+      return [];
+    }).catch(function(err){
+      console.warn('[KW v9.8] searchPatientHistory fail:', err);
+      return [];
+    });
+
+    // 策略 2：也用電話搜（後端可能有 keyword by phone）
+    var p2 = KW.api._get('searchPatientHistory', { keyword: phoneClean }).then(function(res){
+      if (res && res.ok && Array.isArray(res.data)) {
+        var hits = res.data.filter(function(r){
+          return normPhone(r.phone || r.電話) === phoneClean;
+        });
+        console.log('[KW v9.8] searchPatientHistory by phone hits:', hits.length);
+        return hits;
+      }
+      return [];
+    }).catch(function(){ return []; });
+
+    // 策略 3：遍歷 13 院區 × 未來 21 天
+    var clinicNames = (typeof CLINICS !== 'undefined' ? CLINICS : []).map(function(c){ return c.name; });
+    var today = new Date(); today.setHours(0,0,0,0);
+    var dates = [];
+    for (var i = 0; i < 21; i++) {
+      var d = new Date(today); d.setDate(d.getDate() + i);
+      dates.push(fmtDate(d));
+    }
+    var p3promises = [];
+    clinicNames.forEach(function(cn) {
+      dates.forEach(function(ds) {
+        var p = KW.api._get('getAppointmentsByClinicDate', { clinic: cn, date: ds }).then(function(res){
+          if (res && res.ok && Array.isArray(res.data)) {
+            return res.data.filter(function(a){
+              return normPhone(a.phone || a.電話) === phoneClean;
+            }).map(function(a){
+              return Object.assign({}, a, { clinic: cn, date: ds });
+            });
+          }
+          return [];
+        }).catch(function(){ return []; });
+        p3promises.push(p);
+      });
+    });
+    var p3 = Promise.all(p3promises).then(function(arrs){
+      var flat = [].concat.apply([], arrs);
+      console.log('[KW v9.8] 遍歷 13×21 hits:', flat.length);
+      return flat;
+    });
+
+    Promise.all([p1, p2, p3]).then(function(results){
+      var all = [].concat.apply([], results);
+      // 去重 by (date + time/startMin + doctor)
+      var seen = {};
+      var future = all.filter(function(a){
+        var t = a.time || a.start || a.startTime || '';
+        if (typeof a.startMin === 'number') {
+          t = String(Math.floor(a.startMin/60)).padStart(2,'0') + ':' + String(a.startMin%60).padStart(2,'0');
+        }
+        var k = (a.date || '') + '|' + t + '|' + (a.doctor || '');
+        if (seen[k]) return false;
+        seen[k] = true;
+        // 過濾今天以後
+        var d = new Date(a.date);
+        d.setHours(0,0,0,0);
+        if (d < today) return false;
+        if (a.status === 'cancelled' || a.cancelled) return false;
+        // normalize fields
+        a.time = t;
+        return true;
+      });
+
+      console.log('[KW v9.8] 去重 + 過濾後:', future.length, future);
+
+      // 確保 state
+      try {
+        if (window.__kw_v93_state) {
+          window.__kw_v93_state.foundAppts = future;
+        }
+      } catch(_) {}
+
+      // 渲染
+      renderResults(future, name, phone);
+    });
+  };
+
+  function renderResults(appts, name, phone) {
+    var el = document.getElementById('kw-v93-result');
+    if (!el) return;
+
+    if (appts.length === 0) {
+      el.innerHTML =
+        '<div style="text-align:center;padding:24px;background:#f8fafc;border-radius:12px;">'
+      +   '<p style="color:#64748b;margin:0 0 8px;">😕 找不到 ' + esc(name) + ' (' + esc(phone) + ') 的未來預約</p>'
+      +   '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;">已搜尋雲端 + 13 院區 × 未來 21 天</p>'
+      +   '<p style="color:#94a3b8;font-size:11px;">如已預約但查不到，請聯絡您預約的院區櫃台</p>'
+      + '</div>';
+      return;
+    }
+
+    var WDS = ['日','一','二','三','四','五','六'];
+    var html = '<h3 style="margin:0 0 12px;color:#2c3e50;">您的預約 (' + appts.length + ' 筆)</h3>';
+    appts.forEach(function(a, idx){
+      var wdJs = new Date(a.date).getDay();
+      var time = a.time || '';
+      html +=
+        '<div class="kw-v93-appt-card">'
+      +   '<div class="info">'
+      +     '<div class="date">' + esc(a.date) + ' (週' + WDS[wdJs] + ') ' + esc(time) + '</div>'
+      +     '<div class="meta">' + esc(a.doctor || '') + ' 醫師 · ' + esc(a.clinic || '') + ' · ' + esc(a.type || '複診') + '</div>'
+      +   '</div>'
+      +   '<div class="actions">'
+      +     '<button class="kw-v93-btn reschedule" data-idx="'+idx+'" data-action="reschedule">↔ 改約</button>'
+      +     '<button class="kw-v93-btn cancel" data-idx="'+idx+'" data-action="cancel">✕ 取消</button>'
+      +   '</div>'
+      + '</div>';
+    });
+    html += '<p style="font-size:12px;color:#94a3b8;margin-top:16px;">⚠️ 24 小時內預約請聯絡院區櫃台處理</p>';
+    el.innerHTML = html;
+
+    el.querySelectorAll('.kw-v93-btn[data-action]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var idx = parseInt(b.dataset.idx, 10);
+        var appt = window.__kw_v93_state.foundAppts[idx];
+        var action = b.dataset.action;
+        var apptDt = new Date(appt.date + 'T' + (appt.time || '00:00'));
+        var diffMs = apptDt - new Date();
+        if (diffMs < 24*3600*1000) {
+          alert('⚠️ 此預約距現在不到 24 小時，請聯絡院區櫃台處理');
+          return;
+        }
+        if (action === 'reschedule' && typeof window.__kw_v93_openResch === 'function') {
+          window.__kw_v93_openResch(appt);
+        } else if (action === 'cancel' && typeof window.__kw_v93_openCancel === 'function') {
+          window.__kw_v93_openCancel(appt);
+        } else if (action === 'reschedule') {
+          // 後備（從 v9.3 全域變數抓）
+          alert('改約功能載入中... 請稍後重試');
+        } else {
+          alert('取消功能載入中... 請稍後重試');
+        }
+      });
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════
+   * 2. Step 3 時段渲染：嚴格驗證有班別，已滿顯示反黑
+   * ════════════════════════════════════════════════════════════ */
+  // 監測 patient-time-slots-container 變化
+  function enforceStrictSlots() {
+    var container = document.getElementById('patient-time-slots-container');
+    if (!container || container.offsetParent === null) return;
+    if (container.__kwv98Enforced === Date.now()) return;
+    container.__kwv98Enforced = Date.now();
+    if (typeof state === 'undefined' || !state) return;
+
+    var doc = state.selectedDoctor;
+    var cli = state.selectedClinic;
+    if (!doc || !cli || !state.selectedDate) return;
+
+    var docName = typeof doc === 'object' ? (doc.name||'').replace(/\s*醫師\s*$/,'') : String(doc).replace(/\s*醫師\s*$/,'');
+    var cliName = typeof cli === 'object' ? cli.name : String(cli);
+
+    // 取該日該醫師該院區的班別（用 KW857 merged）
+    var weekday = state.selectedWeekday;
+    if (!weekday) {
+      var d = new Date(state.selectedDate);
+      var js = d.getDay();
+      weekday = js === 0 ? 7 : js;
+    }
+
+    var slots = [];
+    if (window.KW857 && typeof KW857.getSlotsFor === 'function') {
+      slots = KW857.getSlotsFor(docName, cliName, weekday) || [];
+    }
+
+    if (slots.length === 0) {
+      // 沒班 → 直接顯示警告（覆蓋原 render）
+      container.innerHTML =
+        '<div style="padding:24px;background:#fef2f2;border:2px solid #fecaca;border-radius:12px;text-align:center;">'
+      +   '<p style="color:#dc2626;font-weight:600;margin:0 0 4px;">⚠️ 本日 ' + esc(docName) + ' 醫師於 ' + esc(cliName) + ' 無門診</p>'
+      +   '<p style="color:#94a3b8;font-size:12px;margin:0;">請選其他日期或回上一步換醫師</p>'
+      + '</div>';
+      // 同步清掉 state.selectedSlotStart
+      state.selectedSlotStart = null;
+      return;
+    }
+
+    // 把該日該醫師的時段拆 10 分鐘格
+    var allSlots = [];
+    slots.forEach(function(s){
+      var startMin = parseTime(s.start);
+      var endMin = parseTime(s.end);
+      for (var t = startMin; t + 10 <= endMin; t += 10) {
+        allSlots.push({
+          start: minToHHMM(t),
+          end: minToHHMM(t + 10),
+          startMin: t,
+          session: s.session || ''
+        });
+      }
+    });
+
+    // 取已被佔用的時段（從後端的 appointments）
+    var bookedSet = new Set();
+    if (window.KW && KW.api && KW.api.enabled && KW.api.enabled()) {
+      KW.api._get('getAppointmentsByClinicDate', { clinic: cliName, date: state.selectedDate }).then(function(res){
+        if (res && res.ok && Array.isArray(res.data)) {
+          res.data.forEach(function(a){
+            if (a.status === 'cancelled') return;
+            // 比對醫師
+            var aDoc = String(a.doctor || '').replace(/\s*醫師\s*$/,'');
+            if (aDoc !== docName && a.doctor !== '系統指派') return;
+            var aTime = a.time || a.start || '';
+            if (typeof a.startMin === 'number') {
+              aTime = minToHHMM(a.startMin);
+            }
+            bookedSet.add(aTime);
+          });
+          renderSlots(allSlots, bookedSet);
+        } else {
+          renderSlots(allSlots, bookedSet);
+        }
+      }).catch(function(){ renderSlots(allSlots, bookedSet); });
+    } else {
+      renderSlots(allSlots, bookedSet);
+    }
+
+    function renderSlots(allS, booked) {
+      // 分組（早/午/晚）
+      var groups = { '早診':[], '午診':[], '晚診':[] };
+      allS.forEach(function(s){
+        var hr = Math.floor(s.startMin / 60);
+        var key = hr < 12 ? '早診' : hr < 18 ? '午診' : '晚診';
+        groups[key].push(s);
+      });
+      var html = '<div style="color:#475569;font-size:13px;margin-bottom:10px;">' + esc(docName) + ' 醫師 · ' + esc(cliName) + ' · ' + esc(state.selectedDate) + ' (共 ' + allS.length + ' 個 10 分鐘時段)</div>';
+      Object.keys(groups).forEach(function(g){
+        if (groups[g].length === 0) return;
+        html += '<h4 style="margin:14px 0 6px;color:#2c3e50;font-size:14px;">' + g + '</h4>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+        groups[g].forEach(function(s){
+          var isBooked = booked.has(s.start);
+          if (isBooked) {
+            html += '<div class="kw-v98-slot full" title="此時段已被預約">' + esc(s.start) + '</div>';
+          } else {
+            html += '<div class="kw-v98-slot" data-time="' + esc(s.start) + '">' + esc(s.start) + '</div>';
+          }
+        });
+        html += '</div>';
+      });
+      container.innerHTML = html;
+
+      // bind click
+      container.querySelectorAll('.kw-v98-slot:not(.full)').forEach(function(el){
+        el.addEventListener('click', function(){
+          container.querySelectorAll('.kw-v98-slot').forEach(function(s){ s.classList.remove('selected'); });
+          el.classList.add('selected');
+          state.selectedSlotStart = el.dataset.time;
+        });
+      });
+    }
+  }
+  setInterval(enforceStrictSlots, 1200);
+
+  function parseTime(t) {
+    var s = String(t||'').match(/(\d{1,2}):(\d{2})/);
+    if (!s) return 0;
+    return parseInt(s[1],10) * 60 + parseInt(s[2],10);
+  }
+  function minToHHMM(m) {
+    return String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0');
+  }
+
+  /* ════════════════════════════════════════════════════════════
+   * 3. 預約送出前最後驗證（在 createPatientBooking 之前攔）
+   * ════════════════════════════════════════════════════════════ */
+  waitFor(function(){ return window.KW && KW.api && KW.api.createPatientBooking; }, function() {
+    var origCreate = KW.api.createPatientBooking;
+    KW.api.createPatientBooking = function(payload) {
+      // 驗證 payload 至少要有：clinic, date, doctor, startTime
+      if (!payload || !payload.clinic || !payload.date || !payload.doctor || !payload.startTime) {
+        console.warn('[KW v9.8] 預約缺欄位:', payload);
+        showError('預約資料不完整', '缺少：' + (!payload.clinic ? '院區 ' : '') + (!payload.date ? '日期 ' : '') + (!payload.doctor ? '醫師 ' : '') + (!payload.startTime ? '時段 ' : ''));
+        return Promise.reject(new Error('payload incomplete'));
+      }
+
+      // 驗證該時段醫師有班
+      if (window.KW857) {
+        var d = new Date(payload.date);
+        var wd = d.getDay(); if (wd === 0) wd = 7;
+        var slots = KW857.getSlotsFor(payload.doctor, payload.clinic, wd) || [];
+        var startMin = parseTime(payload.startTime);
+        var inSched = slots.some(function(s){
+          return startMin >= parseTime(s.start) && startMin < parseTime(s.end);
+        });
+        if (!inSched) {
+          console.warn('[KW v9.8] 預約時段不在班別內:', payload, 'slots:', slots);
+          showError('此時段無門診', payload.doctor + ' 醫師於 ' + payload.clinic + ' 該日無相對應班別，無法預約。請另選日期或醫師。');
+          return Promise.reject(new Error('out of schedule'));
+        }
+      }
+
+      return origCreate.apply(this, arguments);
+    };
+    console.log('[KW v9.8] ✓ createPatientBooking 加入嚴格驗證');
+  });
+
+  function showError(title, msg) {
+    var old = document.querySelector('.kw-v98-error-modal');
+    if (old) old.remove();
+    var m = document.createElement('div');
+    m.className = 'kw-v98-error-modal';
+    m.innerHTML =
+      '<div class="box">'
+    +   '<h3>⚠️ ' + esc(title) + '</h3>'
+    +   '<div class="msg">' + esc(msg) + '</div>'
+    +   '<div style="text-align:right;">'
+    +     '<button class="kw-v93-btn primary" onclick="this.closest(\'.kw-v98-error-modal\').remove()">了解</button>'
+    +   '</div>'
+    + '</div>';
+    document.body.appendChild(m);
+  }
+
+  console.log('[KW v9.8] ✓ 查詢預約強化 + 預約嚴格驗證 + 時段反黑');
+})();
+</script>
+<!-- ===== [v9.8] 結束 ===== -->
+
+<!-- ===== [v9.9] 查詢預約改 3 欄位 (姓名/電話/身分證 擇一) 開始 ===== -->
+<style>
+  /* 三欄位 lookup form */
+  .kw-v99-lookup-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin: 16px 0 8px;
+  }
+  .kw-v99-lookup-form input {
+    padding: 10px 14px;
+    border: 2px solid #cbd5e1; border-radius: 8px;
+    font-size: 15px;
+  }
+  .kw-v99-lookup-form input:focus {
+    border-color: #16a34a; outline: none;
+  }
+  .kw-v99-hint {
+    font-size: 12px; color: #64748b;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 640px) {
+    .kw-v99-lookup-form { grid-template-columns: 1fr; }
+  }
+</style>
+<script>
+(function() {
+  'use strict';
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function normPhone(p) { return String(p || '').replace(/[^0-9]/g, ''); }
+  function normId(s) { return String(s || '').toUpperCase().replace(/\s+/g, ''); }
+  function normName(s) { return String(s || '').replace(/\s+/g, '').toLowerCase(); }
+  function fmtDate(d) {
+    if (!(d instanceof Date)) d = new Date(d);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  /* ════════════════════════════════════════════════════════════
+   * 替換 v9.3 查詢預約 form：改 3 欄位
+   * ════════════════════════════════════════════════════════════ */
+  function rewriteLookupForm() {
+    var page = document.getElementById('kw-v93-lookup-page');
+    if (!page) return;
+    if (page.__kwv99Rewritten) return;
+    page.__kwv99Rewritten = true;
+
+    page.innerHTML =
+      '<button class="kw-v93-back-btn" onclick="__kw_v93_back()">← 返回</button>'
+    + '<h2 style="margin:0 0 8px;">🔍 查詢預約</h2>'
+    + '<p class="kw-v99-hint">輸入下列任一欄位即可查詢您未來的預約（可只填一項或多項組合）</p>'
+    + '<div class="kw-v99-lookup-form">'
+    +   '<input id="kw-v99-name" type="text" placeholder="姓名（可填）">'
+    +   '<input id="kw-v99-phone" type="tel" placeholder="電話（可填）">'
+    +   '<input id="kw-v99-id" type="text" placeholder="身分證字號（可填）">'
+    + '</div>'
+    + '<button class="kw-v93-btn primary" onclick="__kw_v99_lookup()" style="width:100%;padding:12px;font-size:15px;">查詢</button>'
+    + '<div id="kw-v93-result" style="margin-top:20px;"></div>';
+  }
+  setInterval(rewriteLookupForm, 800);
+
+  /* ════════════════════════════════════════════════════════════
+   * 新的 lookup 邏輯（多欄位 OR 比對）
+   * ════════════════════════════════════════════════════════════ */
+  window.__kw_v99_lookup = function() {
+    var name = (document.getElementById('kw-v99-name') || {}).value || '';
+    var phone = (document.getElementById('kw-v99-phone') || {}).value || '';
+    var id = (document.getElementById('kw-v99-id') || {}).value || '';
+    name = name.trim(); phone = phone.trim(); id = id.trim();
+
+    if (!name && !phone && !id) {
+      alert('請至少填寫一項（姓名 / 電話 / 身分證）');
+      return;
+    }
+
+    var nameNorm = normName(name);
+    var phoneNorm = normPhone(phone);
+    var idNorm = normId(id);
+
+    var resultEl = document.getElementById('kw-v93-result');
+    if (resultEl) resultEl.innerHTML = '<p style="text-align:center;color:#64748b;">查詢中...（搜尋雲端 + 院區明細，約需 5 秒）</p>';
+
+    console.log('[KW v9.9] lookup:', { name: name, phone: phone, id: id });
+
+    if (!(window.KW && KW.api && KW.api.enabled && KW.api.enabled())) {
+      if (resultEl) resultEl.innerHTML = '<p style="text-align:center;color:#dc2626;">⚠️ 雲端服務未啟用</p>';
+      return;
+    }
+
+    // 三路 search keyword 嘗試
+    var searchKeywords = [];
+    if (name) searchKeywords.push(name);
+    if (phone) searchKeywords.push(phoneNorm);
+    if (id) searchKeywords.push(idNorm);
+
+    var searchPromises = searchKeywords.map(function(kw){
+      return KW.api._get('searchPatientHistory', { keyword: kw }).then(function(res){
+        if (res && res.ok && Array.isArray(res.data)) return res.data;
+        return [];
+      }).catch(function(){ return []; });
+    });
+
+    // 同時也用 lookupPatient
+    if (phone) {
+      searchPromises.push(KW.api._get('lookupPatient', { keyword: phoneNorm }).then(function(res){
+        if (res && res.ok && Array.isArray(res.data)) return res.data;
+        return [];
+      }).catch(function(){ return []; }));
+    }
+    if (id) {
+      searchPromises.push(KW.api._get('lookupPatient', { keyword: idNorm }).then(function(res){
+        if (res && res.ok && Array.isArray(res.data)) return res.data;
+        return [];
+      }).catch(function(){ return []; }));
+    }
+
+    // 遍歷 13 院區 × 未來 21 天，filter by 任一欄位
+    var clinicNames = (typeof CLINICS !== 'undefined' ? CLINICS : []).map(function(c){ return c.name; });
+    var today = new Date(); today.setHours(0,0,0,0);
+    var dates = [];
+    for (var i = 0; i < 21; i++) {
+      var d = new Date(today); d.setDate(d.getDate() + i);
+      dates.push(fmtDate(d));
+    }
+    var travPromises = [];
+    clinicNames.forEach(function(cn) {
+      dates.forEach(function(ds) {
+        var p = KW.api._get('getAppointmentsByClinicDate', { clinic: cn, date: ds }).then(function(res){
+          if (res && res.ok && Array.isArray(res.data)) {
+            return res.data.filter(function(a){
+              var apptPhone = normPhone(a.phone || a.電話);
+              var apptName = normName(a.name || a.patientName || a.姓名);
+              var apptId = normId(a.idNo || a.idCard || a.身分證 || '');
+              var match = false;
+              if (phoneNorm && apptPhone === phoneNorm) match = true;
+              if (nameNorm && apptName === nameNorm) match = true;
+              if (idNorm && apptId === idNorm) match = true;
+              return match;
+            }).map(function(a){
+              return Object.assign({}, a, { clinic: cn, date: ds });
+            });
+          }
+          return [];
+        }).catch(function(){ return []; });
+        travPromises.push(p);
+      });
+    });
+    var travel = Promise.all(travPromises).then(function(arrs){
+      return [].concat.apply([], arrs);
+    });
+
+    Promise.all(searchPromises.concat([travel])).then(function(results){
+      var all = [].concat.apply([], results);
+      // 再次過濾（searchPatientHistory 沒有清楚電話比對的回傳會混入）
+      all = all.filter(function(a){
+        if (!a) return false;
+        var apptPhone = normPhone(a.phone || a.電話);
+        var apptName = normName(a.name || a.patientName || a.姓名);
+        var apptId = normId(a.idNo || a.idCard || a.身分證 || '');
+        if (phoneNorm && apptPhone !== phoneNorm) {
+          if (!nameNorm && !idNorm) return false;
+          if (nameNorm && apptName !== nameNorm) return false;
+          if (idNorm && apptId !== idNorm) return false;
+        }
+        // 若有姓名輸入，但記錄無姓名，不過電話對 → 還是顯示
+        return true;
+      });
+
+      // 去重
+      var seen = {};
+      var future = all.filter(function(a){
+        var t = a.time || a.start || a.startTime || '';
+        if (typeof a.startMin === 'number') {
+          t = String(Math.floor(a.startMin/60)).padStart(2,'0') + ':' + String(a.startMin%60).padStart(2,'0');
+        }
+        var k = (a.date || '') + '|' + t + '|' + (a.doctor || '');
+        if (seen[k]) return false;
+        seen[k] = true;
+        var d = new Date(a.date); d.setHours(0,0,0,0);
+        if (d < today) return false;
+        if (a.status === 'cancelled' || a.cancelled) return false;
+        a.time = t;
+        return true;
+      });
+
+      console.log('[KW v9.9] 找到', future.length, '筆未來預約', future);
+
+      try {
+        if (window.__kw_v93_state) window.__kw_v93_state.foundAppts = future;
+      } catch(_) {}
+
+      renderV99Results(future, name, phone, id);
+    });
+  };
+
+  function renderV99Results(appts, name, phone, id) {
+    var el = document.getElementById('kw-v93-result');
+    if (!el) return;
+    if (appts.length === 0) {
+      var summary = [name, phone, id].filter(Boolean).join(' / ');
+      el.innerHTML =
+        '<div style="text-align:center;padding:24px;background:#f8fafc;border-radius:12px;">'
+      +   '<p style="color:#64748b;margin:0 0 8px;">😕 找不到符合「' + esc(summary) + '」的未來預約</p>'
+      +   '<p style="color:#94a3b8;font-size:12px;margin:0 0 6px;">已搜尋雲端 + 13 院區 × 未來 21 天</p>'
+      +   '<p style="color:#94a3b8;font-size:11px;">如已預約但查不到，請聯絡您預約的院區櫃台</p>'
+      + '</div>';
+      return;
+    }
+    var WDS = ['日','一','二','三','四','五','六'];
+    var html = '<h3 style="margin:0 0 12px;color:#2c3e50;">您的預約（' + appts.length + ' 筆）</h3>';
+    appts.forEach(function(a, idx){
+      var wdJs = new Date(a.date).getDay();
+      html +=
+        '<div class="kw-v93-appt-card">'
+      +   '<div class="info">'
+      +     '<div class="date">' + esc(a.date) + ' (週' + WDS[wdJs] + ') ' + esc(a.time || '') + '</div>'
+      +     '<div class="meta">' + esc(a.name || '') + ' · ' + esc(a.doctor || '') + ' 醫師 · ' + esc(a.clinic || '') + ' · ' + esc(a.type || '複診') + '</div>'
+      +   '</div>'
+      +   '<div class="actions">'
+      +     '<button class="kw-v93-btn reschedule" data-idx="'+idx+'" data-action="reschedule">↔ 改約</button>'
+      +     '<button class="kw-v93-btn cancel" data-idx="'+idx+'" data-action="cancel">✕ 取消</button>'
+      +   '</div>'
+      + '</div>';
+    });
+    html += '<p style="font-size:12px;color:#94a3b8;margin-top:16px;">⚠️ 24 小時內預約請聯絡院區櫃台處理</p>';
+    el.innerHTML = html;
+
+    el.querySelectorAll('.kw-v93-btn[data-action]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var idx = parseInt(b.dataset.idx, 10);
+        var appt = window.__kw_v93_state.foundAppts[idx];
+        var action = b.dataset.action;
+        var apptDt = new Date(appt.date + 'T' + (appt.time || '00:00'));
+        var diffMs = apptDt - new Date();
+        if (diffMs < 24*3600*1000) {
+          alert('⚠️ 此預約距現在不到 24 小時，請聯絡院區櫃台處理');
+          return;
+        }
+        if (action === 'reschedule' && typeof window.__kw_v93_openResch === 'function') {
+          window.__kw_v93_openResch(appt);
+        } else if (action === 'cancel' && typeof window.__kw_v93_openCancel === 'function') {
+          window.__kw_v93_openCancel(appt);
+        } else if (action === 'reschedule') {
+          alert('改約功能載入中... 請稍後重試（v9.3 函式未綁定）');
+        } else {
+          alert('取消功能載入中... 請稍後重試');
+        }
+      });
+    });
+  }
+
+  console.log('[KW v9.9] ✓ 查詢預約改 3 欄位（姓名/電話/身分證 任填一）');
+})();
+</script>
+<!-- ===== [v9.9] 結束 ===== -->
+
+<!-- ===== [v9.10] 全 13 院區 Drive 115.06 班表 (551 筆) 注入 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+  // ⚠️ 此資料來自 Drive 115.06「醫師班表」資料夾 13 個院區分頁
+  // 解析日期：2026-06-12
+  // 解析筆數：551 筆 (含 13 院區早/午/晚診+減重專診)
+  var DRIVE_SCHEDULES = [
+    { id:'DRV_0001', clinic:'鶯歌院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'13:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'DRV_0002', clinic:'鶯歌院區', startDate:'6/1', weekday:1, session:'早診', start:'10:00', end:'11:30', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0003', clinic:'鶯歌院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'陳珠', note:'', enabled:true },
+    { id:'DRV_0004', clinic:'鶯歌院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'11:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'DRV_0005', clinic:'鶯歌院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'12:30', doctor:'陳珠', note:'', enabled:true },
+    { id:'DRV_0006', clinic:'鶯歌院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'12:30', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0007', clinic:'鶯歌院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'14:30', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'DRV_0008', clinic:'鶯歌院區', startDate:'6/1', weekday:6, session:'早診', start:'09:00', end:'12:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'DRV_0009', clinic:'鶯歌院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'14:30', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'DRV_0010', clinic:'鶯歌院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'12:00', doctor:'陳珠', note:'', enabled:true },
+    { id:'DRV_0011', clinic:'鶯歌院區', startDate:'6/1', weekday:1, session:'午診', start:'13:00', end:'18:30', doctor:'陳珠', note:'', enabled:true },
+    { id:'DRV_0012', clinic:'鶯歌院區', startDate:'6/1', weekday:1, session:'午診', start:'16:30', end:'18:30', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0013', clinic:'鶯歌院區', startDate:'6/1', weekday:2, session:'午診', start:'12:00', end:'16:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'DRV_0014', clinic:'鶯歌院區', startDate:'6/1', weekday:3, session:'午診', start:'11:00', end:'15:00', doctor:'林永昌', note:'', enabled:true },
+    { id:'DRV_0015', clinic:'鶯歌院區', startDate:'6/1', weekday:4, session:'午診', start:'12:30', end:'14:30', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0016', clinic:'鶯歌院區', startDate:'6/1', weekday:4, session:'午診', start:'14:30', end:'19:00', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0017', clinic:'鶯歌院區', startDate:'6/1', weekday:5, session:'午診', start:'12:30', end:'15:00', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0018', clinic:'鶯歌院區', startDate:'6/1', weekday:6, session:'午診', start:'14:30', end:'19:00', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0019', clinic:'鶯歌院區', startDate:'6/1', weekday:7, session:'午診', start:'14:30', end:'18:00', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0020', clinic:'鶯歌院區', startDate:'6/1', weekday:7, session:'午診', start:'12:00', end:'15:00', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0021', clinic:'鶯歌院區', startDate:'6/1', weekday:1, session:'晚診', start:'18:30', end:'21:30', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'DRV_0022', clinic:'鶯歌院區', startDate:'6/1', weekday:1, session:'晚診', start:'18:30', end:'21:30', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0023', clinic:'鶯歌院區', startDate:'6/1', weekday:2, session:'晚診', start:'16:00', end:'21:30', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0024', clinic:'鶯歌院區', startDate:'6/1', weekday:2, session:'晚診', start:'18:00', end:'21:30', doctor:'林永昌', note:'', enabled:true },
+    { id:'DRV_0025', clinic:'鶯歌院區', startDate:'6/1', weekday:3, session:'晚診', start:'15:00', end:'21:30', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0026', clinic:'鶯歌院區', startDate:'6/1', weekday:3, session:'晚診', start:'17:00', end:'21:30', doctor:'陳珠', note:'', enabled:true },
+    { id:'DRV_0027', clinic:'鶯歌院區', startDate:'6/1', weekday:4, session:'晚診', start:'17:00', end:'21:30', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'DRV_0028', clinic:'鶯歌院區', startDate:'6/1', weekday:4, session:'晚診', start:'19:00', end:'21:30', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0029', clinic:'鶯歌院區', startDate:'6/1', weekday:5, session:'晚診', start:'15:00', end:'21:30', doctor:'林永昌', note:'', enabled:true },
+    { id:'DRV_0030', clinic:'鶯歌院區', startDate:'6/1', weekday:5, session:'晚診', start:'17:30', end:'21:30', doctor:'陳珠', note:'', enabled:true },
+    { id:'DRV_0031', clinic:'鶯歌院區', startDate:'6/1', weekday:6, session:'晚診', start:'17:30', end:'21:30', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0032', clinic:'鶯歌院區', startDate:'6/1', weekday:7, session:'晚診', start:'18:00', end:'21:30', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0033', clinic:'鶯歌院區', startDate:'6/1', weekday:7, session:'晚診', start:'15:00', end:'21:30', doctor:'林永昌', note:'', enabled:true },
+    { id:'DRV_0034', clinic:'鶯歌院區', startDate:'6/1', weekday:1, session:'減重專診', start:'09:00', end:'12:00', doctor:'林永昌', note:'減重專診', enabled:true },
+    { id:'DRV_0035', clinic:'鶯歌院區', startDate:'6/1', weekday:3, session:'減重專診', start:'08:00', end:'10:00', doctor:'鍾偉瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0036', clinic:'鶯歌院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'12:00', doctor:'鍾偉瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0037', clinic:'鶯歌院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'12:00', doctor:'林永昌', note:'減重專診', enabled:true },
+    { id:'DRV_0038', clinic:'鶯歌院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'12:00', doctor:'鍾偉瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0039', clinic:'鶯歌院區', startDate:'6/1', weekday:2, session:'減重專診', start:'13:00', end:'15:00', doctor:'鍾偉瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0040', clinic:'鶯歌院區', startDate:'6/1', weekday:3, session:'減重專診', start:'12:00', end:'14:00', doctor:'林永昌', note:'減重專診', enabled:true },
+    { id:'DRV_0041', clinic:'鶯歌院區', startDate:'6/1', weekday:5, session:'減重專診', start:'15:00', end:'18:00', doctor:'林永昌', note:'減重專診', enabled:true },
+    { id:'DRV_0042', clinic:'鶯歌院區', startDate:'6/1', weekday:6, session:'減重專診', start:'12:00', end:'14:00', doctor:'鍾偉瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0043', clinic:'鶯歌院區', startDate:'6/1', weekday:7, session:'減重專診', start:'15:00', end:'17:00', doctor:'林永昌', note:'減重專診', enabled:true },
+    { id:'DRV_0044', clinic:'鶯歌院區', startDate:'6/1', weekday:1, session:'減重專診', start:'19:00', end:'21:00', doctor:'鍾偉瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0045', clinic:'鶯歌院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'林永昌', note:'減重專診', enabled:true },
+    { id:'DRV_0046', clinic:'鶯歌院區', startDate:'6/1', weekday:4, session:'減重專診', start:'17:30', end:'19:30', doctor:'鍾偉瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0047', clinic:'鶯歌院區', startDate:'6/1', weekday:5, session:'減重專診', start:'18:00', end:'20:00', doctor:'林永昌', note:'減重專診', enabled:true },
+    { id:'DRV_0048', clinic:'鶯歌院區', startDate:'6/1', weekday:7, session:'減重專診', start:'19:00', end:'20:00', doctor:'林永昌', note:'減重專診', enabled:true },
+    { id:'DRV_0049', clinic:'鶯歌院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'12:30', doctor:'林永昌', note:'', enabled:true },
+    { id:'DRV_0050', clinic:'鶯歌院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'11:30', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0051', clinic:'鶯歌院區', startDate:'6/1', weekday:6, session:'午診', start:'11:30', end:'15:30', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0052', clinic:'三樹院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'12:30', doctor:'張慧馨', note:'', enabled:true },
+    { id:'DRV_0053', clinic:'三樹院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:30', doctor:'張慧馨', note:'', enabled:true },
+    { id:'DRV_0054', clinic:'三樹院區', startDate:'6/1', weekday:2, session:'早診', start:'09:00', end:'12:30', doctor:'陳富玫', note:'', enabled:true },
+    { id:'DRV_0055', clinic:'三樹院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'12:00', doctor:'陳富玫', note:'', enabled:true },
+    { id:'DRV_0056', clinic:'三樹院區', startDate:'6/1', weekday:3, session:'早診', start:'09:00', end:'12:30', doctor:'黃允玫', note:'', enabled:true },
+    { id:'DRV_0057', clinic:'三樹院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'14:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'DRV_0058', clinic:'三樹院區', startDate:'6/1', weekday:4, session:'早診', start:'09:00', end:'13:00', doctor:'黃允玫', note:'', enabled:true },
+    { id:'DRV_0059', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'14:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'DRV_0060', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'早診', start:'08:00', end:'12:30', doctor:'張覲麟', note:'', enabled:true },
+    { id:'DRV_0061', clinic:'三樹院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:30', doctor:'張覲麟', note:'', enabled:true },
+    { id:'DRV_0062', clinic:'三樹院區', startDate:'6/1', weekday:6, session:'早診', start:'09:00', end:'14:30', doctor:'黃允玫', note:'', enabled:true },
+    { id:'DRV_0063', clinic:'三樹院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'11:00', doctor:'陳郁凡', note:'', enabled:true },
+    { id:'DRV_0064', clinic:'三樹院區', startDate:'6/1', weekday:7, session:'早診', start:'10:00', end:'15:00', doctor:'闕壯理', note:'', enabled:true },
+    { id:'DRV_0065', clinic:'三樹院區', startDate:'6/1', weekday:1, session:'午診', start:'12:30', end:'17:00', doctor:'陳富玫', note:'', enabled:true },
+    { id:'DRV_0066', clinic:'三樹院區', startDate:'6/1', weekday:2, session:'午診', start:'12:30', end:'16:30', doctor:'張覲麟', note:'', enabled:true },
+    { id:'DRV_0067', clinic:'三樹院區', startDate:'6/1', weekday:3, session:'午診', start:'12:30', end:'17:00', doctor:'張覲麟', note:'', enabled:true },
+    { id:'DRV_0068', clinic:'三樹院區', startDate:'6/1', weekday:4, session:'午診', start:'13:00', end:'16:30', doctor:'闕壯理', note:'', enabled:true },
+    { id:'DRV_0069', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'午診', start:'14:00', end:'17:00', doctor:'陳富玫', note:'', enabled:true },
+    { id:'DRV_0070', clinic:'三樹院區', startDate:'6/1', weekday:6, session:'午診', start:'14:30', end:'18:30', doctor:'闕壯理', note:'', enabled:true },
+    { id:'DRV_0071', clinic:'三樹院區', startDate:'6/1', weekday:7, session:'午診', start:'15:00', end:'17:00', doctor:'張慧馨', note:'', enabled:true },
+    { id:'DRV_0072', clinic:'三樹院區', startDate:'6/1', weekday:1, session:'晚診', start:'16:30', end:'21:30', doctor:'張覲麟', note:'', enabled:true },
+    { id:'DRV_0073', clinic:'三樹院區', startDate:'6/1', weekday:1, session:'晚診', start:'17:00', end:'21:30', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0074', clinic:'三樹院區', startDate:'6/1', weekday:2, session:'晚診', start:'16:00', end:'21:30', doctor:'闕壯理', note:'', enabled:true },
+    { id:'DRV_0075', clinic:'三樹院區', startDate:'6/1', weekday:2, session:'晚診', start:'17:00', end:'21:30', doctor:'黃允玫', note:'', enabled:true },
+    { id:'DRV_0076', clinic:'三樹院區', startDate:'6/1', weekday:3, session:'晚診', start:'16:00', end:'21:30', doctor:'張慧馨', note:'', enabled:true },
+    { id:'DRV_0077', clinic:'三樹院區', startDate:'6/1', weekday:3, session:'晚診', start:'18:00', end:'21:30', doctor:'闕壯理', note:'', enabled:true },
+    { id:'DRV_0078', clinic:'三樹院區', startDate:'6/1', weekday:4, session:'晚診', start:'16:30', end:'21:30', doctor:'張覲麟', note:'', enabled:true },
+    { id:'DRV_0079', clinic:'三樹院區', startDate:'6/1', weekday:4, session:'晚診', start:'16:30', end:'21:30', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0080', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'晚診', start:'16:00', end:'21:30', doctor:'闕壯理', note:'', enabled:true },
+    { id:'DRV_0081', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'晚診', start:'17:00', end:'21:30', doctor:'黃允玫', note:'', enabled:true },
+    { id:'DRV_0082', clinic:'三樹院區', startDate:'6/1', weekday:6, session:'晚診', start:'18:30', end:'21:30', doctor:'闕壯理', note:'', enabled:true },
+    { id:'DRV_0083', clinic:'三樹院區', startDate:'6/1', weekday:7, session:'晚診', start:'17:00', end:'21:30', doctor:'張慧馨', note:'', enabled:true },
+    { id:'DRV_0084', clinic:'三樹院區', startDate:'6/1', weekday:7, session:'晚診', start:'17:00', end:'21:30', doctor:'黃允玫', note:'', enabled:true },
+    { id:'DRV_0085', clinic:'三樹院區', startDate:'6/1', weekday:1, session:'減重專診', start:'09:00', end:'12:00', doctor:'張慧馨', note:'減重專診', enabled:true },
+    { id:'DRV_0086', clinic:'三樹院區', startDate:'6/1', weekday:2, session:'減重專診', start:'09:00', end:'12:00', doctor:'張慧馨', note:'減重專診', enabled:true },
+    { id:'DRV_0087', clinic:'三樹院區', startDate:'6/1', weekday:3, session:'減重專診', start:'13:00', end:'15:00', doctor:'張覲麟', note:'減重專診', enabled:true },
+    { id:'DRV_0088', clinic:'三樹院區', startDate:'6/1', weekday:4, session:'減重專診', start:'10:00', end:'11:00', doctor:'蕭捷存', note:'減重專診', enabled:true },
+    { id:'DRV_0089', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'減重專診', start:'09:00', end:'12:00', doctor:'張慧馨', note:'減重專診', enabled:true },
+    { id:'DRV_0090', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'減重專診', start:'09:00', end:'12:00', doctor:'張覲麟', note:'減重專診', enabled:true },
+    { id:'DRV_0091', clinic:'三樹院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'12:00', doctor:'張覲麟', note:'減重專診', enabled:true },
+    { id:'DRV_0092', clinic:'三樹院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'12:00', doctor:'黃允玫', note:'減重專診', enabled:true },
+    { id:'DRV_0093', clinic:'三樹院區', startDate:'6/1', weekday:7, session:'減重專診', start:'10:00', end:'13:00', doctor:'闕壯理', note:'減重專診', enabled:true },
+    { id:'DRV_0094', clinic:'三樹院區', startDate:'6/1', weekday:1, session:'減重專診', start:'17:00', end:'18:00', doctor:'張覲麟', note:'減重專診', enabled:true },
+    { id:'DRV_0095', clinic:'三樹院區', startDate:'6/1', weekday:2, session:'減重專診', start:'17:00', end:'20:00', doctor:'闕壯理', note:'減重專診', enabled:true },
+    { id:'DRV_0096', clinic:'三樹院區', startDate:'6/1', weekday:3, session:'減重專診', start:'17:00', end:'20:00', doctor:'張慧馨', note:'減重專診', enabled:true },
+    { id:'DRV_0097', clinic:'三樹院區', startDate:'6/1', weekday:4, session:'減重專診', start:'11:00', end:'13:00', doctor:'張慧馨', note:'減重專診', enabled:true },
+    { id:'DRV_0098', clinic:'三樹院區', startDate:'6/1', weekday:4, session:'減重專診', start:'11:00', end:'13:00', doctor:'黃允玫', note:'減重專診', enabled:true },
+    { id:'DRV_0099', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'減重專診', start:'10:00', end:'13:00', doctor:'蕭捷健', note:'減重專診', enabled:true },
+    { id:'DRV_0100', clinic:'三樹院區', startDate:'6/1', weekday:6, session:'減重專診', start:'10:00', end:'14:00', doctor:'蕭捷健', note:'減重專診', enabled:true },
+    { id:'DRV_0101', clinic:'三樹院區', startDate:'6/1', weekday:7, session:'減重專診', start:'15:00', end:'17:00', doctor:'張慧馨', note:'減重專診', enabled:true },
+    { id:'DRV_0102', clinic:'三樹院區', startDate:'6/1', weekday:1, session:'減重專診', start:'18:00', end:'20:00', doctor:'張覲麟', note:'減重專診', enabled:true },
+    { id:'DRV_0103', clinic:'三樹院區', startDate:'6/1', weekday:2, session:'減重專診', start:'17:00', end:'21:30', doctor:'蕭捷健', note:'減重專診', enabled:true },
+    { id:'DRV_0104', clinic:'三樹院區', startDate:'6/1', weekday:3, session:'減重專診', start:'18:00', end:'20:00', doctor:'闕壯理', note:'減重專診', enabled:true },
+    { id:'DRV_0105', clinic:'三樹院區', startDate:'6/1', weekday:4, session:'減重專診', start:'14:00', end:'15:00', doctor:'闕壯理', note:'減重專診', enabled:true },
+    { id:'DRV_0106', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'減重專診', start:'17:00', end:'20:00', doctor:'闕壯理', note:'減重專診', enabled:true },
+    { id:'DRV_0107', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'減重專診', start:'17:00', end:'20:00', doctor:'黃允玫', note:'減重專診', enabled:true },
+    { id:'DRV_0108', clinic:'三樹院區', startDate:'6/1', weekday:6, session:'減重專診', start:'16:00', end:'20:00', doctor:'闕壯理', note:'減重專診', enabled:true },
+    { id:'DRV_0109', clinic:'三樹院區', startDate:'6/1', weekday:7, session:'減重專診', start:'18:00', end:'20:00', doctor:'張慧馨', note:'減重專診', enabled:true },
+    { id:'DRV_0110', clinic:'三樹院區', startDate:'6/1', weekday:7, session:'減重專診', start:'18:00', end:'20:00', doctor:'黃允玫', note:'減重專診', enabled:true },
+    { id:'DRV_0111', clinic:'三樹院區', startDate:'6/1', weekday:5, session:'午診', start:'13:50', end:'16:50', doctor:'陳富玫', note:'', enabled:true },
+    { id:'DRV_0112', clinic:'樹林院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'12:00', doctor:'陳永仁', note:'', enabled:true },
+    { id:'DRV_0113', clinic:'樹林院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'14:00', doctor:'何中誠', note:'', enabled:true },
+    { id:'DRV_0114', clinic:'樹林院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'12:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'DRV_0115', clinic:'樹林院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'10:30', doctor:'林秉承', note:'', enabled:true },
+    { id:'DRV_0116', clinic:'樹林院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'13:00', doctor:'陳永仁', note:'', enabled:true },
+    { id:'DRV_0117', clinic:'樹林院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'12:00', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0118', clinic:'樹林院區', startDate:'6/1', weekday:5, session:'早診', start:'08:00', end:'11:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'DRV_0119', clinic:'樹林院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'DRV_0120', clinic:'樹林院區', startDate:'6/1', weekday:6, session:'早診', start:'10:00', end:'14:30', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'DRV_0121', clinic:'樹林院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'12:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'DRV_0122', clinic:'樹林院區', startDate:'6/1', weekday:7, session:'早診', start:'08:00', end:'13:00', doctor:'何中誠', note:'', enabled:true },
+    { id:'DRV_0123', clinic:'樹林院區', startDate:'6/1', weekday:1, session:'午診', start:'12:00', end:'15:30', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0124', clinic:'樹林院區', startDate:'6/1', weekday:1, session:'午診', start:'15:00', end:'18:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'DRV_0125', clinic:'樹林院區', startDate:'6/1', weekday:2, session:'午診', start:'13:00', end:'15:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'DRV_0126', clinic:'樹林院區', startDate:'6/1', weekday:2, session:'午診', start:'14:00', end:'18:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'DRV_0127', clinic:'樹林院區', startDate:'6/1', weekday:3, session:'午診', start:'11:30', end:'17:00', doctor:'陳永仁', note:'', enabled:true },
+    { id:'DRV_0128', clinic:'樹林院區', startDate:'6/1', weekday:3, session:'午診', start:'14:30', end:'16:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'DRV_0129', clinic:'樹林院區', startDate:'6/1', weekday:4, session:'午診', start:'13:00', end:'17:30', doctor:'尤騰', note:'', enabled:true },
+    { id:'DRV_0130', clinic:'樹林院區', startDate:'6/1', weekday:5, session:'午診', start:'12:00', end:'15:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'DRV_0131', clinic:'樹林院區', startDate:'6/1', weekday:6, session:'午診', start:'14:30', end:'17:30', doctor:'何中誠', note:'', enabled:true },
+    { id:'DRV_0132', clinic:'樹林院區', startDate:'6/1', weekday:7, session:'午診', start:'12:00', end:'14:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'DRV_0133', clinic:'樹林院區', startDate:'6/1', weekday:7, session:'午診', start:'13:00', end:'17:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'DRV_0134', clinic:'樹林院區', startDate:'6/1', weekday:1, session:'晚診', start:'16:00', end:'21:30', doctor:'何中誠', note:'', enabled:true },
+    { id:'DRV_0135', clinic:'樹林院區', startDate:'6/1', weekday:1, session:'晚診', start:'18:30', end:'21:30', doctor:'林秉承', note:'', enabled:true },
+    { id:'DRV_0136', clinic:'樹林院區', startDate:'6/1', weekday:2, session:'晚診', start:'17:00', end:'21:30', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'DRV_0137', clinic:'樹林院區', startDate:'6/1', weekday:2, session:'晚診', start:'18:30', end:'21:30', doctor:'尤騰', note:'', enabled:true },
+    { id:'DRV_0138', clinic:'樹林院區', startDate:'6/1', weekday:3, session:'晚診', start:'17:00', end:'21:30', doctor:'尤騰', note:'', enabled:true },
+    { id:'DRV_0139', clinic:'樹林院區', startDate:'6/1', weekday:3, session:'晚診', start:'16:30', end:'21:30', doctor:'何中誠', note:'', enabled:true },
+    { id:'DRV_0140', clinic:'樹林院區', startDate:'6/1', weekday:4, session:'晚診', start:'17:30', end:'21:30', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'DRV_0141', clinic:'樹林院區', startDate:'6/1', weekday:4, session:'晚診', start:'19:00', end:'21:30', doctor:'黃炯達', note:'', enabled:true },
+    { id:'DRV_0142', clinic:'樹林院區', startDate:'6/1', weekday:5, session:'晚診', start:'15:00', end:'19:30', doctor:'陳永仁', note:'', enabled:true },
+    { id:'DRV_0143', clinic:'樹林院區', startDate:'6/1', weekday:5, session:'晚診', start:'17:30', end:'21:30', doctor:'何中誠', note:'', enabled:true },
+    { id:'DRV_0144', clinic:'樹林院區', startDate:'6/1', weekday:6, session:'晚診', start:'17:30', end:'21:30', doctor:'陳永仁', note:'', enabled:true },
+    { id:'DRV_0145', clinic:'樹林院區', startDate:'6/1', weekday:7, session:'晚診', start:'14:30', end:'21:30', doctor:'陳永仁', note:'', enabled:true },
+    { id:'DRV_0146', clinic:'樹林院區', startDate:'6/1', weekday:1, session:'減重專診', start:'10:00', end:'12:00', doctor:'林秉承', note:'減重專診', enabled:true },
+    { id:'DRV_0147', clinic:'樹林院區', startDate:'6/1', weekday:2, session:'減重專診', start:'08:00', end:'13:00', doctor:'何中誠', note:'減重專診', enabled:true },
+    { id:'DRV_0148', clinic:'樹林院區', startDate:'6/1', weekday:3, session:'減重專診', start:'11:00', end:'12:00', doctor:'廖崇淵', note:'減重專診', enabled:true },
+    { id:'DRV_0149', clinic:'樹林院區', startDate:'6/1', weekday:4, session:'減重專診', start:'09:00', end:'10:30', doctor:'林秉承', note:'減重專診', enabled:true },
+    { id:'DRV_0150', clinic:'樹林院區', startDate:'6/1', weekday:5, session:'減重專診', start:'08:00', end:'11:00', doctor:'廖崇淵', note:'減重專診', enabled:true },
+    { id:'DRV_0151', clinic:'樹林院區', startDate:'6/1', weekday:6, session:'減重專診', start:'10:00', end:'12:00', doctor:'林秉承', note:'減重專診', enabled:true },
+    { id:'DRV_0152', clinic:'樹林院區', startDate:'6/1', weekday:1, session:'減重專診', start:'16:00', end:'17:00', doctor:'何中誠', note:'減重專診', enabled:true },
+    { id:'DRV_0153', clinic:'樹林院區', startDate:'6/1', weekday:3, session:'減重專診', start:'16:00', end:'18:30', doctor:'林秉承', note:'減重專診', enabled:true },
+    { id:'DRV_0154', clinic:'樹林院區', startDate:'6/1', weekday:4, session:'減重專診', start:'13:00', end:'17:00', doctor:'尤騰', note:'減重專診', enabled:true },
+    { id:'DRV_0155', clinic:'樹林院區', startDate:'6/1', weekday:5, session:'減重專診', start:'12:00', end:'15:00', doctor:'廖崇淵', note:'減重專診', enabled:true },
+    { id:'DRV_0156', clinic:'樹林院區', startDate:'6/1', weekday:6, session:'減重專診', start:'10:00', end:'12:00', doctor:'廖崇淵', note:'減重專診', enabled:true },
+    { id:'DRV_0157', clinic:'樹林院區', startDate:'6/1', weekday:7, session:'減重專診', start:'12:00', end:'16:00', doctor:'林秉承', note:'減重專診', enabled:true },
+    { id:'DRV_0158', clinic:'樹林院區', startDate:'6/1', weekday:1, session:'減重專診', start:'18:00', end:'20:00', doctor:'林秉承', note:'減重專診', enabled:true },
+    { id:'DRV_0159', clinic:'樹林院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'21:00', doctor:'尤騰', note:'減重專診', enabled:true },
+    { id:'DRV_0160', clinic:'樹林院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'21:00', doctor:'廖崇淵', note:'減重專診', enabled:true },
+    { id:'DRV_0161', clinic:'樹林院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'21:00', doctor:'何中誠', note:'減重專診', enabled:true },
+    { id:'DRV_0162', clinic:'樹林院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'21:00', doctor:'尤騰', note:'減重專診', enabled:true },
+    { id:'DRV_0163', clinic:'樹林院區', startDate:'6/1', weekday:4, session:'減重專診', start:'19:00', end:'21:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0164', clinic:'樹林院區', startDate:'6/1', weekday:5, session:'減重專診', start:'17:30', end:'20:30', doctor:'何中誠', note:'減重專診', enabled:true },
+    { id:'DRV_0165', clinic:'樹林院區', startDate:'6/1', weekday:6, session:'減重專診', start:'17:30', end:'18:30', doctor:'何中誠', note:'減重專診', enabled:true },
+    { id:'DRV_0166', clinic:'樹林院區', startDate:'6/1', weekday:7, session:'減重專診', start:'16:00', end:'17:00', doctor:'尤騰', note:'減重專診', enabled:true },
+    { id:'DRV_0167', clinic:'樹林院區', startDate:'6/1', weekday:1, session:'減重專診', start:'15:30', end:'16:30', doctor:'李軍逸', note:'減重專診', enabled:true },
+    { id:'DRV_0168', clinic:'桃園院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'14:30', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'DRV_0169', clinic:'桃園院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'11:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'DRV_0170', clinic:'桃園院區', startDate:'6/1', weekday:2, session:'早診', start:'09:00', end:'14:30', doctor:'曾㨗聖', note:'', enabled:true },
+    { id:'DRV_0171', clinic:'桃園院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'14:30', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'DRV_0172', clinic:'桃園院區', startDate:'6/1', weekday:3, session:'早診', start:'09:00', end:'12:00', doctor:'曾㨗聖', note:'', enabled:true },
+    { id:'DRV_0173', clinic:'桃園院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'12:00', doctor:'陳韋思', note:'', enabled:true },
+    { id:'DRV_0174', clinic:'桃園院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'13:00', doctor:'陳韋思', note:'', enabled:true },
+    { id:'DRV_0175', clinic:'桃園院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'DRV_0176', clinic:'桃園院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'14:30', doctor:'曾㨗聖', note:'', enabled:true },
+    { id:'DRV_0177', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'14:30', doctor:'李豪權', note:'', enabled:true },
+    { id:'DRV_0178', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'12:00', doctor:'陳韋思', note:'', enabled:true },
+    { id:'DRV_0179', clinic:'桃園院區', startDate:'6/1', weekday:1, session:'午診', start:'14:30', end:'17:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'DRV_0180', clinic:'桃園院區', startDate:'6/1', weekday:2, session:'午診', start:'14:30', end:'18:30', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'DRV_0181', clinic:'桃園院區', startDate:'6/1', weekday:3, session:'午診', start:'14:30', end:'18:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'DRV_0182', clinic:'桃園院區', startDate:'6/1', weekday:4, session:'午診', start:'12:00', end:'14:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0183', clinic:'桃園院區', startDate:'6/1', weekday:5, session:'午診', start:'13:00', end:'18:30', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'DRV_0184', clinic:'桃園院區', startDate:'6/1', weekday:6, session:'午診', start:'14:30', end:'18:00', doctor:'李豪權', note:'', enabled:true },
+    { id:'DRV_0185', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'午診', start:'14:30', end:'18:00', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'DRV_0186', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'午診', start:'15:30', end:'18:00', doctor:'曾㨗聖', note:'', enabled:true },
+    { id:'DRV_0187', clinic:'桃園院區', startDate:'6/1', weekday:1, session:'晚診', start:'17:00', end:'21:30', doctor:'李豪權', note:'', enabled:true },
+    { id:'DRV_0188', clinic:'桃園院區', startDate:'6/1', weekday:1, session:'晚診', start:'17:00', end:'21:30', doctor:'曾㨗聖', note:'', enabled:true },
+    { id:'DRV_0189', clinic:'桃園院區', startDate:'6/1', weekday:2, session:'晚診', start:'18:30', end:'21:30', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'DRV_0190', clinic:'桃園院區', startDate:'6/1', weekday:2, session:'晚診', start:'18:30', end:'21:30', doctor:'陳韋思', note:'', enabled:true },
+    { id:'DRV_0191', clinic:'桃園院區', startDate:'6/1', weekday:3, session:'晚診', start:'18:00', end:'21:30', doctor:'李豪權', note:'', enabled:true },
+    { id:'DRV_0192', clinic:'桃園院區', startDate:'6/1', weekday:3, session:'晚診', start:'18:00', end:'21:30', doctor:'陳韋思', note:'', enabled:true },
+    { id:'DRV_0193', clinic:'桃園院區', startDate:'6/1', weekday:4, session:'晚診', start:'14:30', end:'21:30', doctor:'李豪權', note:'', enabled:true },
+    { id:'DRV_0194', clinic:'桃園院區', startDate:'6/1', weekday:4, session:'晚診', start:'18:30', end:'21:30', doctor:'曾㨗聖', note:'', enabled:true },
+    { id:'DRV_0195', clinic:'桃園院區', startDate:'6/1', weekday:5, session:'晚診', start:'18:30', end:'20:00', doctor:'鍾偉瑋', note:'', enabled:true },
+    { id:'DRV_0196', clinic:'桃園院區', startDate:'6/1', weekday:5, session:'晚診', start:'18:30', end:'21:30', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'DRV_0197', clinic:'桃園院區', startDate:'6/1', weekday:6, session:'晚診', start:'18:00', end:'21:30', doctor:'李豪權', note:'', enabled:true },
+    { id:'DRV_0198', clinic:'桃園院區', startDate:'6/1', weekday:6, session:'晚診', start:'18:00', end:'21:30', doctor:'陳韋思', note:'', enabled:true },
+    { id:'DRV_0199', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'晚診', start:'18:00', end:'21:30', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'DRV_0200', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'晚診', start:'18:00', end:'21:30', doctor:'曾㨗聖', note:'', enabled:true },
+    { id:'DRV_0201', clinic:'桃園院區', startDate:'6/1', weekday:1, session:'減重專診', start:'09:00', end:'13:00', doctor:'蕭宇伯', note:'減重專診', enabled:true },
+    { id:'DRV_0202', clinic:'桃園院區', startDate:'6/1', weekday:2, session:'減重專診', start:'09:00', end:'11:00', doctor:'李豪權', note:'減重專診', enabled:true },
+    { id:'DRV_0203', clinic:'桃園院區', startDate:'6/1', weekday:3, session:'減重專診', start:'09:00', end:'13:00', doctor:'蕭宇伯', note:'減重專診', enabled:true },
+    { id:'DRV_0204', clinic:'桃園院區', startDate:'6/1', weekday:4, session:'減重專診', start:'09:00', end:'11:00', doctor:'陳韋思', note:'減重專診', enabled:true },
+    { id:'DRV_0205', clinic:'桃園院區', startDate:'6/1', weekday:5, session:'減重專診', start:'09:00', end:'12:00', doctor:'陳韋思', note:'減重專診', enabled:true },
+    { id:'DRV_0206', clinic:'桃園院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'11:00', doctor:'蕭宇伯', note:'減重專診', enabled:true },
+    { id:'DRV_0207', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'11:00', doctor:'李豪權', note:'減重專診', enabled:true },
+    { id:'DRV_0208', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'11:00', doctor:'陳韋思', note:'減重專診', enabled:true },
+    { id:'DRV_0209', clinic:'桃園院區', startDate:'6/1', weekday:1, session:'減重專診', start:'15:00', end:'17:00', doctor:'李豪權', note:'減重專診', enabled:true },
+    { id:'DRV_0210', clinic:'桃園院區', startDate:'6/1', weekday:2, session:'減重專診', start:'15:00', end:'17:00', doctor:'蕭宇伯', note:'減重專診', enabled:true },
+    { id:'DRV_0211', clinic:'桃園院區', startDate:'6/1', weekday:3, session:'減重專診', start:'15:00', end:'17:00', doctor:'李豪權', note:'減重專診', enabled:true },
+    { id:'DRV_0212', clinic:'桃園院區', startDate:'6/1', weekday:4, session:'減重專診', start:'14:00', end:'18:00', doctor:'蕭捷健', note:'減重專診', enabled:true },
+    { id:'DRV_0213', clinic:'桃園院區', startDate:'6/1', weekday:5, session:'減重專診', start:'14:00', end:'17:00', doctor:'鍾偉瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0214', clinic:'桃園院區', startDate:'6/1', weekday:6, session:'減重專診', start:'15:00', end:'17:00', doctor:'李豪權', note:'減重專診', enabled:true },
+    { id:'DRV_0215', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'減重專診', start:'15:00', end:'17:00', doctor:'蕭宇伯', note:'減重專診', enabled:true },
+    { id:'DRV_0216', clinic:'桃園院區', startDate:'6/1', weekday:1, session:'減重專診', start:'19:00', end:'20:00', doctor:'李豪權', note:'減重專診', enabled:true },
+    { id:'DRV_0217', clinic:'桃園院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'蕭宇伯', note:'減重專診', enabled:true },
+    { id:'DRV_0218', clinic:'桃園院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳韋思', note:'減重專診', enabled:true },
+    { id:'DRV_0219', clinic:'桃園院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'20:00', doctor:'李豪權', note:'減重專診', enabled:true },
+    { id:'DRV_0220', clinic:'桃園院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳韋思', note:'減重專診', enabled:true },
+    { id:'DRV_0221', clinic:'桃園院區', startDate:'6/1', weekday:4, session:'減重專診', start:'19:00', end:'20:00', doctor:'李豪權', note:'減重專診', enabled:true },
+    { id:'DRV_0222', clinic:'桃園院區', startDate:'6/1', weekday:5, session:'減重專診', start:'18:30', end:'20:00', doctor:'鍾偉瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0223', clinic:'桃園院區', startDate:'6/1', weekday:5, session:'減重專診', start:'18:30', end:'20:00', doctor:'蕭宇伯', note:'減重專診', enabled:true },
+    { id:'DRV_0224', clinic:'桃園院區', startDate:'6/1', weekday:6, session:'減重專診', start:'19:00', end:'20:00', doctor:'李豪權', note:'減重專診', enabled:true },
+    { id:'DRV_0225', clinic:'桃園院區', startDate:'6/1', weekday:6, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳韋思', note:'減重專診', enabled:true },
+    { id:'DRV_0226', clinic:'桃園院區', startDate:'6/1', weekday:7, session:'減重專診', start:'19:00', end:'20:00', doctor:'蕭宇伯', note:'減重專診', enabled:true },
+    { id:'DRV_0227', clinic:'桃園院區', startDate:'6/1', weekday:5, session:'午診', start:'13:00', end:'18:30', doctor:'蕭宇伯', note:'', enabled:true },
+    { id:'DRV_0228', clinic:'土城院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'14:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'DRV_0229', clinic:'土城院區', startDate:'6/1', weekday:1, session:'早診', start:'08:30', end:'11:30', doctor:'何中誠', note:'', enabled:true },
+    { id:'DRV_0230', clinic:'土城院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'何金蔚', note:'', enabled:true },
+    { id:'DRV_0231', clinic:'土城院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'12:30', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'DRV_0232', clinic:'土城院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'12:00', doctor:'尤騰', note:'', enabled:true },
+    { id:'DRV_0233', clinic:'土城院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'13:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'DRV_0234', clinic:'土城院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:30', doctor:'何中誠', note:'', enabled:true },
+    { id:'DRV_0235', clinic:'土城院區', startDate:'6/1', weekday:6, session:'早診', start:'10:00', end:'12:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'DRV_0236', clinic:'土城院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'13:00', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'DRV_0237', clinic:'土城院區', startDate:'6/1', weekday:7, session:'早診', start:'09:00', end:'10:00', doctor:'林秉承', note:'', enabled:true },
+    { id:'DRV_0238', clinic:'土城院區', startDate:'6/1', weekday:1, session:'午診', start:'13:30', end:'17:00', doctor:'黃濰', note:'', enabled:true },
+    { id:'DRV_0239', clinic:'土城院區', startDate:'6/1', weekday:1, session:'午診', start:'15:00', end:'19:00', doctor:'何金蔚', note:'', enabled:true },
+    { id:'DRV_0240', clinic:'土城院區', startDate:'6/1', weekday:2, session:'午診', start:'12:00', end:'15:00', doctor:'廖崇淵', note:'', enabled:true },
+    { id:'DRV_0241', clinic:'土城院區', startDate:'6/1', weekday:3, session:'午診', start:'12:00', end:'16:00', doctor:'陳麒中', note:'', enabled:true },
+    { id:'DRV_0242', clinic:'土城院區', startDate:'6/1', weekday:3, session:'午診', start:'15:00', end:'18:00', doctor:'何金蔚', note:'', enabled:true },
+    { id:'DRV_0243', clinic:'土城院區', startDate:'6/1', weekday:4, session:'午診', start:'12:00', end:'15:00', doctor:'何金蔚', note:'', enabled:true },
+    { id:'DRV_0244', clinic:'土城院區', startDate:'6/1', weekday:4, session:'午診', start:'15:00', end:'18:00', doctor:'陳永仁', note:'', enabled:true },
+    { id:'DRV_0245', clinic:'土城院區', startDate:'6/1', weekday:5, session:'午診', start:'13:00', end:'17:30', doctor:'陳麒中', note:'', enabled:true },
+    { id:'DRV_0246', clinic:'土城院區', startDate:'6/1', weekday:5, session:'午診', start:'15:00', end:'18:00', doctor:'黃濰', note:'', enabled:true },
+    { id:'DRV_0247', clinic:'土城院區', startDate:'6/1', weekday:6, session:'午診', start:'12:30', end:'17:30', doctor:'陳麒中', note:'', enabled:true },
+    { id:'DRV_0248', clinic:'土城院區', startDate:'6/1', weekday:7, session:'午診', start:'13:00', end:'17:30', doctor:'黃濰', note:'', enabled:true },
+    { id:'DRV_0249', clinic:'土城院區', startDate:'6/1', weekday:7, session:'午診', start:'10:00', end:'14:30', doctor:'陳麒中', note:'', enabled:true },
+    { id:'DRV_0250', clinic:'土城院區', startDate:'6/1', weekday:1, session:'晚診', start:'18:30', end:'21:30', doctor:'陳永仁', note:'', enabled:true },
+    { id:'DRV_0251', clinic:'土城院區', startDate:'6/1', weekday:1, session:'晚診', start:'19:30', end:'21:30', doctor:'何金蔚', note:'', enabled:true },
+    { id:'DRV_0252', clinic:'土城院區', startDate:'6/1', weekday:2, session:'晚診', start:'15:00', end:'21:30', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'DRV_0253', clinic:'土城院區', startDate:'6/1', weekday:2, session:'晚診', start:'17:30', end:'21:30', doctor:'陳麒中', note:'', enabled:true },
+    { id:'DRV_0254', clinic:'土城院區', startDate:'6/1', weekday:3, session:'晚診', start:'18:00', end:'21:30', doctor:'陳永仁', note:'', enabled:true },
+    { id:'DRV_0255', clinic:'土城院區', startDate:'6/1', weekday:3, session:'晚診', start:'18:00', end:'21:30', doctor:'黃濰', note:'', enabled:true },
+    { id:'DRV_0256', clinic:'土城院區', startDate:'6/1', weekday:4, session:'晚診', start:'17:30', end:'21:30', doctor:'陳麒中', note:'', enabled:true },
+    { id:'DRV_0257', clinic:'土城院區', startDate:'6/1', weekday:5, session:'晚診', start:'18:00', end:'21:30', doctor:'何金蔚', note:'', enabled:true },
+    { id:'DRV_0258', clinic:'土城院區', startDate:'6/1', weekday:6, session:'晚診', start:'17:30', end:'21:30', doctor:'陳麒中', note:'', enabled:true },
+    { id:'DRV_0259', clinic:'土城院區', startDate:'6/1', weekday:6, session:'晚診', start:'17:30', end:'21:30', doctor:'張簡千郁', note:'', enabled:true },
+    { id:'DRV_0260', clinic:'土城院區', startDate:'6/1', weekday:7, session:'晚診', start:'18:30', end:'21:30', doctor:'尤騰', note:'', enabled:true },
+    { id:'DRV_0261', clinic:'土城院區', startDate:'6/1', weekday:7, session:'晚診', start:'14:30', end:'21:30', doctor:'何金蔚', note:'', enabled:true },
+    { id:'DRV_0262', clinic:'土城院區', startDate:'6/1', weekday:3, session:'減重專診', start:'09:00', end:'11:00', doctor:'張簡千郁', note:'減重專診', enabled:true },
+    { id:'DRV_0263', clinic:'土城院區', startDate:'6/1', weekday:4, session:'減重專診', start:'09:00', end:'11:00', doctor:'尤騰', note:'減重專診', enabled:true },
+    { id:'DRV_0264', clinic:'土城院區', startDate:'6/1', weekday:5, session:'減重專診', start:'09:00', end:'12:00', doctor:'張簡千郁', note:'減重專診', enabled:true },
+    { id:'DRV_0265', clinic:'土城院區', startDate:'6/1', weekday:6, session:'減重專診', start:'10:00', end:'12:00', doctor:'何中誠', note:'減重專診', enabled:true },
+    { id:'DRV_0266', clinic:'土城院區', startDate:'6/1', weekday:6, session:'減重專診', start:'10:00', end:'12:00', doctor:'張簡千郁', note:'減重專診', enabled:true },
+    { id:'DRV_0267', clinic:'土城院區', startDate:'6/1', weekday:1, session:'減重專診', start:'13:30', end:'14:30', doctor:'林秉承', note:'減重專診', enabled:true },
+    { id:'DRV_0268', clinic:'土城院區', startDate:'6/1', weekday:3, session:'減重專診', start:'10:00', end:'12:00', doctor:'蕭捷健', note:'減重專診', enabled:true },
+    { id:'DRV_0269', clinic:'土城院區', startDate:'6/1', weekday:5, session:'減重專診', start:'14:00', end:'17:00', doctor:'陳麒中', note:'減重專診', enabled:true },
+    { id:'DRV_0270', clinic:'土城院區', startDate:'6/1', weekday:6, session:'減重專診', start:'12:30', end:'13:30', doctor:'林秉承', note:'減重專診', enabled:true },
+    { id:'DRV_0271', clinic:'土城院區', startDate:'6/1', weekday:7, session:'減重專診', start:'13:00', end:'15:00', doctor:'陳麒中', note:'減重專診', enabled:true },
+    { id:'DRV_0272', clinic:'土城院區', startDate:'6/1', weekday:2, session:'減重專診', start:'16:00', end:'20:00', doctor:'張簡千郁', note:'減重專診', enabled:true },
+    { id:'DRV_0273', clinic:'土城院區', startDate:'6/1', weekday:4, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳麒中', note:'減重專診', enabled:true },
+    { id:'DRV_0274', clinic:'土城院區', startDate:'6/1', weekday:6, session:'減重專診', start:'18:00', end:'20:00', doctor:'張簡千郁', note:'減重專診', enabled:true },
+    { id:'DRV_0275', clinic:'土城院區', startDate:'6/1', weekday:7, session:'減重專診', start:'19:00', end:'20:00', doctor:'尤騰', note:'減重專診', enabled:true },
+    { id:'DRV_0276', clinic:'八德院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'11:00', doctor:'蕭捷存', note:'', enabled:true },
+    { id:'DRV_0277', clinic:'八德院區', startDate:'6/1', weekday:1, session:'早診', start:'09:30', end:'14:30', doctor:'曾韋綸', note:'', enabled:true },
+    { id:'DRV_0278', clinic:'八德院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0279', clinic:'八德院區', startDate:'6/1', weekday:2, session:'早診', start:'10:00', end:'14:00', doctor:'王志冉', note:'', enabled:true },
+    { id:'DRV_0280', clinic:'八德院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'11:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'DRV_0281', clinic:'八德院區', startDate:'6/1', weekday:3, session:'早診', start:'09:00', end:'13:00', doctor:'楊大緯', note:'', enabled:true },
+    { id:'DRV_0282', clinic:'八德院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'11:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0283', clinic:'八德院區', startDate:'6/1', weekday:4, session:'早診', start:'11:00', end:'15:30', doctor:'楊大緯', note:'', enabled:true },
+    { id:'DRV_0284', clinic:'八德院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'11:00', doctor:'蕭捷存', note:'', enabled:true },
+    { id:'DRV_0285', clinic:'八德院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'14:30', doctor:'王志冉', note:'', enabled:true },
+    { id:'DRV_0286', clinic:'八德院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'13:30', doctor:'李彥輝', note:'', enabled:true },
+    { id:'DRV_0287', clinic:'八德院區', startDate:'6/1', weekday:6, session:'早診', start:'09:00', end:'13:00', doctor:'王志冉', note:'', enabled:true },
+    { id:'DRV_0288', clinic:'八德院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'14:00', doctor:'李彥輝', note:'', enabled:true },
+    { id:'DRV_0289', clinic:'八德院區', startDate:'6/1', weekday:7, session:'早診', start:'09:00', end:'13:30', doctor:'楊大緯', note:'', enabled:true },
+    { id:'DRV_0290', clinic:'八德院區', startDate:'6/1', weekday:1, session:'午診', start:'10:00', end:'13:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0291', clinic:'八德院區', startDate:'6/1', weekday:1, session:'午診', start:'14:30', end:'17:30', doctor:'李彥輝', note:'', enabled:true },
+    { id:'DRV_0292', clinic:'八德院區', startDate:'6/1', weekday:2, session:'午診', start:'14:00', end:'16:30', doctor:'黃炯達', note:'', enabled:true },
+    { id:'DRV_0293', clinic:'八德院區', startDate:'6/1', weekday:3, session:'午診', start:'13:00', end:'17:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0294', clinic:'八德院區', startDate:'6/1', weekday:4, session:'午診', start:'15:00', end:'17:30', doctor:'黃錦崧', note:'', enabled:true },
+    { id:'DRV_0295', clinic:'八德院區', startDate:'6/1', weekday:4, session:'午診', start:'15:30', end:'17:30', doctor:'李彥輝', note:'', enabled:true },
+    { id:'DRV_0296', clinic:'八德院區', startDate:'6/1', weekday:5, session:'午診', start:'14:30', end:'17:00', doctor:'楊大緯', note:'', enabled:true },
+    { id:'DRV_0297', clinic:'八德院區', startDate:'6/1', weekday:6, session:'午診', start:'15:00', end:'17:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0298', clinic:'八德院區', startDate:'6/1', weekday:6, session:'午診', start:'13:00', end:'17:00', doctor:'曾韋綸', note:'', enabled:true },
+    { id:'DRV_0299', clinic:'八德院區', startDate:'6/1', weekday:7, session:'午診', start:'16:30', end:'17:00', doctor:'王志冉', note:'', enabled:true },
+    { id:'DRV_0300', clinic:'八德院區', startDate:'6/1', weekday:7, session:'午診', start:'13:30', end:'17:00', doctor:'曾韋綸', note:'', enabled:true },
+    { id:'DRV_0301', clinic:'八德院區', startDate:'6/1', weekday:1, session:'晚診', start:'17:30', end:'21:30', doctor:'楊大緯', note:'', enabled:true },
+    { id:'DRV_0302', clinic:'八德院區', startDate:'6/1', weekday:1, session:'晚診', start:'17:30', end:'21:30', doctor:'王志冉', note:'', enabled:true },
+    { id:'DRV_0303', clinic:'八德院區', startDate:'6/1', weekday:2, session:'晚診', start:'16:30', end:'21:30', doctor:'曾韋綸', note:'', enabled:true },
+    { id:'DRV_0304', clinic:'八德院區', startDate:'6/1', weekday:2, session:'晚診', start:'19:00', end:'21:30', doctor:'李彥輝', note:'', enabled:true },
+    { id:'DRV_0305', clinic:'八德院區', startDate:'6/1', weekday:3, session:'晚診', start:'17:00', end:'21:30', doctor:'王志冉', note:'', enabled:true },
+    { id:'DRV_0306', clinic:'八德院區', startDate:'6/1', weekday:3, session:'晚診', start:'18:30', end:'21:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0307', clinic:'八德院區', startDate:'6/1', weekday:4, session:'晚診', start:'15:30', end:'21:30', doctor:'曾韋綸', note:'', enabled:true },
+    { id:'DRV_0308', clinic:'八德院區', startDate:'6/1', weekday:4, session:'晚診', start:'18:30', end:'21:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0309', clinic:'八德院區', startDate:'6/1', weekday:5, session:'晚診', start:'17:00', end:'21:30', doctor:'曾韋綸', note:'', enabled:true },
+    { id:'DRV_0310', clinic:'八德院區', startDate:'6/1', weekday:5, session:'晚診', start:'17:00', end:'21:30', doctor:'楊大緯', note:'', enabled:true },
+    { id:'DRV_0311', clinic:'八德院區', startDate:'6/1', weekday:6, session:'晚診', start:'17:00', end:'21:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0312', clinic:'八德院區', startDate:'6/1', weekday:6, session:'晚診', start:'17:00', end:'21:30', doctor:'楊大緯', note:'', enabled:true },
+    { id:'DRV_0313', clinic:'八德院區', startDate:'6/1', weekday:7, session:'晚診', start:'17:00', end:'21:30', doctor:'王志冉', note:'', enabled:true },
+    { id:'DRV_0314', clinic:'八德院區', startDate:'6/1', weekday:7, session:'晚診', start:'17:00', end:'21:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0315', clinic:'八德院區', startDate:'6/1', weekday:1, session:'減重專診', start:'09:00', end:'10:30', doctor:'蕭捷存', note:'減重專診', enabled:true },
+    { id:'DRV_0316', clinic:'八德院區', startDate:'6/1', weekday:2, session:'減重專診', start:'09:00', end:'11:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0317', clinic:'八德院區', startDate:'6/1', weekday:3, session:'減重專診', start:'09:00', end:'11:00', doctor:'李彥輝', note:'減重專診', enabled:true },
+    { id:'DRV_0318', clinic:'八德院區', startDate:'6/1', weekday:4, session:'減重專診', start:'09:00', end:'10:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0319', clinic:'八德院區', startDate:'6/1', weekday:5, session:'減重專診', start:'09:00', end:'10:30', doctor:'蕭捷存', note:'減重專診', enabled:true },
+    { id:'DRV_0320', clinic:'八德院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'12:00', doctor:'李彥輝', note:'減重專診', enabled:true },
+    { id:'DRV_0321', clinic:'八德院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'12:00', doctor:'李彥輝', note:'減重專診', enabled:true },
+    { id:'DRV_0322', clinic:'八德院區', startDate:'6/1', weekday:1, session:'減重專診', start:'11:00', end:'12:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0323', clinic:'八德院區', startDate:'6/1', weekday:2, session:'減重專診', start:'15:00', end:'16:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0324', clinic:'八德院區', startDate:'6/1', weekday:3, session:'減重專診', start:'14:00', end:'16:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0325', clinic:'八德院區', startDate:'6/1', weekday:6, session:'減重專診', start:'16:00', end:'17:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0326', clinic:'八德院區', startDate:'6/1', weekday:1, session:'減重專診', start:'15:00', end:'17:00', doctor:'李彥輝', note:'減重專診', enabled:true },
+    { id:'DRV_0327', clinic:'八德院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'李彥輝', note:'減重專診', enabled:true },
+    { id:'DRV_0328', clinic:'八德院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'20:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0329', clinic:'八德院區', startDate:'6/1', weekday:4, session:'減重專診', start:'19:00', end:'20:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0330', clinic:'八德院區', startDate:'6/1', weekday:6, session:'減重專診', start:'18:00', end:'20:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0331', clinic:'八德院區', startDate:'6/1', weekday:7, session:'減重專診', start:'18:00', end:'20:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0332', clinic:'八德院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'08:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0333', clinic:'八德院區', startDate:'6/1', weekday:2, session:'早診', start:'08:00', end:'14:00', doctor:'王志冉', note:'', enabled:true },
+    { id:'DRV_0334', clinic:'龍潭院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'14:30', doctor:'何中庸', note:'', enabled:true },
+    { id:'DRV_0335', clinic:'龍潭院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'14:30', doctor:'華志倫', note:'', enabled:true },
+    { id:'DRV_0336', clinic:'龍潭院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'13:00', doctor:'華志倫', note:'', enabled:true },
+    { id:'DRV_0337', clinic:'龍潭院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'12:00', doctor:'林昱仁', note:'', enabled:true },
+    { id:'DRV_0338', clinic:'龍潭院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'14:30', doctor:'華志倫', note:'', enabled:true },
+    { id:'DRV_0339', clinic:'龍潭院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'13:00', doctor:'華志倫', note:'', enabled:true },
+    { id:'DRV_0340', clinic:'龍潭院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'12:00', doctor:'何中庸', note:'', enabled:true },
+    { id:'DRV_0341', clinic:'龍潭院區', startDate:'6/1', weekday:7, session:'早診', start:'09:00', end:'12:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'DRV_0342', clinic:'龍潭院區', startDate:'6/1', weekday:1, session:'午診', start:'14:30', end:'18:30', doctor:'何冠達', note:'', enabled:true },
+    { id:'DRV_0343', clinic:'龍潭院區', startDate:'6/1', weekday:2, session:'午診', start:'14:30', end:'17:30', doctor:'林昱仁', note:'', enabled:true },
+    { id:'DRV_0344', clinic:'龍潭院區', startDate:'6/1', weekday:3, session:'午診', start:'13:00', end:'16:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'DRV_0345', clinic:'龍潭院區', startDate:'6/1', weekday:4, session:'午診', start:'12:00', end:'14:30', doctor:'林昱仁', note:'', enabled:true },
+    { id:'DRV_0346', clinic:'龍潭院區', startDate:'6/1', weekday:5, session:'午診', start:'14:30', end:'18:30', doctor:'林昱仁', note:'', enabled:true },
+    { id:'DRV_0347', clinic:'龍潭院區', startDate:'6/1', weekday:6, session:'午診', start:'13:00', end:'16:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'DRV_0348', clinic:'龍潭院區', startDate:'6/1', weekday:7, session:'午診', start:'12:00', end:'18:00', doctor:'林昱仁', note:'', enabled:true },
+    { id:'DRV_0349', clinic:'龍潭院區', startDate:'6/1', weekday:7, session:'午診', start:'15:30', end:'18:00', doctor:'華志倫', note:'', enabled:true },
+    { id:'DRV_0350', clinic:'龍潭院區', startDate:'6/1', weekday:1, session:'晚診', start:'18:30', end:'21:30', doctor:'何冠達', note:'', enabled:true },
+    { id:'DRV_0351', clinic:'龍潭院區', startDate:'6/1', weekday:1, session:'晚診', start:'18:30', end:'21:30', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'DRV_0352', clinic:'龍潭院區', startDate:'6/1', weekday:2, session:'晚診', start:'17:30', end:'21:30', doctor:'何冠達', note:'', enabled:true },
+    { id:'DRV_0353', clinic:'龍潭院區', startDate:'6/1', weekday:2, session:'晚診', start:'18:30', end:'21:30', doctor:'林昱仁', note:'', enabled:true },
+    { id:'DRV_0354', clinic:'龍潭院區', startDate:'6/1', weekday:3, session:'晚診', start:'16:00', end:'21:30', doctor:'何中庸', note:'', enabled:true },
+    { id:'DRV_0355', clinic:'龍潭院區', startDate:'6/1', weekday:3, session:'晚診', start:'18:00', end:'21:30', doctor:'林昱仁', note:'', enabled:true },
+    { id:'DRV_0356', clinic:'龍潭院區', startDate:'6/1', weekday:4, session:'晚診', start:'14:30', end:'21:30', doctor:'何中庸', note:'', enabled:true },
+    { id:'DRV_0357', clinic:'龍潭院區', startDate:'6/1', weekday:4, session:'晚診', start:'18:30', end:'21:30', doctor:'華志倫', note:'', enabled:true },
+    { id:'DRV_0358', clinic:'龍潭院區', startDate:'6/1', weekday:5, session:'晚診', start:'17:30', end:'20:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'DRV_0359', clinic:'龍潭院區', startDate:'6/1', weekday:5, session:'晚診', start:'18:30', end:'21:30', doctor:'何中庸', note:'', enabled:true },
+    { id:'DRV_0360', clinic:'龍潭院區', startDate:'6/1', weekday:6, session:'晚診', start:'16:00', end:'21:30', doctor:'林昱仁', note:'', enabled:true },
+    { id:'DRV_0361', clinic:'龍潭院區', startDate:'6/1', weekday:6, session:'晚診', start:'17:00', end:'21:30', doctor:'何中庸', note:'', enabled:true },
+    { id:'DRV_0362', clinic:'龍潭院區', startDate:'6/1', weekday:7, session:'晚診', start:'18:00', end:'19:30', doctor:'林昱仁', note:'', enabled:true },
+    { id:'DRV_0363', clinic:'龍潭院區', startDate:'6/1', weekday:7, session:'晚診', start:'18:00', end:'21:30', doctor:'華志倫', note:'', enabled:true },
+    { id:'DRV_0364', clinic:'龍潭院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'11:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0365', clinic:'龍潭院區', startDate:'6/1', weekday:1, session:'減重專診', start:'15:00', end:'17:00', doctor:'何冠達', note:'減重專診', enabled:true },
+    { id:'DRV_0366', clinic:'龍潭院區', startDate:'6/1', weekday:2, session:'減重專診', start:'17:00', end:'18:00', doctor:'何冠達', note:'減重專診', enabled:true },
+    { id:'DRV_0367', clinic:'龍潭院區', startDate:'6/1', weekday:3, session:'減重專診', start:'14:00', end:'16:00', doctor:'何冠達', note:'減重專診', enabled:true },
+    { id:'DRV_0368', clinic:'龍潭院區', startDate:'6/1', weekday:5, session:'減重專診', start:'16:30', end:'18:30', doctor:'何冠達', note:'減重專診', enabled:true },
+    { id:'DRV_0369', clinic:'龍潭院區', startDate:'6/1', weekday:6, session:'減重專診', start:'13:00', end:'15:00', doctor:'何冠達', note:'減重專診', enabled:true },
+    { id:'DRV_0370', clinic:'龍潭院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'何冠達', note:'減重專診', enabled:true },
+    { id:'DRV_0371', clinic:'龍潭院區', startDate:'6/1', weekday:5, session:'減重專診', start:'19:00', end:'20:00', doctor:'何冠達', note:'減重專診', enabled:true },
+    { id:'DRV_0372', clinic:'龍潭院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'12:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'DRV_0373', clinic:'龍潭院區', startDate:'6/1', weekday:1, session:'午診', start:'14:30', end:'18:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0374', clinic:'大溪院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'14:30', doctor:'巫清隆', note:'', enabled:true },
+    { id:'DRV_0375', clinic:'大溪院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'DRV_0376', clinic:'大溪院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'14:30', doctor:'呂瑩純', note:'', enabled:true },
+    { id:'DRV_0377', clinic:'大溪院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'14:30', doctor:'巫清隆', note:'', enabled:true },
+    { id:'DRV_0378', clinic:'大溪院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'14:30', doctor:'呂瑩純', note:'', enabled:true },
+    { id:'DRV_0379', clinic:'大溪院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0380', clinic:'大溪院區', startDate:'6/1', weekday:6, session:'早診', start:'10:00', end:'14:30', doctor:'林昆澤', note:'', enabled:true },
+    { id:'DRV_0381', clinic:'大溪院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'14:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0382', clinic:'大溪院區', startDate:'6/1', weekday:1, session:'午診', start:'14:30', end:'16:00', doctor:'林昆澤', note:'', enabled:true },
+    { id:'DRV_0383', clinic:'大溪院區', startDate:'6/1', weekday:2, session:'午診', start:'12:00', end:'16:00', doctor:'呂瑩純', note:'', enabled:true },
+    { id:'DRV_0384', clinic:'大溪院區', startDate:'6/1', weekday:3, session:'午診', start:'14:30', end:'18:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0385', clinic:'大溪院區', startDate:'6/1', weekday:4, session:'午診', start:'14:30', end:'18:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0386', clinic:'大溪院區', startDate:'6/1', weekday:5, session:'午診', start:'14:30', end:'16:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0387', clinic:'大溪院區', startDate:'6/1', weekday:5, session:'午診', start:'16:00', end:'18:30', doctor:'巫清隆', note:'', enabled:true },
+    { id:'DRV_0388', clinic:'大溪院區', startDate:'6/1', weekday:6, session:'午診', start:'14:30', end:'16:00', doctor:'巫清隆', note:'', enabled:true },
+    { id:'DRV_0389', clinic:'大溪院區', startDate:'6/1', weekday:7, session:'午診', start:'14:30', end:'16:00', doctor:'林昆澤', note:'', enabled:true },
+    { id:'DRV_0390', clinic:'大溪院區', startDate:'6/1', weekday:1, session:'晚診', start:'16:00', end:'21:30', doctor:'林昆澤', note:'', enabled:true },
+    { id:'DRV_0391', clinic:'大溪院區', startDate:'6/1', weekday:1, session:'晚診', start:'16:00', end:'21:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0392', clinic:'大溪院區', startDate:'6/1', weekday:2, session:'晚診', start:'16:00', end:'21:30', doctor:'林昆澤', note:'', enabled:true },
+    { id:'DRV_0393', clinic:'大溪院區', startDate:'6/1', weekday:2, session:'晚診', start:'16:00', end:'21:30', doctor:'巫清隆', note:'', enabled:true },
+    { id:'DRV_0394', clinic:'大溪院區', startDate:'6/1', weekday:3, session:'晚診', start:'18:30', end:'21:30', doctor:'林昆澤', note:'', enabled:true },
+    { id:'DRV_0395', clinic:'大溪院區', startDate:'6/1', weekday:3, session:'晚診', start:'18:00', end:'21:30', doctor:'巫清隆', note:'', enabled:true },
+    { id:'DRV_0396', clinic:'大溪院區', startDate:'6/1', weekday:4, session:'晚診', start:'18:30', end:'21:30', doctor:'林昆澤', note:'', enabled:true },
+    { id:'DRV_0397', clinic:'大溪院區', startDate:'6/1', weekday:4, session:'晚診', start:'18:30', end:'21:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0398', clinic:'大溪院區', startDate:'6/1', weekday:5, session:'晚診', start:'16:00', end:'21:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0399', clinic:'大溪院區', startDate:'6/1', weekday:5, session:'晚診', start:'18:30', end:'21:30', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0400', clinic:'大溪院區', startDate:'6/1', weekday:6, session:'晚診', start:'16:00', end:'21:30', doctor:'巫清隆', note:'', enabled:true },
+    { id:'DRV_0401', clinic:'大溪院區', startDate:'6/1', weekday:6, session:'晚診', start:'18:30', end:'21:30', doctor:'林昆澤', note:'', enabled:true },
+    { id:'DRV_0402', clinic:'大溪院區', startDate:'6/1', weekday:7, session:'晚診', start:'16:00', end:'21:30', doctor:'林昆澤', note:'', enabled:true },
+    { id:'DRV_0403', clinic:'大溪院區', startDate:'6/1', weekday:7, session:'晚診', start:'16:00', end:'21:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0404', clinic:'大溪院區', startDate:'6/1', weekday:2, session:'減重專診', start:'09:00', end:'11:30', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0405', clinic:'大溪院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'11:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0406', clinic:'大溪院區', startDate:'6/1', weekday:7, session:'減重專診', start:'10:00', end:'12:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0407', clinic:'大溪院區', startDate:'6/1', weekday:1, session:'減重專診', start:'16:00', end:'18:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0408', clinic:'大溪院區', startDate:'6/1', weekday:3, session:'減重專診', start:'15:30', end:'17:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0409', clinic:'大溪院區', startDate:'6/1', weekday:4, session:'減重專診', start:'15:00', end:'16:30', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0410', clinic:'大溪院區', startDate:'6/1', weekday:5, session:'減重專診', start:'16:00', end:'18:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0411', clinic:'大溪院區', startDate:'6/1', weekday:1, session:'減重專診', start:'19:00', end:'20:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0412', clinic:'大溪院區', startDate:'6/1', weekday:4, session:'減重專診', start:'19:00', end:'20:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0413', clinic:'大溪院區', startDate:'6/1', weekday:5, session:'減重專診', start:'19:00', end:'20:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0414', clinic:'大溪院區', startDate:'6/1', weekday:5, session:'減重專診', start:'19:00', end:'20:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0415', clinic:'大溪院區', startDate:'6/1', weekday:7, session:'減重專診', start:'18:00', end:'20:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0416', clinic:'大溪院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'11:00', doctor:'呂瑩純', note:'', enabled:true },
+    { id:'DRV_0417', clinic:'大溪院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'14:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0418', clinic:'大溪院區', startDate:'6/1', weekday:3, session:'午診', start:'11:00', end:'18:30', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0419', clinic:'大竹院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'12:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'DRV_0420', clinic:'大竹院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'DRV_0421', clinic:'大竹院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'12:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'DRV_0422', clinic:'大竹院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'12:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'DRV_0423', clinic:'大竹院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'12:00', doctor:'彭榆真', note:'', enabled:true },
+    { id:'DRV_0424', clinic:'大竹院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:00', doctor:'沈士強', note:'', enabled:true },
+    { id:'DRV_0425', clinic:'大竹院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'12:00', doctor:'陳秉峰', note:'', enabled:true },
+    { id:'DRV_0426', clinic:'大竹院區', startDate:'6/1', weekday:7, session:'早診', start:'09:00', end:'12:00', doctor:'李軍逸', note:'', enabled:true },
+    { id:'DRV_0427', clinic:'大竹院區', startDate:'6/1', weekday:1, session:'減重專診', start:'09:00', end:'11:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0428', clinic:'大竹院區', startDate:'6/1', weekday:2, session:'減重專診', start:'09:00', end:'11:00', doctor:'沈士強', note:'減重專診', enabled:true },
+    { id:'DRV_0429', clinic:'大竹院區', startDate:'6/1', weekday:3, session:'減重專診', start:'09:00', end:'11:00', doctor:'沈士強', note:'減重專診', enabled:true },
+    { id:'DRV_0430', clinic:'大竹院區', startDate:'6/1', weekday:4, session:'減重專診', start:'09:00', end:'11:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0431', clinic:'大竹院區', startDate:'6/1', weekday:5, session:'減重專診', start:'09:00', end:'11:00', doctor:'彭榆真', note:'減重專診', enabled:true },
+    { id:'DRV_0432', clinic:'大竹院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'11:00', doctor:'沈士強', note:'減重專診', enabled:true },
+    { id:'DRV_0433', clinic:'大竹院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'11:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0434', clinic:'大竹院區', startDate:'6/1', weekday:1, session:'減重專診', start:'15:00', end:'17:00', doctor:'沈士強', note:'減重專診', enabled:true },
+    { id:'DRV_0435', clinic:'大竹院區', startDate:'6/1', weekday:2, session:'減重專診', start:'15:00', end:'17:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0436', clinic:'大竹院區', startDate:'6/1', weekday:3, session:'減重專診', start:'15:00', end:'17:00', doctor:'彭榆真', note:'減重專診', enabled:true },
+    { id:'DRV_0437', clinic:'大竹院區', startDate:'6/1', weekday:4, session:'減重專診', start:'15:00', end:'17:00', doctor:'沈士強', note:'減重專診', enabled:true },
+    { id:'DRV_0438', clinic:'大竹院區', startDate:'6/1', weekday:5, session:'減重專診', start:'15:00', end:'17:00', doctor:'彭榆真', note:'減重專診', enabled:true },
+    { id:'DRV_0439', clinic:'大竹院區', startDate:'6/1', weekday:6, session:'減重專診', start:'15:00', end:'17:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0440', clinic:'大竹院區', startDate:'6/1', weekday:6, session:'減重專診', start:'15:00', end:'17:00', doctor:'彭榆真', note:'減重專診', enabled:true },
+    { id:'DRV_0441', clinic:'大竹院區', startDate:'6/1', weekday:7, session:'減重專診', start:'15:00', end:'17:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0442', clinic:'大竹院區', startDate:'6/1', weekday:1, session:'減重專診', start:'19:00', end:'20:00', doctor:'沈士強', note:'減重專診', enabled:true },
+    { id:'DRV_0443', clinic:'大竹院區', startDate:'6/1', weekday:1, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0444', clinic:'大竹院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0445', clinic:'大竹院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'彭榆真', note:'減重專診', enabled:true },
+    { id:'DRV_0446', clinic:'大竹院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0447', clinic:'大竹院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'20:00', doctor:'彭榆真', note:'減重專診', enabled:true },
+    { id:'DRV_0448', clinic:'大竹院區', startDate:'6/1', weekday:4, session:'減重專診', start:'19:00', end:'20:00', doctor:'彭榆真', note:'減重專診', enabled:true },
+    { id:'DRV_0449', clinic:'大竹院區', startDate:'6/1', weekday:5, session:'減重專診', start:'19:00', end:'20:00', doctor:'沈士強', note:'減重專診', enabled:true },
+    { id:'DRV_0450', clinic:'大竹院區', startDate:'6/1', weekday:6, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳秉峰', note:'減重專診', enabled:true },
+    { id:'DRV_0451', clinic:'大竹院區', startDate:'6/1', weekday:7, session:'減重專診', start:'19:00', end:'20:00', doctor:'彭榆真', note:'減重專診', enabled:true },
+    { id:'DRV_0452', clinic:'大湳院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'12:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'DRV_0453', clinic:'大湳院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'DRV_0454', clinic:'大湳院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'12:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'DRV_0455', clinic:'大湳院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'12:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'DRV_0456', clinic:'大湳院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'12:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'DRV_0457', clinic:'大湳院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'DRV_0458', clinic:'大湳院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'11:30', doctor:'黃炯達', note:'', enabled:true },
+    { id:'DRV_0459', clinic:'大湳院區', startDate:'6/1', weekday:7, session:'早診', start:'10:30', end:'12:00', doctor:'洪岱熙', note:'', enabled:true },
+    { id:'DRV_0460', clinic:'大湳院區', startDate:'6/1', weekday:1, session:'減重專診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'減重專診', enabled:true },
+    { id:'DRV_0461', clinic:'大湳院區', startDate:'6/1', weekday:2, session:'減重專診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'減重專診', enabled:true },
+    { id:'DRV_0462', clinic:'大湳院區', startDate:'6/1', weekday:3, session:'減重專診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'減重專診', enabled:true },
+    { id:'DRV_0463', clinic:'大湳院區', startDate:'6/1', weekday:4, session:'減重專診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0464', clinic:'大湳院區', startDate:'6/1', weekday:5, session:'減重專診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'減重專診', enabled:true },
+    { id:'DRV_0465', clinic:'大湳院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'減重專診', enabled:true },
+    { id:'DRV_0466', clinic:'大湳院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0467', clinic:'大湳院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'11:00', doctor:'洪岱熙', note:'減重專診', enabled:true },
+    { id:'DRV_0468', clinic:'大湳院區', startDate:'6/1', weekday:2, session:'減重專診', start:'15:00', end:'17:00', doctor:'李彥輝', note:'減重專診', enabled:true },
+    { id:'DRV_0469', clinic:'大湳院區', startDate:'6/1', weekday:3, session:'減重專診', start:'15:00', end:'17:00', doctor:'廖崇淵', note:'減重專診', enabled:true },
+    { id:'DRV_0470', clinic:'大湳院區', startDate:'6/1', weekday:4, session:'減重專診', start:'15:00', end:'17:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0471', clinic:'大湳院區', startDate:'6/1', weekday:5, session:'減重專診', start:'15:00', end:'17:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0472', clinic:'大湳院區', startDate:'6/1', weekday:6, session:'減重專診', start:'15:00', end:'17:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0473', clinic:'大湳院區', startDate:'6/1', weekday:7, session:'減重專診', start:'14:00', end:'16:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0474', clinic:'大湳院區', startDate:'6/1', weekday:7, session:'減重專診', start:'15:00', end:'17:00', doctor:'洪岱熙', note:'減重專診', enabled:true },
+    { id:'DRV_0475', clinic:'大湳院區', startDate:'6/1', weekday:1, session:'減重專診', start:'19:00', end:'20:00', doctor:'李彥輝', note:'減重專診', enabled:true },
+    { id:'DRV_0476', clinic:'大湳院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0477', clinic:'大湳院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0478', clinic:'大湳院區', startDate:'6/1', weekday:4, session:'減重專診', start:'19:00', end:'20:00', doctor:'李彥輝', note:'減重專診', enabled:true },
+    { id:'DRV_0479', clinic:'大湳院區', startDate:'6/1', weekday:5, session:'減重專診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0480', clinic:'大湳院區', startDate:'6/1', weekday:6, session:'減重專診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0481', clinic:'大湳院區', startDate:'6/1', weekday:7, session:'減重專診', start:'19:00', end:'20:00', doctor:'李彥輝', note:'減重專診', enabled:true },
+    { id:'DRV_0482', clinic:'平鎮院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'12:00', doctor:'甘家銘', note:'', enabled:true },
+    { id:'DRV_0483', clinic:'平鎮院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'甘家銘', note:'', enabled:true },
+    { id:'DRV_0484', clinic:'平鎮院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'12:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'DRV_0485', clinic:'平鎮院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'12:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'DRV_0486', clinic:'平鎮院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'12:00', doctor:'甘家銘', note:'', enabled:true },
+    { id:'DRV_0487', clinic:'平鎮院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:00', doctor:'何冠達', note:'', enabled:true },
+    { id:'DRV_0488', clinic:'平鎮院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'12:00', doctor:'甘家銘', note:'', enabled:true },
+    { id:'DRV_0489', clinic:'平鎮院區', startDate:'6/1', weekday:3, session:'減重專診', start:'09:00', end:'11:00', doctor:'何冠達', note:'減重專診', enabled:true },
+    { id:'DRV_0490', clinic:'平鎮院區', startDate:'6/1', weekday:4, session:'減重專診', start:'09:00', end:'11:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0491', clinic:'平鎮院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'11:00', doctor:'何冠達', note:'減重專診', enabled:true },
+    { id:'DRV_0492', clinic:'平鎮院區', startDate:'6/1', weekday:1, session:'減重專診', start:'15:00', end:'17:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0493', clinic:'平鎮院區', startDate:'6/1', weekday:2, session:'減重專診', start:'15:00', end:'17:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0494', clinic:'平鎮院區', startDate:'6/1', weekday:3, session:'減重專診', start:'15:00', end:'17:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0495', clinic:'平鎮院區', startDate:'6/1', weekday:4, session:'減重專診', start:'14:00', end:'18:00', doctor:'蕭捷健', note:'減重專診', enabled:true },
+    { id:'DRV_0496', clinic:'平鎮院區', startDate:'6/1', weekday:5, session:'減重專診', start:'15:00', end:'17:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0497', clinic:'平鎮院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0498', clinic:'平鎮院區', startDate:'6/1', weekday:5, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0499', clinic:'平鎮院區', startDate:'6/1', weekday:6, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0500', clinic:'平鎮院區', startDate:'6/1', weekday:7, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0501', clinic:'平鎮院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'12:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0502', clinic:'平鎮院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0503', clinic:'平鎮院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'12:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'DRV_0504', clinic:'埔心院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'12:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'DRV_0505', clinic:'埔心院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'陳昭銘', note:'', enabled:true },
+    { id:'DRV_0506', clinic:'埔心院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'12:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'DRV_0507', clinic:'埔心院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'12:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'DRV_0508', clinic:'埔心院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'12:00', doctor:'廖崑竹', note:'', enabled:true },
+    { id:'DRV_0509', clinic:'埔心院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:00', doctor:'黃炯達', note:'', enabled:true },
+    { id:'DRV_0510', clinic:'埔心院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'12:00', doctor:'梁培毅', note:'', enabled:true },
+    { id:'DRV_0511', clinic:'埔心院區', startDate:'6/1', weekday:1, session:'減重專診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0512', clinic:'埔心院區', startDate:'6/1', weekday:2, session:'減重專診', start:'09:00', end:'11:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0513', clinic:'埔心院區', startDate:'6/1', weekday:3, session:'減重專診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0514', clinic:'埔心院區', startDate:'6/1', weekday:4, session:'減重專診', start:'09:00', end:'11:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0515', clinic:'埔心院區', startDate:'6/1', weekday:5, session:'減重專診', start:'09:00', end:'11:00', doctor:'廖崑竹', note:'減重專診', enabled:true },
+    { id:'DRV_0516', clinic:'埔心院區', startDate:'6/1', weekday:6, session:'減重專診', start:'09:00', end:'11:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0517', clinic:'埔心院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'11:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0518', clinic:'埔心院區', startDate:'6/1', weekday:1, session:'減重專診', start:'15:00', end:'17:00', doctor:'黃錦崧', note:'減重專診', enabled:true },
+    { id:'DRV_0519', clinic:'埔心院區', startDate:'6/1', weekday:2, session:'減重專診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0520', clinic:'埔心院區', startDate:'6/1', weekday:3, session:'減重專診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0521', clinic:'埔心院區', startDate:'6/1', weekday:4, session:'減重專診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0522', clinic:'埔心院區', startDate:'6/1', weekday:5, session:'減重專診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0523', clinic:'埔心院區', startDate:'6/1', weekday:6, session:'減重專診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0524', clinic:'埔心院區', startDate:'6/1', weekday:7, session:'減重專診', start:'15:00', end:'17:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0525', clinic:'埔心院區', startDate:'6/1', weekday:1, session:'減重專診', start:'19:00', end:'20:00', doctor:'黃錦崧', note:'減重專診', enabled:true },
+    { id:'DRV_0526', clinic:'埔心院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0527', clinic:'埔心院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0528', clinic:'埔心院區', startDate:'6/1', weekday:4, session:'減重專診', start:'19:00', end:'20:00', doctor:'陳昭銘', note:'減重專診', enabled:true },
+    { id:'DRV_0529', clinic:'埔心院區', startDate:'6/1', weekday:5, session:'減重專診', start:'19:00', end:'20:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0530', clinic:'埔心院區', startDate:'6/1', weekday:6, session:'減重專診', start:'19:00', end:'20:00', doctor:'梁培毅', note:'減重專診', enabled:true },
+    { id:'DRV_0531', clinic:'埔心院區', startDate:'6/1', weekday:7, session:'減重專診', start:'19:00', end:'20:00', doctor:'黃炯達', note:'減重專診', enabled:true },
+    { id:'DRV_0532', clinic:'觀音院區', startDate:'6/1', weekday:1, session:'早診', start:'07:30', end:'12:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0533', clinic:'觀音院區', startDate:'6/1', weekday:2, session:'早診', start:'07:30', end:'12:00', doctor:'侯進坤', note:'', enabled:true },
+    { id:'DRV_0534', clinic:'觀音院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'12:00', doctor:'林鼎盛', note:'', enabled:true },
+    { id:'DRV_0535', clinic:'觀音院區', startDate:'6/1', weekday:4, session:'早診', start:'07:30', end:'12:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'DRV_0536', clinic:'觀音院區', startDate:'6/1', weekday:5, session:'早診', start:'07:30', end:'12:00', doctor:'侯進坤', note:'', enabled:true },
+    { id:'DRV_0537', clinic:'觀音院區', startDate:'6/1', weekday:6, session:'早診', start:'07:30', end:'12:00', doctor:'侯進坤', note:'', enabled:true },
+    { id:'DRV_0538', clinic:'觀音院區', startDate:'6/1', weekday:7, session:'早診', start:'07:30', end:'12:00', doctor:'李逸瑋', note:'', enabled:true },
+    { id:'DRV_0539', clinic:'觀音院區', startDate:'6/1', weekday:1, session:'減重專診', start:'09:00', end:'11:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0540', clinic:'觀音院區', startDate:'6/1', weekday:3, session:'減重專診', start:'09:00', end:'11:00', doctor:'林鼎盛', note:'減重專診', enabled:true },
+    { id:'DRV_0541', clinic:'觀音院區', startDate:'6/1', weekday:4, session:'減重專診', start:'09:00', end:'11:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0542', clinic:'觀音院區', startDate:'6/1', weekday:7, session:'減重專診', start:'09:00', end:'11:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0543', clinic:'觀音院區', startDate:'6/1', weekday:3, session:'減重專診', start:'15:00', end:'17:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0544', clinic:'觀音院區', startDate:'6/1', weekday:5, session:'減重專診', start:'15:00', end:'17:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0545', clinic:'觀音院區', startDate:'6/1', weekday:6, session:'減重專診', start:'15:00', end:'17:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0546', clinic:'觀音院區', startDate:'6/1', weekday:7, session:'減重專診', start:'15:00', end:'17:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0547', clinic:'觀音院區', startDate:'6/1', weekday:2, session:'減重專診', start:'19:00', end:'20:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0548', clinic:'觀音院區', startDate:'6/1', weekday:3, session:'減重專診', start:'19:00', end:'20:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0549', clinic:'觀音院區', startDate:'6/1', weekday:5, session:'減重專診', start:'19:00', end:'20:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0550', clinic:'觀音院區', startDate:'6/1', weekday:6, session:'減重專診', start:'19:00', end:'20:00', doctor:'李逸瑋', note:'減重專診', enabled:true },
+    { id:'DRV_0551', clinic:'觀音院區', startDate:'6/1', weekday:3, session:'早診', start:'07:30', end:'12:00', doctor:'侯進坤', note:'', enabled:true }
+  ];
+  function injectDriveSchedules() {
+    if (typeof FIXED_SCHEDULE === 'undefined') return setTimeout(injectDriveSchedules, 200);
+    // 移除舊的 DRV_ 紀錄
+    for (var i = FIXED_SCHEDULE.length - 1; i >= 0; i--) {
+      var id = FIXED_SCHEDULE[i] && FIXED_SCHEDULE[i].id;
+      if (id && /^DRV_/.test(id)) FIXED_SCHEDULE.splice(i, 1);
+    }
+    // 加入新的
+    DRIVE_SCHEDULES.forEach(function(s){ FIXED_SCHEDULE.push(s); });
+    console.log('[KW v9.10] ✓ 已注入', DRIVE_SCHEDULES.length, '筆 Drive 班表到 FIXED_SCHEDULE');
+  }
+  injectDriveSchedules();
+  // 每 5 秒 reinforce 一次（防其他 patch 覆蓋）
+  setInterval(injectDriveSchedules, 5000);
+})();
+</script>
+<!-- ===== [v9.10] 結束 ===== -->
+<!-- ===== [v9.11] 撤除 v9.10 寫死資料 + 確保純後端讀取架構 開始 ===== -->
+<style>
+  /* 班表同步狀態 banner（健康提示） */
+  .kw-v911-sync-status {
+    display: inline-block; padding: 4px 10px; border-radius: 6px;
+    font-size: 12px; margin-left: 8px; font-weight: 600;
+    vertical-align: middle;
+  }
+  .kw-v911-sync-status.ok { background: #dcfce7; color: #15803d; }
+  .kw-v911-sync-status.stale { background: #fef3c7; color: #92400e; }
+  .kw-v911-sync-status.empty { background: #fee2e2; color: #991b1b; }
+</style>
+<script>
+(function() {
+  'use strict';
+
+  /* ════════════════════════════════════════════════════════════
+   * 1. 移除 v9.10 寫死的 DRIVE_SCHEDULES 注入
+   *    （每秒掃，把 DRV_ 開頭 ID 的記錄全部清掉）
+   * ════════════════════════════════════════════════════════════ */
+  function purgeV910Hardcode() {
+    if (typeof FIXED_SCHEDULE === 'undefined' || !Array.isArray(FIXED_SCHEDULE)) return;
+    var before = FIXED_SCHEDULE.length;
+    for (var i = FIXED_SCHEDULE.length - 1; i >= 0; i--) {
+      var id = FIXED_SCHEDULE[i] && FIXED_SCHEDULE[i].id;
+      if (id && /^DRV_/.test(id)) {
+        FIXED_SCHEDULE.splice(i, 1);
+      }
+    }
+    var after = FIXED_SCHEDULE.length;
+    if (before !== after) {
+      console.log('[KW v9.11] 移除 v9.10 寫死資料:', (before - after), '筆 → 剩', after, '筆 (僅 demo fallback)');
+    }
+  }
+  setInterval(purgeV910Hardcode, 1500);
+  purgeV910Hardcode();  // 立即跑一次
+
+  /* ════════════════════════════════════════════════════════════
+   * 2. v8.57 KW857 hook 改成「後端優先、本地僅 fallback 給未聯網狀態」
+   *    （之前 v9.4/v9.7 改成 merge，後端有資料時應回到 backend-only）
+   * ════════════════════════════════════════════════════════════ */
+  function waitFor(check, cb, retries) {
+    retries = retries || 100;
+    if (check()) cb();
+    else if (retries > 0) setTimeout(function(){ waitFor(check, cb, retries-1); }, 100);
+  }
+  waitFor(function(){
+    return window.KW && KW.api && typeof KW.api._get === 'function' && window.KW857;
+  }, function() {
+    // 用旗標控制：後端有資料時走後端 only；沒資料時 fallback FIXED_SCHEDULE
+    var prevGet = KW.api._get.bind(KW.api);
+    KW.api._get = function(endpoint, params) {
+      if (endpoint === 'getSchedules') {
+        var backend = (KW857 && KW857.schedules) || [];
+        if (backend.length > 0) {
+          // 後端有資料 → 純後端
+          return Promise.resolve({ ok: true, data: backend });
+        }
+        // 後端 0 筆 → fallback FIXED_SCHEDULE（過渡用）
+        var local = (typeof FIXED_SCHEDULE !== 'undefined') ?
+          FIXED_SCHEDULE.filter(function(s){ return s && s.enabled !== false; }) : [];
+        return Promise.resolve({ ok: true, data: local });
+      }
+      return prevGet(endpoint, params);
+    };
+    console.log('[KW v9.11] ✓ KW.api._get(getSchedules) 改為「後端優先，本地 fallback」');
+  });
+
+  /* ════════════════════════════════════════════════════════════
+   * 3. 病人端 Step 1 顯示後端同步狀態（健康指示器）
+   * ════════════════════════════════════════════════════════════ */
+  function showSyncHealth() {
+    var step1Header = null;
+    document.querySelectorAll('h2').forEach(function(h){
+      if ((h.textContent || '').indexOf('Step 1') >= 0) step1Header = h;
+    });
+    if (!step1Header) return;
+    var existing = step1Header.querySelector('.kw-v911-sync-status');
+
+    var backend = (window.KW857 && KW857.schedules) || [];
+    var local = (typeof FIXED_SCHEDULE !== 'undefined') ? FIXED_SCHEDULE.length : 0;
+
+    var statusClass, statusText;
+    if (backend.length === 0) {
+      statusClass = 'empty';
+      statusText = '⚠️ 後端 0 筆班表，目前用本地 fallback (' + local + ' 筆)';
+    } else if (backend.length < 100) {
+      statusClass = 'stale';
+      statusText = '⚠️ 後端僅 ' + backend.length + ' 筆，疑似不完整';
+    } else {
+      statusClass = 'ok';
+      var minutesAgo = window.KW857.loadedAt ? Math.floor((Date.now() - KW857.loadedAt) / 60000) : null;
+      statusText = '✓ 後端班表 ' + backend.length + ' 筆' + (minutesAgo != null ? '（' + minutesAgo + ' 分前同步）' : '');
+    }
+
+    if (!existing) {
+      existing = document.createElement('span');
+      existing.className = 'kw-v911-sync-status';
+      step1Header.appendChild(existing);
+    }
+    existing.className = 'kw-v911-sync-status ' + statusClass;
+    existing.textContent = statusText;
+  }
+  setInterval(showSyncHealth, 1500);
+
+  /* ════════════════════════════════════════════════════════════
+   * 4. 系統管理頁顯示「上次 Drive sync 時間」+ 手動觸發按鈕
+   *    （管理員可以手動觸發 Drive → 後端 sync 不用等 trigger）
+   * ════════════════════════════════════════════════════════════ */
+  function addSyncTrigger() {
+    var adminPage = document.getElementById('page-admin');
+    if (!adminPage || adminPage.style.display === 'none') return;
+    if (adminPage.querySelector('.kw-v911-sync-trigger')) return;
+
+    // 找一個合適的位置（例如 system header）
+    var firstCard = adminPage.querySelector('.card, .admin-section');
+    if (!firstCard) return;
+
+    var box = document.createElement('div');
+    box.className = 'kw-v911-sync-trigger';
+    box.style.cssText = 'background:#eff6ff;border:2px solid #93c5fd;border-radius:10px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;';
+    box.innerHTML =
+      '<div style="font-size:13px;color:#1e3a8a;">'
+    +   '<strong>📡 Drive 班表同步</strong> · '
+    +   '<span id="kw-v911-sync-info">檢查中...</span>'
+    + '</div>'
+    + '<button id="kw-v911-sync-btn" style="background:#1e40af;color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;font-weight:600;font-size:13px;">🔄 立即同步</button>';
+    firstCard.parentNode.insertBefore(box, firstCard);
+
+    var btn = document.getElementById('kw-v911-sync-btn');
+    var info = document.getElementById('kw-v911-sync-info');
+
+    function updateInfo() {
+      var backend = (window.KW857 && KW857.schedules) || [];
+      var minutesAgo = window.KW857 && KW857.loadedAt ? Math.floor((Date.now() - KW857.loadedAt) / 60000) : null;
+      if (backend.length === 0) {
+        info.textContent = '⚠️ 後端 0 筆 — 請部署後端 sync script 後再試';
+        info.style.color = '#991b1b';
+      } else {
+        info.textContent = '後端 ' + backend.length + ' 筆班表' + (minutesAgo != null ? '，' + minutesAgo + ' 分前最後讀取' : '');
+        info.style.color = '#15803d';
+      }
+    }
+    updateInfo();
+    setInterval(updateInfo, 30000);
+
+    btn.addEventListener('click', function() {
+      btn.disabled = true;
+      btn.textContent = '⏳ 同步中...';
+      // 1. 先嘗試後端 trigger sync endpoint（若有）
+      var triggerPromise = Promise.resolve();
+      if (window.KW && KW.api && KW.api._post) {
+        triggerPromise = KW.api._post('triggerDriveSync', {}, true).then(function(res){
+          if (res && res.ok) console.log('[KW v9.11] 後端 sync 完成');
+        }).catch(function(){
+          console.warn('[KW v9.11] triggerDriveSync 後端尚未實作，跳過');
+        });
+      }
+      // 2. 強制 refresh KW857 cache（拉最新後端資料）
+      triggerPromise.then(function(){
+        if (window.KW857 && typeof KW857.refresh === 'function') {
+          return KW857.refresh();
+        }
+      }).then(function(){
+        updateInfo();
+        btn.textContent = '✓ 已同步';
+        setTimeout(function(){
+          btn.disabled = false;
+          btn.textContent = '🔄 立即同步';
+        }, 2000);
+      });
+    });
+  }
+  setInterval(addSyncTrigger, 1500);
+
+  console.log('[KW v9.11] ✓ 純後端讀取架構 — 撤除寫死資料，等待後端 sync');
+})();
+</script>
+<!-- ===== [v9.11] 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
