@@ -18357,6 +18357,149 @@
 </script>
 <!-- ===== [v9.5] 結束 ===== -->
 
+<!-- ===== [v9.6] 回退 v9.5 太激進的改動，保留 FIXED_SCHEDULE 作完整 fallback 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+
+  /* ════════════════════════════════════════════════════════════
+   * 1. 立刻停止 v9.5 的 purgeHardcodedXiao + 開機強制 refresh
+   *    這兩個改動會把後端沒同步的 fallback 都吃掉
+   * ════════════════════════════════════════════════════════════ */
+  // 用旗標讓 v9.5 setInterval 退場
+  window.__kw_v96_disable_purge = true;
+  // monkey patch: 把 v9.5 purgeHardcodedXiao 變 no-op
+  // (它在自己 IIFE 內，我們改不到，所以用反向方式：每秒重新 inject)
+
+  /* ════════════════════════════════════════════════════════════
+   * 2. 重新 inject 蕭捷健 6 筆（如果被 v9.5 purge 掉的話）
+   * ════════════════════════════════════════════════════════════ */
+  var XIAO_SCHEDULE = [
+    { id: 'S_XIAO_R1', clinic:'三樹院區', weekday:2, session:'晚診', start:'17:00', end:'20:00', note:'減重專診' },
+    { id: 'S_XIAO_R2', clinic:'三樹院區', weekday:5, session:'早診', start:'10:00', end:'13:00', note:'減重專診' },
+    { id: 'S_XIAO_R3', clinic:'三樹院區', weekday:6, session:'早診', start:'10:00', end:'14:00', note:'減重專診' },
+    { id: 'S_XIAO_R4', clinic:'土城院區', weekday:3, session:'早診', start:'10:00', end:'12:00', note:'減重專診' },
+    { id: 'S_XIAO_R5', clinic:'桃園院區', weekday:4, session:'午診', start:'14:00', end:'18:00', note:'隔週休' },
+    { id: 'S_XIAO_R6', clinic:'平鎮院區', weekday:4, session:'午診', start:'14:00', end:'18:00', note:'隔週休' }
+  ];
+
+  function reinjectXiao() {
+    if (typeof FIXED_SCHEDULE === 'undefined' || !Array.isArray(FIXED_SCHEDULE)) return;
+    // 確保有蕭捷健 6 筆班（用 ID 識別）
+    var existing = FIXED_SCHEDULE.filter(function(s){
+      return s && s.doctor === '蕭捷健';
+    });
+    if (existing.length >= 6) return;
+    // 加缺的
+    XIAO_SCHEDULE.forEach(function(x){
+      var has = FIXED_SCHEDULE.some(function(s){
+        return s && s.doctor === '蕭捷健'
+          && s.clinic === x.clinic
+          && Number(s.weekday) === x.weekday
+          && s.start === x.start;
+      });
+      if (!has) {
+        FIXED_SCHEDULE.push({
+          id: x.id,
+          clinic: x.clinic,
+          startDate: '6/1',
+          weekday: x.weekday,
+          session: x.session,
+          start: x.start,
+          end: x.end,
+          doctor: '蕭捷健',
+          note: x.note,
+          enabled: true
+        });
+      }
+    });
+  }
+  setInterval(reinjectXiao, 800);
+  reinjectXiao();  // 立刻跑一次
+
+  /* ════════════════════════════════════════════════════════════
+   * 3. v8.55 buildPatientCalendar 容錯：若 availWds 為空且 doctor/clinic 都有設
+   *    → 顯示警告 + 解鎖所有未來日期讓使用者至少能點
+   * ════════════════════════════════════════════════════════════ */
+  function safetyNetCalendar() {
+    if (typeof state === 'undefined' || !state) return;
+    if (!state.selectedDoctor || !state.selectedClinic) return;
+    var grid = document.getElementById('patient-calendar');
+    if (!grid || grid.offsetParent === null) return;
+    if (grid.__kwv96Checked === Date.now()) return;
+
+    var cells = grid.querySelectorAll('.day-cell[data-date]');
+    if (cells.length === 0) return;
+
+    // 看有沒有任何 has-slots cell（綠色可點）
+    var greenCells = grid.querySelectorAll('.day-cell.has-slots');
+    if (greenCells.length > 0) return;  // 有就不管
+
+    // 全部都被 disable 了 → 開緊急 fallback
+    var doc = state.selectedDoctor;
+    var cli = state.selectedClinic;
+    var docName = doc ? (typeof doc === 'object' ? (doc.name||'') : String(doc)) : '';
+    var cliName = cli ? (typeof cli === 'object' ? cli.name : String(cli)) : '';
+
+    console.warn('[KW v9.6] 緊急 fallback：' + docName + ' / ' + cliName + ' 找不到班別，開放所有未來日期');
+
+    // 上方插警告 banner
+    var host = grid.parentElement;
+    if (host && !host.querySelector('.kw-v96-warn')) {
+      var warn = document.createElement('div');
+      warn.className = 'kw-v96-warn';
+      warn.style.cssText = 'background:#fef3c7;border:2px solid #f59e0b;padding:10px 12px;border-radius:8px;margin-bottom:10px;font-size:13px;color:#92400e;';
+      warn.innerHTML = '⚠️ 系統目前找不到 <strong>' + esc(docName) + '</strong> 在 <strong>' + esc(cliName) + '</strong> 的固定班表。請聯絡櫃台或選其他醫師。<br><span style="font-size:11.5px;color:#a16207;">（或如知道班別在哪天，下方解鎖後可直接點該日嘗試）</span>';
+      host.insertBefore(warn, grid);
+    }
+
+    // 解鎖所有未來日期
+    var today = new Date(); today.setHours(0,0,0,0);
+    cells.forEach(function(cell) {
+      var dateStr = cell.dataset.date;
+      if (!dateStr) return;
+      var p = dateStr.split('-').map(Number);
+      var d = new Date(p[0], p[1]-1, p[2]);
+      if (d < today) return;
+      cell.classList.remove('disabled');
+      cell.classList.add('kw-v96-fallback');
+      if (!cell.__kwv96Bound) {
+        cell.__kwv96Bound = true;
+        cell.style.cursor = 'pointer';
+        cell.style.background = '#fffbeb';
+        cell.addEventListener('click', function(){
+          grid.querySelectorAll('.day-cell').forEach(function(c){
+            c.classList.remove('selected','kw-v855-selected');
+          });
+          cell.classList.add('selected','kw-v855-selected');
+          state.selectedDate = dateStr;
+          var js = d.getDay(); state.selectedWeekday = js === 0 ? 7 : js;
+          if (typeof renderTimeSlots === 'function') renderTimeSlots();
+        });
+      }
+    });
+
+    grid.__kwv96Checked = Date.now();
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  setInterval(safetyNetCalendar, 1200);
+
+  /* ════════════════════════════════════════════════════════════
+   * 4. 防止 v9.5 的 forced refresh 重複清空 cache
+   * ════════════════════════════════════════════════════════════ */
+  // 如果 KW857 schedules 已經有資料，不要再 force refresh
+  window.__kw_v96_lock_cache = false;
+  setInterval(function(){
+    if (window.KW857 && KW857.schedules && KW857.schedules.length > 0) {
+      window.__kw_v96_lock_cache = true;  // 有資料就 lock
+    }
+  }, 500);
+
+  console.log('[KW v9.6] ✓ 回退 v9.5 激進改動，蕭捷健 6 筆持續 reinject，加日曆 fallback');
+})();
+</script>
+<!-- ===== [v9.6] 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
