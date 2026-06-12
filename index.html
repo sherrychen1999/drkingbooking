@@ -18500,6 +18500,222 @@
 </script>
 <!-- ===== [v9.6] 結束 ===== -->
 
+<!-- ===== [v9.7] 修 KW.api._get('getSchedules') 回傳改 merged 陣列 開始 ===== -->
+<script>
+(function() {
+  'use strict';
+
+  /* ════════════════════════════════════════════════════════════
+   * 病人端「院區別檢視」直接呼叫 KW.api._get('getSchedules')，
+   * v8.57 hook 只回 KW857.schedules（後端原始）→ 後端缺資料就少院區
+   * 改成 hook 內 return 「後端 + FIXED_SCHEDULE merged」
+   * 同時保證後台 getSchedulesForClinicDate 也 wrap 一層 merge
+   * ════════════════════════════════════════════════════════════ */
+
+  function waitFor(check, cb, retries) {
+    retries = retries || 100;
+    if (check()) cb();
+    else if (retries > 0) setTimeout(function(){ waitFor(check, cb, retries-1); }, 100);
+  }
+
+  /* normalize: 同 v9.5 標準化 */
+  function normDocName(s) {
+    return String(s||'').replace(/\s+/g,'').replace(/醫師/g,'').replace(/\(.*?\)/g,'').trim();
+  }
+  function normClinicName(s) {
+    return String(s||'').replace(/\s+/g,'').replace(/院區$/,'').replace(/減重$/,'').trim();
+  }
+
+  /* 取得所有班表（merged + normalize） */
+  function getMergedSchedules() {
+    var backend = (window.KW857 && KW857.schedules) || [];
+    var local = (typeof FIXED_SCHEDULE !== 'undefined' && Array.isArray(FIXED_SCHEDULE))
+      ? FIXED_SCHEDULE.filter(function(s){ return s && s.enabled !== false; }) : [];
+    var seen = {};
+    var merged = [];
+    function add(s, source) {
+      if (!s) return;
+      var doc = normDocName(s.doctor);
+      var cli = normClinicName(s.clinic);
+      var wd = Number(s.weekday);
+      if (wd === 0) wd = 7;
+      var k = cli + '|' + doc + '|' + wd + '|' + s.start;
+      if (seen[k]) return;
+      seen[k] = true;
+      merged.push({
+        id: s.id || ('M_' + k),
+        clinic: s.clinic,
+        doctor: s.doctor,
+        weekday: wd,
+        session: s.session || '',
+        start: s.start,
+        end: s.end,
+        note: s.note || '',
+        enabled: true,
+        startDate: s.startDate || '',
+        endDate: s.endDate || '',
+        source: source
+      });
+    }
+    backend.forEach(function(s){ add(s, 'backend'); });
+    local.forEach(function(s){ add(s, 'local'); });
+    return merged;
+  }
+  window.__kw_v97_getMerged = getMergedSchedules;  // 給 debug 用
+
+  /* ════════════════════════════════════════════════════════════
+   * 1. 重新 hook KW.api._get('getSchedules')
+   *    回傳 merged 陣列（包含 backend + FIXED_SCHEDULE 全部院區）
+   * ════════════════════════════════════════════════════════════ */
+  waitFor(function(){ return window.KW && KW.api && typeof KW.api._get === 'function'; }, function() {
+    // 取得當前的 _get（可能已被 v8.57 hook）
+    var prevGet = KW.api._get.bind(KW.api);
+
+    KW.api._get = function(endpoint, params) {
+      if (endpoint === 'getSchedules') {
+        var merged = getMergedSchedules();
+        if (merged.length > 0) {
+          return Promise.resolve({ ok: true, data: merged });
+        }
+      }
+      return prevGet(endpoint, params);
+    };
+    console.log('[KW v9.7] ✓ KW.api._get(getSchedules) 改回 merged 陣列');
+  });
+
+  /* ════════════════════════════════════════════════════════════
+   * 2. 替換 v8.38 的 SCHEDULES_CACHE，每次都拿最新 merged 而非快取舊
+   *    （清掉 v8.38 內部 cache 避免顯示過時資料）
+   * ════════════════════════════════════════════════════════════ */
+  // 因為 v8.38 SCHEDULES_CACHE 是 IIFE 內變數，我們改不到
+  // → 暴力法：每 1.5 秒看院區門診表 view 是否存在，如果沒資料就強制重畫
+  function forceClinicScheduleRefresh() {
+    var view = document.getElementById('kw-v838-schedule-view');
+    if (!view) return;
+    var clinic = view.dataset.clinic;
+    if (!clinic) return;
+    if (view.__kwv97Refreshed) return;
+    var noData = view.querySelector('div') && view.textContent.indexOf('此院區目前沒有開診時段') >= 0;
+    if (!noData) return;
+    // 嘗試重新渲染
+    var merged = getMergedSchedules();
+    var hits = merged.filter(function(s){ return normClinicName(s.clinic) === normClinicName(clinic); });
+    if (hits.length === 0) return;
+    // 自製簡易 render
+    view.__kwv97Refreshed = true;
+    renderClinicScheduleSimple(view, clinic, hits);
+  }
+  setInterval(forceClinicScheduleRefresh, 1500);
+
+  /* 簡易門診表渲染（給 v8.38 沒撈到時 fallback）*/
+  var WEEKDAYS_LABEL = ['週一','週二','週三','週四','週五','週六','週日'];
+  var SESSIONS = ['早診','午診','晚診'];
+  function renderClinicScheduleSimple(host, clinicName, sches) {
+    // 按 session × weekday grid
+    var byCell = {};
+    sches.forEach(function(s) {
+      var ss = s.session && SESSIONS.indexOf(s.session) >= 0 ? s.session : (s.note && s.note.indexOf('減重') >= 0 ? '減重專診' : '其他');
+      var k = ss + '|' + s.weekday;
+      if (!byCell[k]) byCell[k] = [];
+      byCell[k].push(s);
+    });
+    var allSessions = Array.from(new Set(sches.map(function(s){
+      return s.session || (s.note && s.note.indexOf('減重') >= 0 ? '減重專診' : '其他');
+    }).filter(Boolean))).sort();
+
+    var html = '<div style="background:#fffbeb; border:2px solid #fcd34d; padding:8px; border-radius:8px; margin-bottom:8px; font-size:12px;">'
+             + '⚠️ <strong>' + esc(clinicName) + '</strong> 後端尚未同步，以下為前端 FIXED_SCHEDULE 本地資料 (' + sches.length + ' 筆)'
+             + '</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#f1f5f9;">';
+    html += '<th style="padding:6px;text-align:left;border:1px solid #e2e8f0;">時段</th>';
+    for (var i = 1; i <= 7; i++) {
+      html += '<th style="padding:6px;text-align:center;border:1px solid #e2e8f0;">' + WEEKDAYS_LABEL[i-1] + '</th>';
+    }
+    html += '</tr></thead><tbody>';
+    allSessions.forEach(function(sess) {
+      html += '<tr><td style="padding:6px;border:1px solid #e2e8f0;background:#f8fafc;font-weight:600;">' + esc(sess) + '</td>';
+      for (var w = 1; w <= 7; w++) {
+        var cell = byCell[sess + '|' + w] || [];
+        if (cell.length === 0) {
+          html += '<td style="padding:6px;border:1px solid #e2e8f0;background:#fafafa;"></td>';
+        } else {
+          html += '<td style="padding:6px;border:1px solid #e2e8f0;vertical-align:top;">';
+          cell.forEach(function(s) {
+            html += '<div style="margin-bottom:4px;">'
+                  +   '<div style="font-weight:600;color:#2c3e50;font-size:12px;">' + esc(s.doctor) + ' 醫師</div>'
+                  +   '<div style="color:#5d8366;font-size:11px;">' + esc(s.start) + '–' + esc(s.end) + '</div>'
+                  + '</div>';
+          });
+          html += '</td>';
+        }
+      }
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    host.innerHTML = html;
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  /* ════════════════════════════════════════════════════════════
+   * 3. 後台 待補登 / 看診表：覆蓋 getSchedulesForClinicDate
+   *    用 merged data，避免遺漏蕭捷健等本地班別
+   * ════════════════════════════════════════════════════════════ */
+  function patchCounterScheduleFn() {
+    if (typeof window.getSchedulesForClinicDate !== 'function') {
+      setTimeout(patchCounterScheduleFn, 300);
+      return;
+    }
+    if (window.__kwv97_counterPatched) return;
+    window.__kwv97_counterPatched = true;
+    var orig = window.getSchedulesForClinicDate;
+    window.getSchedulesForClinicDate = function(clinicName, date) {
+      var d = (date instanceof Date) ? date : new Date(date);
+      var jsWd = d.getDay();
+      var wd = jsWd === 0 ? 7 : jsWd;
+      var merged = getMergedSchedules();
+      var hits = merged.filter(function(s){
+        return normClinicName(s.clinic) === normClinicName(clinicName) && Number(s.weekday) === wd;
+      });
+      if (hits.length === 0) {
+        // fallback 原版
+        return orig(clinicName, date);
+      }
+      return hits;
+    };
+    console.log('[KW v9.7] ✓ getSchedulesForClinicDate 改用 merged');
+  }
+  patchCounterScheduleFn();
+
+  /* ════════════════════════════════════════════════════════════
+   * 4. 診斷工具升級：kwDiag() 也列出哪些院區缺資料
+   * ════════════════════════════════════════════════════════════ */
+  var origDiag = window.kwDiag;
+  window.kwDiag = function() {
+    var merged = getMergedSchedules();
+    var byClinic = {};
+    var byClinicSource = {};
+    merged.forEach(function(s){
+      if (!byClinic[s.clinic]) { byClinic[s.clinic] = 0; byClinicSource[s.clinic] = { backend: 0, local: 0 }; }
+      byClinic[s.clinic]++;
+      byClinicSource[s.clinic][s.source]++;
+    });
+    console.log('====== KW v9.7 班表診斷 ======');
+    console.log('總筆數:', merged.length);
+    console.log('---- 依院區展開（資料來源）----');
+    Object.keys(byClinic).sort().forEach(function(cli) {
+      var bs = byClinicSource[cli];
+      var warn = bs.backend === 0 ? ' ⚠️ 後端 0 筆，靠 FIXED_SCHEDULE 撐' : '';
+      console.log('  ' + cli + ': ' + byClinic[cli] + ' 筆 (後端' + bs.backend + '/本地' + bs.local + ')' + warn);
+    });
+    if (origDiag) origDiag();
+    return { byClinic: byClinic, bySource: byClinicSource };
+  };
+
+  console.log('[KW v9.7] ✓ getSchedules hook 改 merged，所有 13 院區自動補齊');
+})();
+</script>
+<!-- ===== [v9.7] 結束 ===== -->
+
 <!-- ===== 後續累積改動會加在這下方 ===== -->
 </body>
 </html>
