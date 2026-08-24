@@ -375,12 +375,26 @@ async function loadSchedules(force) {
   }
   return false;
 }
+function fmtT(v) {
+  const s = String(v == null ? '' : v).trim();
+  let m = s.match(/T(\d{2}):(\d{2}):\d{2}(?:\.\d+)?Z/);   // Sheets Date → UTC ISO，+8 轉台北
+  if (m) return pad2((+m[1] + 8) % 24) + ':' + m[2];
+  m = s.match(/(\d{1,2}):(\d{2})/);
+  if (m) return pad2(+m[1]) + ':' + m[2];
+  return s;
+}
+function cleanNote(n) {
+  const s = String(n || '').trim();
+  return /由Drive|自動同步|批次|匯入/.test(s) ? '' : s;   // 內部註記不對外顯示
+}
 function normSched(s) {
   if (!s || !s.clinic || !s.doctor) return null;
   let wd = Number(s.weekday); if (wd === 0) wd = 7;
   if (!(wd >= 1 && wd <= 7)) return null;
+  const start = fmtT(s.start), end = fmtT(s.end);
+  if (isNaN(t2m(start)) || isNaN(t2m(end))) return null;
   return { id:s.id||'', clinic:String(s.clinic).trim(), doctor:normDoc(s.doctor), weekday:wd,
-           session:s.session||'', start:s.start, end:s.end, note:s.note||'', enabled:s.enabled!==false };
+           session:s.session||'', start, end, note:cleanNote(s.note), enabled:s.enabled!==false };
 }
 function refreshSchedulesInBg() {
   api.get('getSchedules').then(res => {
@@ -594,13 +608,14 @@ function openDoctorSchedule(shortName) {
     for (let j = byWd[i].length; j < maxR; j++) grid += `<div style="min-height:84px;background:rgba(255,255,255,.4);border-radius:10px"></div>`;
     grid += `</div>`;
   }
-  modal(`<div style="background:#f4f7f4;border-radius:14px">
+  const mEl = modal(`<div style="background:#f4f7f4;border-radius:14px">
     <div class="mh" style="border:none;justify-content:center;position:relative">
       <div style="text-align:center"><div style="font-size:19px;font-weight:700;color:#2f5d3f">${esc(shortName)} 減重醫師 ${mon}月</div>
       <div class="muted" style="margin-top:2px">點選下方任一時段即可預約 · 異動班表以公告為主</div></div>
       <button class="btn btn-o btn-sm" data-act="close-modal" style="position:absolute;right:14px;top:14px">✕</button></div>
     <div class="mb"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">${grid}</div>
     <div style="text-align:center;color:#6b8a6f;font-style:italic;margin-top:12px;font-size:13px">— 金鶯減重診所 —</div></div></div>`);
+  mEl.querySelector('.modal').style.maxWidth = '920px';
 }
 
 /* ── Step 2：選院區 ── */
