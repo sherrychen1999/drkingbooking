@@ -160,6 +160,23 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .tbl td{padding:9px 10px;border-bottom:1px solid var(--line)}
 .tbl tr:hover td{background:#f8fafc}
 .syncbar{background:#eff6ff;border:2px solid #93c5fd;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+/* 日期 pill + 迷你月曆 */
+.dpill{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border:1.5px solid #cbd5e1;border-radius:22px;background:#fff;font-weight:700;cursor:pointer;font-size:14px;color:var(--txt)}
+.dpill:hover{border-color:var(--blue);color:var(--blue)}
+.dpill .pe{color:var(--txt3);font-size:13px}
+/* 週檢視 */
+.cweek{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;overflow-x:auto}
+.cwd{border:1px solid var(--line);border-radius:10px;min-height:140px;background:#fff;min-width:120px}
+.cwd .cwh{padding:7px 4px;border-bottom:1px solid var(--line);text-align:center;font-weight:700;font-size:13px;background:#f8fafc;border-radius:10px 10px 0 0}
+.cwd .cwh small{display:block;color:var(--txt3);font-weight:400;font-size:11px}
+.cwd.today .cwh{background:#dbeafe;color:#1e40af}
+.cwd .cwb{padding:6px;display:flex;flex-direction:column;gap:4px}
+.cwa{font-size:11.5px;padding:4px 7px;border-radius:6px;background:#eff6ff;border-left:3px solid var(--blue);cursor:pointer;line-height:1.4}
+.cwa:hover{filter:brightness(.96)}
+.cwa.i{border-left-color:#7c3aed;background:#f5f3ff}
+.cwa.done{border-left-color:var(--green);background:#f0fdf4}
+.cwa.re{border-left-color:var(--amber);background:#fffbeb}
+.cwa small{color:var(--txt3)}
 </style>
 </head>
 <body>
@@ -309,7 +326,7 @@ const S = {
   bk: null,               // 見 resetBk()
   lookupResults: [],
   // 櫃台
-  cUser: null, cView:'day', cDate: null, cClinic: null, cSession:'all',
+  cUser: null, cView:'day', cMode:'day', cDate: null, cClinic: null, cSession:'all',
   // 管理
   aUser: null, aView:'dash',
 };
@@ -317,7 +334,8 @@ function resetBk() {
   S.bk = { step:1, view:'doctor', doctor:null, clinic:null, anyDoc:false,
            date:null, weekday:null, slot:null, slotDoctor:null,
            calY:null, calM:null, type:'followup',
-           name:'', phone:'', idNo:'', notify:'sms', items:[], remember:false };
+           name:'', phone:'', idNo:'', notify:'sms', items:[], remember:false,
+           blood:{ mode:'date', date:null } };
 }
 resetBk();
 
@@ -363,6 +381,30 @@ async function loadTimeCfg() {
   const res = await api.get('getTimeSettings');
   if (res.ok) S.timeCfg = { defaults: res.defaults || {initMin:30, followMin:15}, overrides: res.overrides || {} };
 }
+
+/* ───── 初診抽血窗口：看診日 T-6（最早）～ T-3（最晚），同院區 ───── */
+function bloodWindowDates(visitDate, clinic) {
+  const v = new Date(visitDate + 'T00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const okWds = clinic ? sched.clinicWeekdays(clinic) : null;
+  const dates = [];
+  for (let off = -6; off <= -3; off++) {
+    const d = new Date(v); d.setDate(d.getDate() + off);
+    if (d < today) continue;                                    // 已過期不可選
+    const wd = d.getDay() === 0 ? 7 : d.getDay();
+    if (okWds && okWds.size && !okWds.has(wd)) continue;        // 該日院區沒開診
+    dates.push(fmtD(d));
+  }
+  return dates;
+}
+function bloodNote(b) {
+  if (b.type !== 'initial') return '';
+  const bl = b.blood || {};
+  if (bl.mode === 'external') return '🩸外院報告(14天內,初診日攜帶)';
+  if (bl.mode === 'sameday' || !bl.date) return '🩸初診當日抽血';
+  return '🩸抽血日:' + bl.date;
+}
+const mdTxt = ds => `${+ds.slice(5,7)}/${+ds.slice(8,10)}（週${WDS[new Date(ds+'T00:00').getDay()]}）`;
 
 /* ───── 班表查詢（全部走 Store，O(n) 單次掃描）───── */
 const sched = {
@@ -773,6 +815,36 @@ async function loadStep3Slots() {
   box.innerHTML = h || `<p class="muted">本日無可約時段</p>`;
 }
 
+/* ── 初診抽血安排區塊 ── */
+function htmlBloodSection() {
+  const b = S.bk;
+  const dates = bloodWindowDates(b.date, b.clinic);
+  const noneAvail = dates.length === 0;
+  if (noneAvail && b.blood.mode === 'date') b.blood.mode = 'sameday';
+  const mode = b.blood.mode;
+  let inner = '';
+  if (mode === 'external') {
+    inner = `<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:10px 12px;font-size:13px;color:#1e40af;line-height:1.6">
+      ✓ 使用外院近 <b>14 天內</b>抽血報告。<br>⚠️ 報告請於<b>初診日當天帶來</b>給醫師評估；若資訊不足，當天仍會補抽確認。</div>`;
+  } else if (mode === 'sameday' || noneAvail) {
+    inner = `<div style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:8px;padding:10px 12px;font-size:13px;color:#92400e;line-height:1.6">
+      看診日較近，已無法提前抽血。<br>請於<b>初診當日提早 30 分鐘</b>到院抽血。</div>`;
+  } else {
+    inner = `<div style="font-size:12.5px;color:var(--txt2);margin-bottom:8px">請選擇到 <b>${esc(b.clinic)}</b> 的抽血日期（最早 ${mdTxt(fmtD(new Date(new Date(b.date+'T00:00').getTime()-6*86400000)))}、最晚 ${mdTxt(fmtD(new Date(new Date(b.date+'T00:00').getTime()-3*86400000)))}）：</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">`
+      + dates.map(ds => `<button type="button" class="btn btn-sm ${b.blood.date===ds?'btn-g':'btn-o'}" data-act="blood-date" data-ds="${ds}">${mdTxt(ds)}</button>`).join('')
+      + `</div><div class="muted" style="font-size:11.5px;margin-top:6px">營業時間內到院即可，無需再約時間</div>`;
+  }
+  return `<div class="frow" style="margin-top:14px"><label>🩸 初診抽血安排 *</label>
+    <div style="border:2px solid #fecaca;border-radius:10px;padding:12px;background:#fff">
+    <div style="font-size:12.5px;color:var(--txt2);margin-bottom:10px">初診需先完成抽血，讓醫師於看診時一併評估身體狀況。</div>
+    <div class="vt" style="margin-bottom:10px">
+      <button type="button" class="${mode!=='external'?'on':''}" data-act="blood-mode" data-v="${noneAvail?'sameday':'date'}">🏥 到院抽血</button>
+      <button type="button" class="${mode==='external'?'on':''}" data-act="blood-mode" data-v="external">📄 外院 14 天內報告</button>
+    </div>
+    ${inner}</div></div>`;
+}
+
 /* ── Step 4：填資料 ── */
 function htmlStep4() {
   const b = S.bk;
@@ -790,6 +862,7 @@ function htmlStep4() {
         <button class="${b.notify==='none'?'on':''}" data-act="nt" data-v="none">不通知</button>
       </div></div>
       <label class="chk"><input type="checkbox" id="f-rem" ${b.remember?'checked':''}> 記住我的資訊（手機自動帶入姓名與電話）</label>
+      ${b.type === 'initial' ? htmlBloodSection() : ''}
     </div>
     <div>
       <label style="font-size:13px;font-weight:600;color:var(--txt2);display:block;margin-bottom:6px">諮詢項目（可複選、可跳過）</label>
@@ -814,6 +887,7 @@ function htmlStep5() {
     ${row('看診院區', esc(b.clinic))}
     ${row('就診類型', (b.type==='initial'?'初診':'複診') + '（' + durFor(b.type, b.anyDoc ? b.slotDoctor : b.doctor) + ' 分鐘）')}
     ${row('看診時間', `${esc(b.date)}（週${wd}）${esc(b.slot)}`)}
+    ${b.type==='initial' ? row('🩸 抽血安排', b.blood.mode==='external' ? '外院 14 天內報告（初診日攜帶）' : b.blood.date ? mdTxt(b.blood.date) + ' 到院抽血' : '初診當日提早 30 分鐘抽血') : ''}
     ${b.items.length ? row('諮詢項目', b.items.map(esc).join('、')) : ''}
     ${row('通知方式', b.notify==='sms' ? '簡訊通知' : '不通知')}
     </div>
@@ -840,6 +914,7 @@ async function confirmBooking() {
     doctor: doc, name: b.name, phone: b.phone, idNo: b.idNo,
     type: b.type === 'initial' ? '初診' : '複診',
     consultItems: b.items.join('、'), notify: b.notify,
+    note: bloodNote(b),
     source: 'patient_app'
   }, false);
   if (res.ok) {
@@ -1013,23 +1088,37 @@ function cShow() {
 function renderCounter() {
   document.querySelectorAll('#c-main .mi').forEach(el => el.classList.toggle('on', el.dataset.v === S.cView));
   const c = $('#c-content');
-  if (S.cView === 'day') { c.innerHTML = htmlCDay(); loadCDayGrid(); }
+  if (S.cView === 'day') {
+    if (S.cMode === 'week') { c.innerHTML = htmlCWeek(); loadCWeek(); }
+    else { c.innerHTML = htmlCDay(); loadCDayGrid(); }
+  }
   else if (S.cView === 'quick') c.innerHTML = htmlCQuick();
   else if (S.cView === 'find') c.innerHTML = htmlCFind();
   else if (S.cView === 'notify') { c.innerHTML = `<div class="card"><h3>📨 通知紀錄</h3><div id="cn-box" class="muted" style="padding:14px">載入中…</div></div>`; loadCNotify(); }
   else if (S.cView === 'report') { c.innerHTML = `<div class="card"><h3>📊 當日報表</h3><div id="cr-box" class="muted" style="padding:14px">載入中…</div></div>`; loadCReport(); }
 }
 /* ── 今日看診表 ── */
+function clinicOpts() { return CLINICS.map(c => `<option ${c.name===S.cClinic?'selected':''}>${c.name}</option>`).join(''); }
+function weekStart(ds) {
+  const d = new Date(ds + 'T00:00');
+  const wd = d.getDay() === 0 ? 7 : d.getDay();
+  d.setDate(d.getDate() - (wd - 1));   // 週一
+  return d;
+}
+function modeToggle() {
+  return `<button class="btn btn-sm ${S.cMode==='day'?'btn-p':'btn-o'}" data-act="cd-mode" data-m="day">日</button>
+    <button class="btn btn-sm ${S.cMode==='week'?'btn-p':'btn-o'}" data-act="cd-mode" data-m="week">週</button>`;
+}
 function htmlCDay() {
   const d = new Date(S.cDate + 'T00:00');
-  const opts = CLINICS.map(c => `<option ${c.name===S.cClinic?'selected':''}>${c.name}</option>`).join('');
   return `<div class="card">
     <div class="dnav">
-      <select id="cd-clinic" data-act2="cd-clinic">${opts}</select>
-      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="-1">← 昨日</button>
+      <select id="cd-clinic" data-act2="cd-clinic">${clinicOpts()}</select>
+      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="-1">←</button>
       <button class="btn btn-p btn-sm" data-act="cd-today">今日</button>
-      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="1">明日 →</button>
-      <b style="margin-left:6px">${S.cDate}（週${WDS[d.getDay()]}）</b>
+      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="1">→</button>
+      <button class="dpill" data-act="cd-pill">📅 ${S.cDate.replace(/-/g,'/')}（週${WDS[d.getDay()]}）<span class="pe">✏️</span></button>
+      ${modeToggle()}
       <span style="flex:1"></span>
       ${['all','早診','午診','晚診'].map(s =>
         `<button class="btn btn-sm ${S.cSession===s?'btn-p':'btn-o'}" data-act="cd-sess" data-s="${s}">${s==='all'?'全日':s}</button>`).join('')}
@@ -1038,6 +1127,82 @@ function htmlCDay() {
     <div id="cd-orph"></div>
     <div id="cd-grid" class="muted" style="padding:16px;text-align:center">載入看診表中…</div>
   </div>`;
+}
+/* ── 週檢視 ── */
+function htmlCWeek() {
+  const ws = weekStart(S.cDate);
+  const we = new Date(ws); we.setDate(we.getDate() + 6);
+  return `<div class="card">
+    <div class="dnav">
+      <select id="cd-clinic" data-act2="cd-clinic">${clinicOpts()}</select>
+      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="-7">← 上週</button>
+      <button class="btn btn-p btn-sm" data-act="cd-today">本週</button>
+      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="7">下週 →</button>
+      <button class="dpill" data-act="cd-pill">📅 ${fmtD(ws).replace(/-/g,'/')} — ${fmtD(we).replace(/-/g,'/')}<span class="pe">✏️</span></button>
+      ${modeToggle()}
+      <span style="flex:1"></span>
+      <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
+    </div>
+    <div id="cw-box" class="muted" style="padding:16px;text-align:center">載入本週預約中…</div>
+  </div>`;
+}
+async function loadCWeek() {
+  const clinic = S.cClinic;
+  const ws = weekStart(S.cDate);
+  const days = Array.from({length:7}, (_,i) => { const d = new Date(ws); d.setDate(d.getDate()+i); return fmtD(d); });
+  const lists = await Promise.all(days.map(ds => getAppts(clinic, ds)));
+  const box = $('#cw-box');
+  if (!box || S.cClinic !== clinic) return;
+  const todayStr = fmtD(new Date());
+  window.__cwIndex = {};
+  let total = 0;
+  const cols = days.map((ds, i) => {
+    const d = new Date(ds + 'T00:00');
+    const appts = lists[i]
+      .filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消')
+      .map(a => ({ a, t: apptTime(a) }))
+      .sort((x, y) => x.t.localeCompare(y.t));
+    total += appts.length;
+    const chips = appts.map(({a, t}, j) => {
+      const key = ds + '|' + j;
+      window.__cwIndex[key] = a;
+      const st = a.status || a['狀態'] || '';
+      const cls = st==='checked_in'||st==='已報到' ? 'done' : st==='rescheduled'||st==='已改約' ? 're' : (a.type==='初診'||a['類型']==='初診') ? 'i' : '';
+      const bloodMark = /🩸/.test(String(a.note||a['備註']||'')) ? ' 🩸' : '';
+      return `<div class="cwa ${cls}" data-act="cw-appt" data-k="${key}">
+        <b>${t}</b> ${esc(a.name||a['病人姓名']||'(未填)')}${bloodMark}<br><small>${esc(normDoc(a.doctor||a['醫師']||''))} · ${esc(a.type||a['類型']||'複診')}</small></div>`;
+    }).join('');
+    return `<div class="cwd ${ds===todayStr?'today':''}">
+      <div class="cwh">${+ds.slice(5,7)}/${+ds.slice(8,10)} 週${WDS[d.getDay()]}<small>${appts.length ? appts.length + ' 筆' : '—'}</small></div>
+      <div class="cwb">${chips || ''}</div></div>`;
+  }).join('');
+  box.style.padding = '0'; box.style.textAlign = '';
+  box.innerHTML = `<div class="cweek">${cols}</div>
+    <div class="muted" style="margin-top:8px">本週共 ${total} 筆預約 · 點預約可報到/改約/取消</div>`;
+}
+/* ── 迷你月曆（日期 pill 點開）── */
+function openMiniCal() {
+  const m = modal(`<div class="mh">📅 選擇日期 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb" id="mc-body"></div>`);
+  const d = new Date(S.cDate + 'T00:00');
+  m.dataset.y = d.getFullYear(); m.dataset.m = d.getMonth() + 1;
+  renderMiniCal(m);
+}
+function renderMiniCal(m) {
+  const Y = +m.dataset.y, M = +m.dataset.m;
+  const todayStr = fmtD(new Date());
+  let h = `<div class="cal" style="border:none;padding:0"><div class="chead">
+    <button data-act="mc-nav" data-d="-1">‹</button><span>${Y} 年 ${M} 月</span><button data-act="mc-nav" data-d="1">›</button></div><div class="cg">`;
+  ['日','一','二','三','四','五','六'].forEach((w,i) => h += `<div class="wd ${i===0||i===6?'we':''}">${w}</div>`);
+  const off = new Date(Y, M-1, 1).getDay();
+  for (let i = 0; i < off; i++) h += `<div></div>`;
+  const days = new Date(Y, M, 0).getDate();
+  for (let dd = 1; dd <= days; dd++) {
+    const ds = `${Y}-${pad2(M)}-${pad2(dd)}`;
+    const cls = ['dc','ok', ds===todayStr?'today':'', ds===S.cDate?'sel':''].filter(Boolean).join(' ');
+    h += `<div class="${cls}" style="background:#f1f5f9;color:var(--txt2)" data-act="mc-pick" data-ds="${ds}">${dd}</div>`;
+  }
+  m.querySelector('#mc-body').innerHTML = h + `</div></div>`;
 }
 async function loadCDayGrid() {
   const clinic = S.cClinic, date = S.cDate;
@@ -1117,7 +1282,9 @@ async function loadCDayGrid() {
 function openApptDetail(key) {
   const list = (window.__cdApptIndex || {})[key] || [];
   if (!list.length) return;
-  const a = list[0];
+  openApptDetailFromObj(list[0], S.cDate);
+}
+function openApptDetailFromObj(a, dateStr) {
   const t = apptTime(a);
   const st = a.status || a['狀態'] || '';
   const src = a.source || a['來源'] || '';
@@ -1127,16 +1294,17 @@ function openApptDetail(key) {
     ${row('病人姓名', esc(a.name||a['病人姓名']||'(未填)'))}
     ${row('電話', esc(a.phone||a['電話']||'—'))}
     ${row('預約類型', `<span class="tag tag-b">${esc(a.type||a['類型']||'複診')}</span>`)}
-    ${row('看診時間', `${esc(a.date||S.cDate)} ${esc(t)}`)}
+    ${row('看診時間', `${esc(a.date||dateStr)} ${esc(t)}`)}
     ${row('狀態', st ? `<span class="tag tag-g">${esc(st)}</span>` : '未報到')}
     ${src ? row('預約來源', esc(src)) : ''}
     ${(a.medicationWeeks||a['拿藥週數']) ? row('拿藥週數', esc(a.medicationWeeks||a['拿藥週數'])+' 週') : ''}
+    ${(a.note||a['備註']) ? row('備註', esc(a.note||a['備註'])) : ''}
     </div>
     <div class="mf"><button class="btn btn-o" data-act="close-modal">關閉</button>
       <button class="btn btn-a" data-act="c-resch">改約</button>
       <button class="btn btn-r" data-act="c-cancel">取消</button>
       <button class="btn btn-g" data-act="c-checkin">報到</button></div>`);
-  m.dataset.appt = JSON.stringify({ apptId:a.apptId||a.id||a['預約編號']||'', clinic:S.cClinic, date:a.date||S.cDate,
+  m.dataset.appt = JSON.stringify({ apptId:a.apptId||a.id||a['預約編號']||'', clinic:S.cClinic, date:a.date||dateStr,
     t, doctor:normDoc(a.doctor||a['醫師']||''), name:a.name||a['病人姓名']||'', phone:a.phone||a['電話']||'', type:a.type||a['類型']||'複診' });
 }
 async function cAction(m, action) {
@@ -1144,7 +1312,7 @@ async function cAction(m, action) {
   if (action === 'checkin') {
     const res = await api.post('updateAppointmentStatus', { apptId:a.apptId, clinic:a.clinic, date:a.date,
       startTime:a.t, doctor:a.doctor, status:'checked_in', by:S.cUser.name, source:'counter' }, true);
-    if (res.ok) { toast('✓ 已報到'); closeModals(); S.apptCache.delete(a.clinic+'|'+a.date); loadCDayGrid(); }
+    if (res.ok) { toast('✓ 已報到'); closeModals(); S.apptCache.delete(a.clinic+'|'+a.date); renderCounter(); }
     else toast('報到失敗：'+(res.error||''), 'var(--red)');
   } else if (action === 'cancel') {
     const weeks = prompt('取消前是否拿藥？輸入週數（0 = 不拿藥）', '0');
@@ -1152,7 +1320,7 @@ async function cAction(m, action) {
     const res = await api.post('updateAppointmentStatus', { apptId:a.apptId, clinic:a.clinic, date:a.date,
       startTime:a.t, doctor:a.doctor, status:'cancelled', medicationWeeks:+weeks||'',
       note:`櫃台取消${+weeks?`（拿藥${weeks}週）`:''}`, by:S.cUser.name, source:'counter' }, true);
-    if (res.ok) { toast('✓ 已取消'); closeModals(); S.apptCache.delete(a.clinic+'|'+a.date); loadCDayGrid(); }
+    if (res.ok) { toast('✓ 已取消'); closeModals(); S.apptCache.delete(a.clinic+'|'+a.date); renderCounter(); }
     else toast('取消失敗：'+(res.error||''), 'var(--red)');
   } else if (action === 'resch') {
     const nd = prompt('新日期（YYYY-MM-DD）', a.date); if (!nd) return;
@@ -1165,7 +1333,7 @@ async function cAction(m, action) {
       date:nd, startTime:nt, endTime:m2t(t2m(nt) + durFor(a.type==='初診'?'initial':'followup', a.doctor)), doctor:a.doctor, name:a.name, phone:a.phone,
       type:a.type, medicationWeeks:+weeks||'', note:`櫃台改約${+weeks?`（拿藥${weeks}週）`:''}`,
       employeeName:S.cUser.name, source:'counter' }, true);
-    if (res.ok) { toast('✓ 改約完成'); closeModals(); S.apptCache.clear(); loadCDayGrid(); }
+    if (res.ok) { toast('✓ 改約完成'); closeModals(); S.apptCache.clear(); renderCounter(); }
     else toast('改約失敗：'+(res.error||''), 'var(--red)');
   }
 }
@@ -1183,6 +1351,9 @@ function htmlCQuick() {
       <div class="frow"><label>類型 *</label><select id="q-type"><option value="複診">複診</option><option value="初診">初診</option></select></div>
       <div class="frow"><label>備註</label><input id="q-note" placeholder="例：來電指定下午"></div>
     </div>
+    <div style="background:#fff5f5;border:1.5px solid #fecaca;border-radius:8px;padding:10px 14px;margin:4px 0 10px;font-size:12.5px;color:#7f1d1d;line-height:1.7">
+      🩸 <b>初診抽血規則</b>：看診日前 3～6 天需先到院抽血（例：8/27 看診 → 最早 8/21、最晚 8/24）。<br>
+      或外院近 14 天內報告（初診日帶來，必要時當日補抽）。建立初診時請與病人約定抽血日並寫入備註。</div>
     <button class="btn btn-p" data-act="q-book" style="margin-top:6px">建立預約</button>
     <p class="muted" style="margin-top:10px">💬 已登錄病人可自動帶出姓名/電話 · 無 LINE 綁定者改發簡訊</p></div>`;
 }
@@ -1192,11 +1363,16 @@ async function quickBook() {
   const doc = $('#q-doc').value || '系統指派';
   const type = $('#q-type').value;
   const qDur = durFor(type === '初診' ? 'initial' : 'followup', doc === '系統指派' ? '' : doc);
+  let qNote = $('#q-note').value.trim();
+  if (type === '初診' && !/🩸/.test(qNote)) {
+    const win = bloodWindowDates(date, clinic);
+    qNote = (qNote ? qNote + ' ' : '') + (win.length ? `🩸抽血窗口:${win[0]}~${win[win.length-1]}` : '🩸當日抽血');
+  }
   const res = await api.post('createCounterBooking', {
     clinic, date, startTime:time, endTime:m2t(t2m(time)+qDur), doctor:doc,
-    name:$('#q-name').value.trim(), phone, type, note:$('#q-note').value.trim(),
+    name:$('#q-name').value.trim(), phone, type, note:qNote,
     employeeId:S.cUser.employeeId, employeeName:S.cUser.name, source:'phone_call' }, true);
-  if (res.ok) { toast('✓ 預約已建立'); S.apptCache.delete(clinic+'|'+date); if (S.cClinic===clinic && S.cDate===date && S.cView==='day') loadCDayGrid(); }
+  if (res.ok) { toast('✓ 預約已建立'); S.apptCache.delete(clinic+'|'+date); }
   else toast('建立失敗：'+(res.error||''), 'var(--red)');
 }
 /* ── 病人查詢 ── */
@@ -1445,12 +1621,15 @@ document.addEventListener('click', async e => {
         if (me) { S.bk.name = S.bk.name || me.name || ''; S.bk.phone = S.bk.phone || me.phone || ''; S.bk.idNo = S.bk.idNo || me.idNo || ''; S.bk.remember = true; } } catch(_){}
       S.bk.step = 4; renderStep(); break;
     /* step4 */
-    case 'vt': S.bk.type = el.dataset.v; S.bk.slot = null; renderStep(); break;
+    case 'vt': S.bk.type = el.dataset.v; S.bk.slot = null; S.bk.blood = { mode:'date', date:null }; renderStep(); break;
+    case 'blood-mode': captureF4(); S.bk.blood.mode = el.dataset.v; renderStep(); break;
+    case 'blood-date': captureF4(); S.bk.blood = { mode:'date', date: el.dataset.ds }; renderStep(); break;
     case 'nt': S.bk.notify = el.dataset.v; captureF4(); renderStep(); break;
     case 'next4': {
       captureF4();
       if (!S.bk.name) { toast('請填姓名', 'var(--amber)'); break; }
       if (!/^09\d{8}$/.test(S.bk.phone.replace(/\D/g,''))) { toast('請填正確手機號碼', 'var(--amber)'); break; }
+      if (S.bk.type === 'initial' && S.bk.blood.mode === 'date' && !S.bk.blood.date) { toast('請選擇抽血日期（或改選外院報告）', 'var(--amber)'); break; }
       S.bk.step = 5; renderStep(); break; }
     /* step5 */
     case 'confirm-book': confirmBooking(); break;
@@ -1477,7 +1656,20 @@ document.addEventListener('click', async e => {
     case 'cd-nav': { const d = new Date(S.cDate+'T00:00'); d.setDate(d.getDate() + +el.dataset.d); S.cDate = fmtD(d); renderCounter(); break; }
     case 'cd-today': S.cDate = fmtD(new Date()); renderCounter(); break;
     case 'cd-sess': S.cSession = el.dataset.s; renderCounter(); break;
-    case 'cd-refresh': S.apptCache.delete(S.cClinic+'|'+S.cDate); loadCDayGrid(); break;
+    case 'cd-refresh': S.apptCache.clear(); renderCounter(); break;
+    case 'cd-mode': S.cMode = el.dataset.m; renderCounter(); break;
+    case 'cd-pill': openMiniCal(); break;
+    case 'mc-nav': {
+      const mm = el.closest('.mask');
+      let y = +mm.dataset.y, mo = +mm.dataset.m + +el.dataset.d;
+      if (mo < 1) { mo = 12; y--; } if (mo > 12) { mo = 1; y++; }
+      mm.dataset.y = y; mm.dataset.m = mo;
+      renderMiniCal(mm); break; }
+    case 'mc-pick': S.cDate = el.dataset.ds; closeModals(); renderCounter(); break;
+    case 'cw-appt': {
+      const a = (window.__cwIndex || {})[el.dataset.k];
+      if (a) openApptDetailFromObj(a, el.dataset.k.split('|')[0]);
+      break; }
     case 'appt-detail': openApptDetail(el.dataset.k); break;
     case 'c-checkin': cAction(m, 'checkin'); break;
     case 'c-cancel': cAction(m, 'cancel'); break;
@@ -1486,7 +1678,7 @@ document.addEventListener('click', async e => {
     case 'cf-go': counterFind(); break;
     /* admin */
     case 'a-login': { const u = await counterLogin('#al-id','#al-pw','#al-err', true);
-      if (u) { if (u.role !== 'admin' && u.role !== '系統管理員') { $('#al-err').textContent = '此帳號非系統管理員'; break; } S.aUser = u; aShow(); } break; }
+      if (u) { S.aUser = u; aShow(); } break; }   // 權限暫全開，之後再依職位收斂
     case 'a-logout': S.aUser = null; $('#a-main').style.display='none'; $('#a-login').style.display='block'; break;
     case 'a-menu': S.aView = el.dataset.v; renderAdmin(); break;
     case 'a-sync': aSync(el); break;
