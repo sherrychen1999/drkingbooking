@@ -223,11 +223,9 @@ nav .tabs button.on{background:var(--blue);color:#fff}
     <div class="card" style="max-width:760px;margin:0 auto">
       <button class="btn btn-o btn-sm" data-act="hub-back">← 返回</button>
       <h2 style="margin:12px 0 6px">🔍 查詢預約</h2>
-      <p class="muted">輸入下列任一欄位即可查詢（可只填一項）</p>
-      <div class="fgrid" style="grid-template-columns:1fr 1fr 1fr;margin:14px 0">
-        <input id="lk-name" placeholder="姓名（可填）">
-        <input id="lk-phone" type="tel" placeholder="電話（可填）">
-        <input id="lk-id" placeholder="身分證字號（可填）">
+      <p class="muted">輸入預約時留的手機號碼即可查詢</p>
+      <div style="margin:14px 0">
+        <input id="lk-phone" type="tel" placeholder="手機號碼（09xxxxxxxx）" style="width:100%;text-align:center;font-size:19px;font-weight:700;letter-spacing:1px;padding:13px">
       </div>
       <button class="btn btn-g" style="width:100%;padding:12px" data-act="lk-go">查詢</button>
       <div id="lk-result" style="margin-top:18px"></div>
@@ -999,20 +997,15 @@ async function confirmBooking() {
 
 /* ════════════════ 查詢 / 改約 / 取消 ════════════════ */
 async function doLookup() {
-  const name = $('#lk-name').value.trim(), phone = $('#lk-phone').value.trim(), idNo = $('#lk-id').value.trim();
-  if (!name && !phone && !idNo) { toast('請至少填一項', 'var(--amber)'); return; }
+  const phone = $('#lk-phone').value.trim();
+  const pN = phone.replace(/\D/g, '');
+  if (!/^09\d{8}$/.test(pN)) { toast('請輸入完整手機號碼（09 開頭 10 碼）', 'var(--amber)'); return; }
   const out = $('#lk-result');
-  out.innerHTML = `<p class="muted" style="text-align:center;padding:16px">查詢中…（搜尋雲端 + 各院區，約 5 秒）</p>`;
-  const pN = phone.replace(/\D/g,''), nN = name.replace(/\s+/g,'').toLowerCase(), iN = idNo.toUpperCase().replace(/\s+/g,'');
-  const match = a => {
-    const ap = String(a.phone||a['電話']||'').replace(/\D/g,'');
-    const an = String(a.name||a.patientName||a['病人姓名']||a['姓名']||'').replace(/\s+/g,'').toLowerCase();
-    const ai = String(a.idNo||a.idCard||a['身分證']||'').toUpperCase().replace(/\s+/g,'');
-    return (pN && ap === pN) || (nN && an === nN) || (iN && ai && ai === iN);
-  };
-  const tasks = [];
-  [name, pN, iN].filter(Boolean).forEach(kw =>
-    tasks.push(api.post('searchPatientHistory', { keyword: kw }, true).then(r => (r.ok && r.data) || [])));
+  out.innerHTML = `<p class="muted" style="text-align:center;padding:16px">查詢中…（搜尋各院區，約 5 秒）</p>`;
+  const match = a => String(a.phone || a['電話'] || '').replace(/\D/g, '') === pN;
+  const tasks = [
+    api.post('searchPatientHistory', { keyword: pN }, true).then(r => (r.ok && r.data) || [])
+  ];
   const today = new Date(); today.setHours(0,0,0,0);
   const dates = Array.from({length:21}, (_,i) => { const d = new Date(today); d.setDate(d.getDate()+i); return fmtD(d); });
   CLINICS.forEach(c => dates.forEach(ds =>
@@ -1031,7 +1024,7 @@ async function doLookup() {
   S.lookupResults = future;
   if (!future.length) {
     out.innerHTML = `<div style="text-align:center;padding:22px;background:#f8fafc;border-radius:10px">
-      <p class="muted">😕 找不到符合的未來預約</p>
+      <p class="muted">😕 找不到此電話的未來預約</p>
       <p class="muted" style="font-size:14px;margin-top:6px">已搜尋各院區未來 21 天。如已預約但查不到，請聯絡院區櫃台</p></div>`;
     return;
   }
@@ -1244,12 +1237,24 @@ async function loadCWeek() {
         <b>${t}</b> ${esc(a.name||a['病人姓名']||'(未填)')}${bloodMark}<br><small>${esc(normDoc(a.doctor||a['醫師']||''))} · ${esc(a.type||a['類型']||'複診')}</small></div>`;
     }).join('');
     return `<div class="cwd ${ds===todayStr?'today':''}">
-      <div class="cwh">${+ds.slice(5,7)}/${+ds.slice(8,10)} 週${WDS[d.getDay()]}<small>${appts.length ? appts.length + ' 筆' : '—'}</small></div>
+      <div class="cwh">${+ds.slice(5,7)}/${+ds.slice(8,10)} 週${WDS[d.getDay()]}
+        <button class="btn btn-o btn-sm" data-act="cw-add" data-ds="${ds}" style="padding:2px 8px;font-size:12px;margin-left:4px">＋掛號</button>
+        <small>${appts.length ? appts.length + ' 筆' : '—'}</small></div>
       <div class="cwb">${chips || ''}</div></div>`;
   }).join('');
   box.style.padding = '0'; box.style.textAlign = '';
-  box.innerHTML = `<div class="cweek">${cols}</div>
-    <div class="muted" style="margin-top:8px">本週共 ${total} 筆預約 · 點預約可報到/改約/取消</div>`;
+  window.__fxIndex = window.__fxIndex || {};
+  const incItems = [];
+  days.forEach((ds, i) => lists[i].forEach((a, j) => {
+    if (a.status === 'cancelled' || a['狀態'] === '已取消') return;
+    const miss = isIncomplete(a);
+    if (!miss) return;
+    const key = 'w' + i + '_' + j;
+    window.__fxIndex[key] = { a, ds };
+    incItems.push({ a, miss, ds, key });
+  }));
+  box.innerHTML = incompleteBanner(incItems) + `<div class="cweek">${cols}</div>
+    <div class="muted" style="margin-top:8px">本週共 ${total} 筆預約 · 點預約可報到/改約/取消 · 欄頭「＋掛號」可直接搶位</div>`;
 }
 /* ── 迷你月曆（日期 pill 點開）── */
 function openMiniCal() {
@@ -1318,7 +1323,7 @@ async function loadCDayGrid() {
     docs.forEach(dn => {
       const on = docRanges[dn].some(([s,e]) => t >= s && t < e);
       const cell = byDocT[dn+'|'+tt] || [];
-      h += `<td class="${on?'':'off'}">` + cell.map(a => {
+      h += `<td class="${on?'':'off'}" ${on ? `data-act="cd-slot" data-doc="${esc(dn)}" data-t="${tt}" style="cursor:copy" title="點空白處掛號 ${esc(dn)} ${tt}"` : ''}>` + cell.map(a => {
         const st = a.status || a['狀態'] || '';
         const cls = st==='checked_in'||st==='已報到' ? 'done' : st==='rescheduled'||st==='已改約' ? 're' : (a.type==='初診'||a['類型']==='初診') ? 'i' : '';
         return `<div class="apt ${cls}" data-act="appt-detail" data-k="${esc(dn)}|${tt}">${esc(a.name||a['病人姓名']||'(未填)')} · ${esc(a.type||a['類型']||'複診')}</div>`;
@@ -1330,6 +1335,17 @@ async function loadCDayGrid() {
     <div class="muted" style="margin-top:8px">■ 複診 <span style="color:#7c3aed">■ 初診</span> <span style="color:var(--green)">■ 已報到</span> <span style="color:var(--amber)">■ 已改約</span> · 共 ${appts.length} 筆預約</div>`;
   box.innerHTML = h;
   window.__cdApptIndex = byDocT;
+  // 未補齊提醒（日檢視）
+  window.__fxIndex = {};
+  const incItems = appts.map((a, i) => {
+    const miss = isIncomplete(a);
+    if (!miss) return null;
+    const key = 'd' + i;
+    window.__fxIndex[key] = { a, ds: date };
+    return { a, miss, ds: date, key };
+  }).filter(Boolean);
+  const orphEl = $('#cd-orph');
+  if (orphEl) orphEl.insertAdjacentHTML('afterbegin', incompleteBanner(incItems));
   // 待補登
   const orph = appts.filter(a => {
     const dn = normDoc(a.doctor || a['醫師'] || '');
@@ -1349,6 +1365,146 @@ async function loadCDayGrid() {
         <td style="color:var(--red)">${prob}</td></tr>`;
     }).join('') + `</tbody></table></div>`;
 }
+/* ── 快速掛號（看診表直接點格）── */
+const phoneOK = p => /^09\d{8}$/.test(String(p||'').replace(/\D/g,''));
+function caseNoOf(a) { return String(a.caseNo || a['病例號'] || '').trim(); }
+function isIncomplete(a) {
+  const name = String(a.name || a['病人姓名'] || '').trim();
+  const noName = !name || name === '(未填)' || name === '（未填）';
+  const noPhone = !phoneOK(a.phone || a['電話']);
+  const noCase = (a.type || a['類型']) === '複診' && !caseNoOf(a);
+  const missing = [noName && '姓名', noPhone && '電話', noCase && '病歷號'].filter(Boolean);
+  return missing.length ? missing : null;
+}
+async function openQuickBook(date, doctor, time) {
+  const clinic = S.cClinic;
+  const wd = isoWd(date);
+  const dayDocs = [...new Set(sched.byClinic(clinic).filter(s => s.weekday === wd).map(s => s.doctor))];
+  if (!dayDocs.length) { toast('該日此院區無排班', 'var(--amber)'); return; }
+  const appts = await getAppts(clinic, date);
+  const m = modal(`<div class="mh">🖊 快速掛號 · ${esc(clinic)} ${esc(date)}
+      <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb">
+      <div class="fgrid">
+        <div class="frow"><label>類型 *</label><div class="vt">
+          <button class="qk-vt ${'複診'==='複診'?'on':''}" data-act="qk-type" data-v="複診">複診</button>
+          <button class="qk-vt" data-act="qk-type" data-v="初診">初診</button></div></div>
+        <div class="frow"><label>醫師 *</label><select id="qk-doc">
+          ${dayDocs.map(d2 => `<option ${d2===doctor?'selected':''}>${esc(d2)}</option>`).join('')}
+          <option value="__any__">不指定（全覽可約時段）</option></select></div>
+        <div class="frow" style="grid-column:1/-1"><label>時段 *</label><select id="qk-time"></select></div>
+        <div class="frow"><label>病歷號（複診·後台有資料即可卡位）</label>
+          <div style="display:flex;gap:6px"><input id="qk-case" placeholder="例：B1234" style="flex:1">
+          <button class="btn btn-o btn-sm" data-act="qk-case-fill">🔍 帶入</button></div>
+          <div id="qk-case-msg" class="muted" style="font-size:12.5px;min-height:16px"></div></div>
+        <div class="frow"><label>電話（或病歷號擇一）</label><input id="qk-phone" type="tel" placeholder="09xxxxxxxx"></div>
+        <div class="frow"><label>姓名（可先留空卡位）</label><input id="qk-name"></div>
+        <div class="frow"><label>備註</label><input id="qk-note"></div>
+      </div>
+      <p class="muted" style="font-size:12.5px">⚡ 卡位規則：<b>電話</b>或<b>已存在的病歷號</b>擇一填寫即可先搶時段；其餘資料稍後從頂部「待補齊」提醒補登。</p>
+    </div>
+    <div class="mf"><button class="btn btn-o" data-act="close-modal">取消</button>
+      <button class="btn btn-g" data-act="qk-save">✓ 建立掛號</button></div>`);
+  m.dataset.qk = JSON.stringify({ date, clinic });
+  m.dataset.type = '複診';
+  window.__qkAppts = appts;
+  refreshQkTimes(m, time);
+}
+function refreshQkTimes(m, preferT) {
+  const { date, clinic } = JSON.parse(m.dataset.qk);
+  const wd = isoWd(date);
+  const type = m.dataset.type || '複診';
+  const docSel = m.querySelector('#qk-doc').value;
+  const appts = (window.__qkAppts || []).filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消');
+  const blocks = {};
+  appts.forEach(a => {
+    const dn = normDoc(a.doctor || a['醫師'] || '');
+    const st = t2m(apptTime(a)); if (isNaN(st)) return;
+    (blocks[dn] = blocks[dn] || []).push([st, apptEndMin(a, dn)]);
+  });
+  const free = [];
+  const docs = docSel === '__any__' ? [...new Set(sched.byClinic(clinic).filter(s => s.weekday === wd).map(s => s.doctor))] : [docSel];
+  docs.forEach(dn => {
+    const cfg = cfgFor(dn);
+    const dur = type === '初診' ? cfg.initMin : cfg.followMin;
+    sched.slotsFor(dn, clinic, wd).forEach(r => {
+      for (let t = t2m(r.start); t + dur <= t2m(r.end); t += cfg.followMin) {
+        const conflict = (blocks[normDoc(dn)] || []).some(([bs, be]) => t < be && bs < t + dur);
+        if (!conflict) free.push({ t: m2t(t), dn, dur });
+      }
+    });
+  });
+  free.sort((a, b) => a.t.localeCompare(b.t) || a.dn.localeCompare(b.dn, 'zh-Hant'));
+  const sel = m.querySelector('#qk-time');
+  sel.innerHTML = free.length
+    ? free.map(f => `<option value="${f.t}|${esc(f.dn)}" ${f.t===preferT && (docSel==='__any__' || f.dn===docSel) ? 'selected' : ''}>${f.t}～${m2t(t2m(f.t)+f.dur)}${docSel==='__any__' ? '｜' + esc(f.dn) + ' 醫師' : ''}</option>`).join('')
+    : '<option value="">（無可約時段）</option>';
+}
+async function qkSave(m, btn) {
+  const { date, clinic } = JSON.parse(m.dataset.qk);
+  const type = m.dataset.type || '複診';
+  const tv = m.querySelector('#qk-time').value;
+  if (!tv) { toast('無可約時段', 'var(--amber)'); return; }
+  const [time, dn] = tv.split('|');
+  const phone = m.querySelector('#qk-phone').value.trim();
+  const caseNo = m.querySelector('#qk-case').value.trim();
+  const name = m.querySelector('#qk-name').value.trim();
+  const caseVerified = m.dataset.caseVerified === caseNo && caseNo;
+  if (!phoneOK(phone) && !caseVerified) {
+    toast(caseNo ? '病歷號尚未帶入成功（按 🔍 帶入驗證）' : '請填電話，或填病歷號按 🔍 帶入', 'var(--amber)');
+    return;
+  }
+  btn.disabled = true; btn.textContent = '建立中…';
+  const dur = durFor(type === '初診' ? 'initial' : 'followup', dn);
+  const res = await api.post('createCounterBooking', {
+    clinic, date, startTime: time, endTime: m2t(t2m(time) + dur), doctor: dn,
+    name: name || '(未填)', phone: phone, caseFull: caseNo,
+    type, note: m.querySelector('#qk-note').value.trim(),
+    employeeId: S.cUser.employeeId, employeeName: S.cUser.name, source: 'walk_in'
+  }, true);
+  if (res.ok) {
+    S.apptCache.delete(clinic + '|' + date);
+    const inc = !name || (!phoneOK(phone) && type === '複診' && !caseNo);
+    toast(inc ? '✓ 已卡位！記得稍後補齊資料（頂部提醒）' : '✓ 掛號完成');
+    closeModals(); renderCounter();
+  } else { btn.disabled = false; btn.textContent = '✓ 建立掛號'; toast('失敗：' + (res.error || ''), 'var(--red)'); }
+}
+/* 補登 modal */
+function openFixAppt(a, dateStr) {
+  const m = modal(`<div class="mh">✏️ 補齊資料 · ${esc(dateStr)} ${esc(apptTime(a))}
+      <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb"><div class="fgrid">
+      <div class="frow"><label>姓名 *</label><input id="fx-name" value="${esc((a.name||a['病人姓名']||'').replace(/^\(未填\)$/,''))}"></div>
+      <div class="frow"><label>電話 *</label><input id="fx-phone" value="${esc(a.phone||a['電話']||'')}"></div>
+      <div class="frow"><label>病歷號${(a.type||a['類型'])==='複診'?' *':'（初診無）'}</label><input id="fx-case" value="${esc(caseNoOf(a))}"></div>
+      <div class="frow"><label>身分證（選填）</label><input id="fx-id" value="${esc(a.idNo||a['身分證']||'')}"></div>
+    </div></div>
+    <div class="mf"><button class="btn btn-o" data-act="close-modal">取消</button>
+      <button class="btn btn-g" data-act="fx-save">💾 儲存</button></div>`);
+  m.dataset.fx = JSON.stringify({ apptId: a.apptId || a.id || a['預約編號'] || '', clinic: S.cClinic, date: dateStr });
+}
+async function fxSave(m, btn) {
+  const { apptId, clinic, date } = JSON.parse(m.dataset.fx);
+  btn.disabled = true;
+  const res = await api.post('updateAppointmentFields', { apptId, fields: {
+    '病人姓名': $('#fx-name').value.trim(), '電話': $('#fx-phone').value.trim(),
+    '病例號': $('#fx-case').value.trim(), '身分證': $('#fx-id').value.trim()
+  }, employeeName: S.cUser.name, employeeId: S.cUser.employeeId }, true);
+  if (res.ok) { S.apptCache.delete(clinic + '|' + date); toast('✓ 資料已補齊'); closeModals(); renderCounter(); }
+  else { btn.disabled = false; toast('儲存失敗：' + (res.error || ''), 'var(--red)'); }
+}
+/* 未補齊提醒 banner（日/週共用） */
+function incompleteBanner(items) {
+  if (!items.length) return '';
+  return `<div class="orph" style="background:#fef2f2;border-color:#fecaca">
+    <b style="color:#991b1b">⚠️ ${items.length} 筆掛號資料未補齊</b>
+    <div style="margin-top:6px;display:flex;flex-direction:column;gap:5px">` + items.map(x =>
+      `<div style="display:flex;align-items:center;gap:8px;font-size:14px">
+        <span><b>${esc(x.ds.slice(5))} ${esc(apptTime(x.a))}</b> ${esc(x.a.name||x.a['病人姓名']||'(未填)')} · ${esc(normDoc(x.a.doctor||x.a['醫師']||''))} · 缺：<span style="color:var(--red);font-weight:700">${x.miss.join('、')}</span></span>
+        <button class="btn btn-p btn-sm" data-act="fx-open" data-k="${x.key}">✏️ 補登</button></div>`).join('')
+    + `</div></div>`;
+}
+
 /* 預約詳情 modal */
 function openApptDetail(key) {
   const list = (window.__cdApptIndex || {})[key] || [];
@@ -1588,17 +1744,42 @@ function htmlCNotify() {
       <span style="flex:1"></span>
       <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
     </div>
-    <p class="muted" style="margin-bottom:10px">📨 本日看診預約的通知總覽：電話（前一日人工通知）＋ 簡訊/LINE 自動發送結果</p>
+    <p class="muted" style="margin-bottom:10px">📨 上半：本日「看診」預約的通知狀態 ｜ 下半：本日「實際發出」的簡訊/LINE 紀錄（含幫未來預約發的）</p>
     <div id="cn-box" class="muted" style="padding:14px;text-align:center">載入中…</div>
+    <h3 style="margin:18px 0 8px">📤 本日發送紀錄</h3>
+    <div id="cn-sent" class="muted" style="padding:14px;text-align:center">載入中…</div>
   </div>`;
+}
+function renderSentLog(res) {
+  const el = $('#cn-sent');
+  if (!el) return;
+  const rows = (res && res.ok && res.data) || [];
+  if (!rows.length) {
+    el.innerHTML = `<p class="muted">本日尚無發送紀錄${res && !res.ok ? '（後端未部署 getNotifyLogBySentDate，請貼 v11.6）' : ''}</p>`;
+    return;
+  }
+  const badge = st => /成功|已送達|sent/i.test(st) ? `<span class="tag tag-g">✓ ${esc(st)}</span>`
+    : /失敗|fail/i.test(st) ? `<span class="tag tag-r">✗ ${esc(st)}</span>`
+    : `<span class="tag tag-a">${esc(st)}</span>`;
+  el.style.textAlign = '';
+  el.innerHTML = `<div class="muted" style="margin-bottom:6px">共 ${rows.length} 筆（新→舊）</div>
+    <div style="overflow:auto;max-height:420px"><table class="tbl"><thead><tr>
+    <th>時間</th><th>類型</th><th>渠道</th><th>對象</th><th>內容</th><th>狀態</th>
+    </tr></thead><tbody>` + rows.map(r => `<tr>
+      <td><b>${esc(r.time)}</b></td><td>${esc(r.kind)}</td><td>${esc(r.channel)}</td>
+      <td>${esc(r.target)}</td>
+      <td class="muted" style="max-width:300px;font-size:12.5px">${esc(r.content)}…</td>
+      <td>${badge(r.status)}</td></tr>`).join('') + `</tbody></table></div>`;
 }
 async function loadCNotify() {
   const clinic = S.cClinic, date = S.cDate;
   S.apptCache.delete(clinic + '|' + date);
-  const [appts, logRes] = await Promise.all([
+  const [appts, logRes, sentRes] = await Promise.all([
     getAppts(clinic, date),
-    api.post('getNotifyLogByClinicDate', { clinic, date }, true)
+    api.post('getNotifyLogByClinicDate', { clinic, date }, true),
+    api.post('getNotifyLogBySentDate', { date }, true)
   ]);
+  renderSentLog(sentRes);
   const el = $('#cn-box');
   if (!el || S.cClinic !== clinic || S.cDate !== date) return;
   const smsMap = (logRes.ok && logRes.data) || logRes || {};
@@ -2025,6 +2206,35 @@ document.addEventListener('click', async e => {
       if (a) openApptDetailFromObj(a, el.dataset.k.split('|')[0]);
       break; }
     case 'appt-detail': openApptDetail(el.dataset.k); break;
+    case 'cd-slot': openQuickBook(S.cDate, el.dataset.doc, el.dataset.t); break;
+    case 'cw-add': openQuickBook(el.dataset.ds, null, null); break;
+    case 'qk-type': {
+      m.dataset.type = el.dataset.v;
+      m.querySelectorAll('.qk-vt').forEach(b => b.classList.toggle('on', b === el));
+      refreshQkTimes(m); break; }
+    case 'qk-case-fill': {
+      const caseNo = m.querySelector('#qk-case').value.trim();
+      const msg = m.querySelector('#qk-case-msg');
+      if (!caseNo) { msg.textContent = '請先輸入病歷號'; break; }
+      msg.textContent = '查詢中…';
+      const res = await api.get('lookupPatient', { keyword: caseNo });
+      const hit = (res.ok && res.data && res.data[0]) || null;
+      if (hit) {
+        m.querySelector('#qk-name').value = hit.name || hit['病人姓名'] || hit['姓名'] || '';
+        m.querySelector('#qk-phone').value = hit.phone || hit['電話'] || '';
+        m.dataset.caseVerified = caseNo;
+        msg.innerHTML = '<span style="color:var(--green);font-weight:700">✓ 已帶入：' + esc(m.querySelector('#qk-name').value || '(後台無姓名)') + '</span>';
+      } else {
+        m.dataset.caseVerified = '';
+        msg.innerHTML = '<span style="color:var(--red)">✗ 後台查無此病歷號（初診請改填電話）</span>';
+      }
+      break; }
+    case 'qk-save': qkSave(m, el); break;
+    case 'fx-open': {
+      const x = (window.__fxIndex || {})[el.dataset.k];
+      if (x) openFixAppt(x.a, x.ds);
+      break; }
+    case 'fx-save': fxSave(m, el); break;
     case 'cd-mark': {
       const a = window.__cdCurAppt;
       if (!a) break;
@@ -2108,6 +2318,7 @@ document.addEventListener('change', e => {
     S.ordTitlesDraft[e.target.dataset.n] = e.target.value;
     renderAdmin();
   }
+  if (e.target.id === 'qk-doc') refreshQkTimes(e.target.closest('.mask'));
 });
 function captureF4() {
   const g = id => $(id) ? $(id).value.trim() : '';
@@ -2122,7 +2333,7 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   if (e.target.id === 'cl-pw') $('[data-act="c-login"]').click();
   if (e.target.id === 'al-pw') $('[data-act="a-login"]').click();
-  if (['lk-name','lk-phone','lk-id'].includes(e.target.id)) $('[data-act="lk-go"]').click();
+  if (e.target.id === 'lk-phone') $('[data-act="lk-go"]').click();
 });
 /* 頁面重新可見時，若快取過期則背景刷新（取代輪詢） */
 document.addEventListener('visibilitychange', () => {
