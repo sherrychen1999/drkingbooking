@@ -9,28 +9,28 @@
 :root{--navy:#1e2a3a;--blue:#3b82f6;--purple:#6d28d9;--green:#16a34a;--amber:#f59e0b;--red:#dc2626;
 --bg:#f1f5f9;--card:#fff;--txt:#0f172a;--txt2:#475569;--txt3:#94a3b8;--line:#e2e8f0;--r:12px}
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--txt);font-size:15px}
+body{-webkit-text-size-adjust:100%;font-family:-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--txt);font-size:17px}
 button{font-family:inherit;cursor:pointer}
-input,select,textarea{font-family:inherit;font-size:14px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:8px;background:#fff}
+input,select,textarea{font-family:inherit;font-size:16px;padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:8px;background:#fff}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
 /* ===== splash ===== */
 #splash{position:fixed;inset:0;background:linear-gradient(135deg,#667eea,#764ba2);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;color:#fff;transition:opacity .3s}
 #splash.done{opacity:0;pointer-events:none}
-#splash .logo{font-size:42px;margin-bottom:12px}
+#splash .logo{font-size:48.5px;margin-bottom:12px}
 #splash .spin{width:36px;height:36px;border:4px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;margin-top:18px}
 @keyframes spin{to{transform:rotate(360deg)}}
-#splash .msg{margin-top:14px;font-size:14px;opacity:.85}
+#splash .msg{margin-top:14px;font-size:16px;opacity:.85}
 /* ===== nav ===== */
 nav{background:var(--navy);color:#fff;padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:100}
-nav .brand{font-weight:700;font-size:16px}
+nav .brand{font-weight:700;font-size:18.5px}
 nav .tabs{display:flex;gap:8px}
-nav .tabs button{background:transparent;color:#cbd5e1;border:none;padding:8px 14px;border-radius:8px;font-size:14px;font-weight:600}
+nav .tabs button{background:transparent;color:#cbd5e1;border:none;padding:8px 14px;border-radius:8px;font-size:16px;font-weight:600}
 nav .tabs button.on{background:var(--blue);color:#fff}
 /* ===== 共用 ===== */
 .page{display:none;max-width:1200px;margin:0 auto;padding:20px 16px}
 .page.on{display:block}
 .card{background:var(--card);border-radius:var(--r);padding:20px;box-shadow:0 2px 8px rgba(15,23,42,.06);margin-bottom:16px}
-.btn{border:none;border-radius:8px;padding:10px 18px;font-size:14px;font-weight:600;transition:filter .15s}
+.btn{border:none;border-radius:8px;padding:10px 18px;font-size:16px;font-weight:600;transition:filter .15s}
 .btn:hover{filter:brightness(1.08)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn-p{background:var(--blue);color:#fff}
@@ -38,33 +38,33 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .btn-o{background:#fff;color:var(--txt2);border:1.5px solid #cbd5e1}
 .btn-r{background:#fee2e2;color:#991b1b}
 .btn-a{background:#fef3c7;color:#92400e}
-.btn-sm{padding:6px 12px;font-size:13px}
-.tag{display:inline-block;padding:3px 10px;border-radius:6px;font-size:12px;font-weight:600}
+.btn-sm{padding:6px 12px;font-size:15px}
+.tag{display:inline-block;padding:3px 10px;border-radius:6px;font-size:14px;font-weight:600}
 .tag-g{background:#dcfce7;color:#15803d}.tag-a{background:#fef3c7;color:#92400e}.tag-r{background:#fee2e2;color:#991b1b}.tag-b{background:#dbeafe;color:#1e40af}
-.muted{color:var(--txt3);font-size:13px}
+.muted{color:var(--txt3);font-size:15px}
 /* ===== toast ===== */
 #toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:10001;display:flex;flex-direction:column;gap:8px;align-items:center}
-.toast{padding:12px 22px;border-radius:10px;color:#fff;font-weight:600;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:tin .25s ease-out}
+.toast{padding:12px 22px;border-radius:10px;color:#fff;font-weight:600;font-size:16px;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:tin .25s ease-out}
 @keyframes tin{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
 /* ===== modal ===== */
 .mask{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px}
 .modal{background:#fff;border-radius:14px;max-width:640px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-.modal .mh{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:17px}
+.modal .mh{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:19.5px}
 .modal .mb{padding:18px 20px}
 .modal .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
 /* ===== patient hero + hub ===== */
 .hero{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:var(--r);padding:34px 20px;text-align:center;margin-bottom:18px}
-.hero h1{font-size:26px}.hero p{margin-top:8px;opacity:.9;font-size:14px}
+.hero h1{font-size:30px}.hero p{margin-top:8px;opacity:.9;font-size:16px}
 #hub{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:760px;margin:0 auto}
 .hub-card{border:none;border-radius:16px;padding:34px 22px;text-align:center;color:#fff;transition:transform .18s,box-shadow .18s}
 .hub-card:hover{transform:translateY(-4px);box-shadow:0 14px 34px rgba(0,0,0,.22)}
-.hub-card .ic{font-size:56px}.hub-card h3{font-size:21px;margin:10px 0 6px}.hub-card p{font-size:13px;opacity:.9}
+.hub-card .ic{font-size:64.5px}.hub-card h3{font-size:24px;margin:10px 0 6px}.hub-card p{font-size:15px;opacity:.9}
 .hub-new{background:linear-gradient(135deg,#667eea,#764ba2)}
 .hub-find{background:linear-gradient(135deg,#11998e,#38ef7d)}
 @media(max-width:640px){#hub{grid-template-columns:1fr}}
 /* ===== steps ===== */
 .steps{display:flex;align-items:center;justify-content:center;gap:6px;margin:18px 0}
-.step{width:34px;height:34px;border-radius:50%;background:#e2e8f0;color:var(--txt3);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.step{width:34px;height:34px;border-radius:50%;background:#e2e8f0;color:var(--txt3);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px}
 .step.on{background:var(--blue);color:#fff}.step.done{background:var(--green);color:#fff}
 .sline{width:34px;height:3px;background:#e2e8f0;border-radius:2px}.sline.done{background:var(--green)}
 /* ===== doctor / clinic grid ===== */
@@ -72,27 +72,27 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .dcard{background:#fff;border:2px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s}
 .dcard:hover{border-color:var(--purple);transform:translateY(-3px);box-shadow:0 10px 24px rgba(109,40,217,.16)}
 .dcard.sel{border-color:var(--purple);background:#f5f3ff}
-.dcard .ph{width:100%;aspect-ratio:3/4;background:linear-gradient(135deg,#a78bfa,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:52px;font-weight:700;color:#fff;position:relative;overflow:hidden}
+.dcard .ph{width:100%;aspect-ratio:3/4;background:linear-gradient(135deg,#a78bfa,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:60px;font-weight:700;color:#fff;position:relative;overflow:hidden}
 .dcard .ph .pimg{position:absolute;left:0;right:0;top:-6.5%;height:106.5%;background-size:cover;background-position:center top}
 .poster-wrap{position:relative;overflow:hidden;max-height:66vh;aspect-ratio:59/84;margin:0 auto;background:#f8fafc;cursor:zoom-in;width:100%}
 .poster-wrap img{position:absolute;left:0;top:-6.5%;width:100%;height:106.5%;object-fit:cover}
 .dcard .inf{padding:11px 13px}
-.dcard .nm{font-weight:700;font-size:15.5px}.dcard .cl{font-size:11.5px;color:var(--txt3);margin-top:4px;line-height:1.55}
+.dcard .nm{font-weight:700;font-size:18px}.dcard .cl{font-size:13px;color:var(--txt3);margin-top:4px;line-height:1.55}
 .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:14px}
 .ccard{background:#fff;border:2px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;transition:border-color .15s}
 .ccard:hover,.ccard.sel{border-color:var(--blue);background:#eff6ff}
-.ccard h4{font-size:15px}.ccard .muted{margin-top:4px}
+.ccard h4{font-size:17px}.ccard .muted{margin-top:4px}
 .vtoggle{display:flex;gap:8px;margin-bottom:4px}
 .vtoggle button{flex:1;padding:10px;border-radius:9px;border:2px solid #cbd5e1;background:#fff;color:var(--txt2);font-weight:600}
 .vtoggle button.on{background:var(--purple);border-color:var(--purple);color:#fff}
 /* ===== 門診表 table ===== */
-.sched-tbl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+.sched-tbl{width:100%;border-collapse:collapse;font-size:14.5px;margin-top:10px}
 .sched-tbl th,.sched-tbl td{border:1px solid #e7d9c4;padding:6px;text-align:center;vertical-align:top}
 .sched-tbl th{background:#f3e8d8;color:#6b4c2a}
 .sched-tbl td .si{margin:3px 0;padding:5px;border-radius:6px;background:#fdf9f1;cursor:pointer;transition:background .12s}
 .sched-tbl td .si:hover{background:#f5e6cc}
-.sched-tbl td .si b{display:block;font-size:12.5px;color:#4a3418}
-.sched-tbl td .si span{font-size:11px;color:#8a6d43}
+.sched-tbl td .si b{display:block;font-size:14.5px;color:#4a3418}
+.sched-tbl td .si span{font-size:12.5px;color:#8a6d43}
 /* ===== calendar ===== */
 .calwrap{display:grid;grid-template-columns:340px 1fr;gap:18px}
 @media(max-width:760px){.calwrap{grid-template-columns:1fr}}
@@ -100,78 +100,78 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .cal .chead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:700}
 .cal .chead button{width:30px;height:30px;border-radius:6px;border:1px solid #cbd5e1;background:#f8fafc}
 .cal .cg{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
-.cal .wd{text-align:center;font-size:12px;color:var(--txt3);padding:4px 0}
+.cal .wd{text-align:center;font-size:14px;color:var(--txt3);padding:4px 0}
 .cal .wd.we{color:#dc2626}
-.cal .dc{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;font-size:14px;color:#cbd5e1;position:relative}
+.cal .dc{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;font-size:16px;color:#cbd5e1;position:relative}
 .cal .dc.ok{background:#e8f5e9;color:#2e7d32;font-weight:700;cursor:pointer}
 .cal .dc.ok:hover{background:#c8e6c9}
 .cal .dc.ok.multi{background:#fef3c7;color:#92400e}
-.cal .dc.ok small{font-size:9px;font-weight:400;line-height:1}
+.cal .dc.ok small{font-size:10.5px;font-weight:400;line-height:1}
 .cal .dc.today{box-shadow:0 0 0 2px var(--amber) inset}
 .cal .dc.sel{background:var(--green)!important;color:#fff!important}
 /* ===== time slots ===== */
-.tsgrp h4{margin:12px 0 6px;font-size:14px;color:var(--txt2)}
+.tsgrp h4{margin:12px 0 6px;font-size:16px;color:var(--txt2)}
 .tslots{display:flex;flex-wrap:wrap;gap:7px}
-.ts{padding:9px 13px;border:2px solid #86efac;background:#f0fdf4;color:#15803d;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px;text-align:center;transition:background .1s}
+.ts{padding:9px 13px;border:2px solid #86efac;background:#f0fdf4;color:#15803d;border-radius:8px;cursor:pointer;font-weight:700;font-size:16px;text-align:center;transition:background .1s}
 .ts:hover{background:#bbf7d0}
 .ts.full{background:#4b5563;color:#e5e7eb;border-color:#374151;cursor:not-allowed;text-decoration:line-through;opacity:.8}
 .ts.sel{background:var(--green);color:#fff;border-color:#15803d}
-.ts small{display:block;font-size:11px;font-weight:400}
+.ts small{display:block;font-size:12.5px;font-weight:400}
 /* ===== form ===== */
 .frow{margin-bottom:14px}
-.frow label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;color:var(--txt2)}
+.frow label{display:block;font-size:15px;font-weight:600;margin-bottom:6px;color:var(--txt2)}
 .frow input,.frow select,.frow textarea{width:100%}
 .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:640px){.fgrid{grid-template-columns:1fr}}
 .vt{display:flex;gap:10px}
 .vt button{flex:1;padding:12px;border-radius:10px;border:2px solid #cbd5e1;background:#fff;font-weight:700}
 .vt button.on{border-color:var(--blue);background:#eff6ff;color:var(--blue)}
-.chk{display:flex;align-items:flex-start;gap:8px;padding:10px;border:1.5px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer;font-size:13.5px}
+.chk{display:flex;align-items:flex-start;gap:8px;padding:10px;border:1.5px solid var(--line);border-radius:8px;margin-bottom:8px;cursor:pointer;font-size:15.5px}
 .chk input{width:auto;margin-top:2px}
 /* ===== appt card (lookup) ===== */
 .acard{background:#f8fafc;border:2px solid var(--line);border-radius:12px;padding:14px 16px;margin:10px 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
-.acard .ad{font-size:16px;font-weight:700}.acard .am{font-size:13px;color:var(--txt2);margin-top:3px}
+.acard .ad{font-size:18.5px;font-weight:700}.acard .am{font-size:15px;color:var(--txt2);margin-top:3px}
 /* ===== counter ===== */
 .cwrap{display:grid;grid-template-columns:210px 1fr;gap:16px}
 @media(max-width:860px){.cwrap{grid-template-columns:1fr}}
 .side{background:#fff;border-radius:var(--r);padding:14px;height:fit-content}
-.side .who{font-size:13px;color:var(--txt3)}.side .whon{font-weight:700;font-size:15px;margin:2px 0 10px}
-.side .mi{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;font-size:14px;color:var(--txt2);cursor:pointer;margin-bottom:2px}
+.side .who{font-size:15px;color:var(--txt3)}.side .whon{font-weight:700;font-size:17px;margin:2px 0 10px}
+.side .mi{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;font-size:16px;color:var(--txt2);cursor:pointer;margin-bottom:2px}
 .side .mi:hover{background:#f1f5f9}.side .mi.on{background:#dbeafe;color:#1e40af;font-weight:700}
 .login-card{max-width:360px;margin:60px auto;text-align:center}
 .login-card input{width:100%;margin-bottom:10px;text-align:center}
 /* counter grid */
 .dnav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
-.grid-tbl{width:100%;border-collapse:collapse;font-size:12px}
+.grid-tbl{width:100%;border-collapse:collapse;font-size:14px}
 .grid-tbl th{background:#f8fafc;border:1px solid var(--line);padding:8px 6px;position:sticky;top:52px}
-.grid-tbl th .gd{font-weight:700;font-size:13px}.grid-tbl th .gs{font-weight:400;color:var(--txt3);font-size:11px}
+.grid-tbl th .gd{font-weight:700;font-size:15px}.grid-tbl th .gs{font-weight:400;color:var(--txt3);font-size:12.5px}
 .grid-tbl td{border:1px solid var(--line);padding:2px;vertical-align:top;height:34px}
 .grid-tbl td.off{background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 6px,#f1f5f9 6px,#f1f5f9 12px)}
-.grid-tbl .tm{width:52px;text-align:center;color:var(--txt3);font-size:11px;background:#f8fafc}
-.apt{border-radius:6px;padding:3px 6px;font-size:11.5px;font-weight:600;cursor:pointer;margin:1px 0;color:#fff;background:var(--blue)}
+.grid-tbl .tm{width:52px;text-align:center;color:var(--txt3);font-size:12.5px;background:#f8fafc}
+.apt{border-radius:6px;padding:3px 6px;font-size:13px;font-weight:600;cursor:pointer;margin:1px 0;color:#fff;background:var(--blue)}
 .apt.i{background:#7c3aed}.apt.done{background:var(--green)}.apt.re{background:var(--amber)}.apt.x{background:#9ca3af;text-decoration:line-through}
 .orph{background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:12px 14px;margin-bottom:12px}
 /* admin */
 .stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px}
 .stat{background:#fff;border-radius:10px;padding:16px;border:1px solid var(--line)}
-.stat .sv{font-size:26px;font-weight:800;color:var(--blue)}.stat .sl{font-size:12.5px;color:var(--txt3);margin-top:4px}
-.tbl{width:100%;border-collapse:collapse;font-size:13px}
-.tbl th{background:#f8fafc;text-align:left;padding:9px 10px;border-bottom:2px solid var(--line);font-size:12.5px;color:var(--txt2)}
+.stat .sv{font-size:30px;font-weight:800;color:var(--blue)}.stat .sl{font-size:14.5px;color:var(--txt3);margin-top:4px}
+.tbl{width:100%;border-collapse:collapse;font-size:15px}
+.tbl th{background:#f8fafc;text-align:left;padding:9px 10px;border-bottom:2px solid var(--line);font-size:14.5px;color:var(--txt2)}
 .tbl td{padding:9px 10px;border-bottom:1px solid var(--line)}
 .tbl tr:hover td{background:#f8fafc}
 .syncbar{background:#eff6ff;border:2px solid #93c5fd;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 /* 日期 pill + 迷你月曆 */
-.dpill{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border:1.5px solid #cbd5e1;border-radius:22px;background:#fff;font-weight:700;cursor:pointer;font-size:14px;color:var(--txt)}
+.dpill{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border:1.5px solid #cbd5e1;border-radius:22px;background:#fff;font-weight:700;cursor:pointer;font-size:16px;color:var(--txt)}
 .dpill:hover{border-color:var(--blue);color:var(--blue)}
-.dpill .pe{color:var(--txt3);font-size:13px}
+.dpill .pe{color:var(--txt3);font-size:15px}
 /* 週檢視 */
 .cweek{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;overflow-x:auto}
 .cwd{border:1px solid var(--line);border-radius:10px;min-height:140px;background:#fff;min-width:120px}
-.cwd .cwh{padding:7px 4px;border-bottom:1px solid var(--line);text-align:center;font-weight:700;font-size:13px;background:#f8fafc;border-radius:10px 10px 0 0}
-.cwd .cwh small{display:block;color:var(--txt3);font-weight:400;font-size:11px}
+.cwd .cwh{padding:7px 4px;border-bottom:1px solid var(--line);text-align:center;font-weight:700;font-size:15px;background:#f8fafc;border-radius:10px 10px 0 0}
+.cwd .cwh small{display:block;color:var(--txt3);font-weight:400;font-size:12.5px}
 .cwd.today .cwh{background:#dbeafe;color:#1e40af}
 .cwd .cwb{padding:6px;display:flex;flex-direction:column;gap:4px}
-.cwa{font-size:11.5px;padding:4px 7px;border-radius:6px;background:#eff6ff;border-left:3px solid var(--blue);cursor:pointer;line-height:1.4}
+.cwa{font-size:13px;padding:4px 7px;border-radius:6px;background:#eff6ff;border-left:3px solid var(--blue);cursor:pointer;line-height:1.4}
 .cwa:hover{filter:brightness(.96)}
 .cwa.i{border-left-color:#7c3aed;background:#f5f3ff}
 .cwa.done{border-left-color:var(--green);background:#f0fdf4}
@@ -180,7 +180,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 </style>
 </head>
 <body>
-<div id="splash"><div class="logo">🏥</div><div style="font-size:20px;font-weight:700">金鶯減重診所</div><div class="spin"></div><div class="msg" id="splash-msg">載入最新班表中…</div></div>
+<div id="splash"><div class="logo">🏥</div><div style="font-size:23px;font-weight:700">金鶯減重診所</div><div class="spin"></div><div class="msg" id="splash-msg">載入最新班表中…</div></div>
 <nav>
   <div class="brand">🏥 金鶯減重診所｜預約系統</div>
   <div class="tabs">
@@ -225,11 +225,11 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 <!-- ═══════════ 櫃台端 ═══════════ -->
 <div id="page-counter" class="page">
   <div id="c-login" class="card login-card">
-    <div style="font-size:40px">💼</div><h2 style="margin:8px 0 4px">櫃台管理登入</h2>
+    <div style="font-size:46px">💼</div><h2 style="margin:8px 0 4px">櫃台管理登入</h2>
     <p class="muted" style="margin-bottom:14px">請輸入員工編號與密碼</p>
     <input id="cl-id" placeholder="員工編號" autocomplete="off">
     <input id="cl-pw" type="password" placeholder="密碼">
-    <div id="cl-err" style="color:var(--red);font-size:13px;min-height:18px;margin-bottom:6px"></div>
+    <div id="cl-err" style="color:var(--red);font-size:15px;min-height:18px;margin-bottom:6px"></div>
     <button class="btn btn-p" style="width:100%" data-act="c-login">登入</button>
   </div>
   <div id="c-main" class="cwrap" style="display:none">
@@ -237,6 +237,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
       <div class="who">當前登入</div><div class="whon" id="c-who">—</div>
       <button class="btn btn-o btn-sm" data-act="c-logout" style="margin-bottom:12px">登出</button>
       <div class="mi on" data-act="c-menu" data-v="day">📅 今日看診表</div>
+      <div class="mi" data-act="c-menu" data-v="call">📞 明日通知</div>
       <div class="mi" data-act="c-menu" data-v="quick">📞 電話預約登錄</div>
       <div class="mi" data-act="c-menu" data-v="find">🔎 病人查詢</div>
       <div class="mi" data-act="c-menu" data-v="notify">📨 通知紀錄</div>
@@ -249,11 +250,11 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 <!-- ═══════════ 系統管理 ═══════════ -->
 <div id="page-admin" class="page">
   <div id="a-login" class="card login-card">
-    <div style="font-size:40px">⚙️</div><h2 style="margin:8px 0 4px">系統管理登入</h2>
+    <div style="font-size:46px">⚙️</div><h2 style="margin:8px 0 4px">系統管理登入</h2>
     <p class="muted" style="margin-bottom:14px">限系統管理員</p>
     <input id="al-id" placeholder="員工編號" autocomplete="off">
     <input id="al-pw" type="password" placeholder="密碼">
-    <div id="al-err" style="color:var(--red);font-size:13px;min-height:18px;margin-bottom:6px"></div>
+    <div id="al-err" style="color:var(--red);font-size:15px;min-height:18px;margin-bottom:6px"></div>
     <button class="btn btn-p" style="width:100%" data-act="a-login">登入</button>
   </div>
   <div id="a-main" class="cwrap" style="display:none">
@@ -363,6 +364,9 @@ function modal(html) {
   return m;
 }
 function closeModals() { $('#modals').innerHTML = ''; }
+
+/* ───── 照片解析度：依場景取適當大小（卡片 1000 / modal 2000 / 原圖 2400）───── */
+const thumb = (u, w) => String(u || '').replace(/sz=w\d+/, 'sz=w' + w);
 
 /* ───── 預約時長規則 ───── */
 function cfgFor(doc) {
@@ -571,7 +575,7 @@ function htmlStep1() {
   if (v === 'doctor') {
     inner = `<div class="dgrid">` + S.doctors.map(d => {
       const ph = S.photos[d.shortName];
-      const av = ph ? `style="background-image:url('${esc(ph)}')"` : '';
+      const av = ph ? `style="background-image:url('${esc(thumb(ph, 1000))}')"` : '';
       const sel = S.bk.doctor === d.shortName ? ' sel' : '';
       return `<div class="dcard${sel}" data-act="pick-doc" data-d="${esc(d.shortName)}">
         <div class="ph">${ph ? `<div class="pimg" ${av}></div>` : esc(d.shortName.charAt(0))}</div>
@@ -592,7 +596,7 @@ function htmlStep1() {
     }).join('') + `</div>`;
   }
   return `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-    <div><h2 style="font-size:19px">Step 1 · 指定預約醫師</h2>
+    <div><h2 style="font-size:22px">Step 1 · 指定預約醫師</h2>
     <p class="muted" style="margin-top:4px">醫師會於不同院區輪診，選定醫師後可再選擇看診院區</p></div>
     <button class="btn btn-o btn-sm" data-act="hub-back">← 回首頁</button></div>
     <div class="vtoggle" style="margin-top:12px">
@@ -631,11 +635,11 @@ function clinicWeekTable(clinic) {
 async function openDoctorIntro(shortName) {
   const ph = S.photos[shortName];
   const hero = ph
-    ? `<div class="poster-wrap" onclick="window.open('${esc(ph)}'.replace(/sz=w\d+/,'sz=w2400'))"><img src="${esc(ph)}" alt="${esc(shortName)}"></div>`
+    ? `<div class="poster-wrap" onclick="window.open('${esc(thumb(ph, 2400))}')"><img src="${esc(thumb(ph, 2000))}" alt="${esc(shortName)}"></div>`
     : '';
   const m = modal(`<div class="mh"><div style="display:flex;gap:12px;align-items:center">
       <div>${esc(shortName)} 醫師</div>
-      <div id="di-tag" class="muted" style="font-weight:400;font-style:italic;font-size:13.5px"></div></div>
+      <div id="di-tag" class="muted" style="font-weight:400;font-style:italic;font-size:15.5px"></div></div>
       <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
     ${hero}
     <div class="mb"><div id="di-bio" class="muted">載入介紹中…</div><div id="di-photos" style="margin-top:14px"></div></div>
@@ -671,25 +675,25 @@ function openDoctorSchedule(shortName) {
   let grid = '';
   for (let i = 0; i < 7; i++) {
     grid += `<div style="display:flex;flex-direction:column;gap:6px">
-      <div style="text-align:center;font-weight:700;color:#2f5d3f;font-size:13px;background:#e8f0e8;border-radius:8px;padding:6px 0">星期${WDS[(i+1)%7]}</div>`;
+      <div style="text-align:center;font-weight:700;color:#2f5d3f;font-size:15px;background:#e8f0e8;border-radius:8px;padding:6px 0">星期${WDS[(i+1)%7]}</div>`;
     byWd[i].forEach(r => {
       grid += `<div data-act="ds-slot" data-d="${esc(shortName)}" data-c="${esc(r.clinic)}" data-w="${r.weekday}"
         style="background:#fff;border:2px solid transparent;border-radius:10px;padding:8px 4px;text-align:center;cursor:pointer;min-height:84px;display:flex;flex-direction:column;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.06)"
         onmouseover="this.style.borderColor='#5d8366'" onmouseout="this.style.borderColor='transparent'">
-        <div style="font-weight:700;font-size:13px;color:#2f5d3f">${esc(r.clinic.replace(/院區$/,'減重'))}</div>
-        ${r.note && !/減重專診/.test(r.note) ? `<div style="font-size:10px;color:#94a3b8">(${esc(r.note)})</div>` : ''}
-        <div style="font-size:12px;color:#5d8366;margin-top:2px">${esc(r.start)}<br>|<br>${esc(r.end)}</div></div>`;
+        <div style="font-weight:700;font-size:15px;color:#2f5d3f">${esc(r.clinic.replace(/院區$/,'減重'))}</div>
+        ${r.note && !/減重專診/.test(r.note) ? `<div style="font-size:11.5px;color:#94a3b8">(${esc(r.note)})</div>` : ''}
+        <div style="font-size:14px;color:#5d8366;margin-top:2px">${esc(r.start)}<br>|<br>${esc(r.end)}</div></div>`;
     });
     for (let j = byWd[i].length; j < maxR; j++) grid += `<div style="min-height:84px;background:rgba(255,255,255,.4);border-radius:10px"></div>`;
     grid += `</div>`;
   }
   const mEl = modal(`<div style="background:#f4f7f4;border-radius:14px">
     <div class="mh" style="border:none;justify-content:center;position:relative">
-      <div style="text-align:center"><div style="font-size:19px;font-weight:700;color:#2f5d3f">${esc(shortName)} 減重醫師 ${mon}月</div>
+      <div style="text-align:center"><div style="font-size:22px;font-weight:700;color:#2f5d3f">${esc(shortName)} 減重醫師 ${mon}月</div>
       <div class="muted" style="margin-top:2px">點選下方任一時段即可預約 · 異動班表以公告為主</div></div>
       <button class="btn btn-o btn-sm" data-act="close-modal" style="position:absolute;right:14px;top:14px">✕</button></div>
     <div class="mb"><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:8px">${grid}</div>
-    <div style="text-align:center;color:#6b8a6f;font-style:italic;margin-top:12px;font-size:13px">— 金鶯減重診所 —</div></div></div>`);
+    <div style="text-align:center;color:#6b8a6f;font-style:italic;margin-top:12px;font-size:15px">— 金鶯減重診所 —</div></div></div>`);
   mEl.querySelector('.modal').style.maxWidth = '920px';
 }
 
@@ -697,7 +701,7 @@ function openDoctorSchedule(shortName) {
 function htmlStep2() {
   const d = S.bk.doctor;
   const clinics = sched.clinicsFor(d);
-  return `<h2 style="font-size:19px">Step 2 · 選擇看診院區</h2>
+  return `<h2 style="font-size:22px">Step 2 · 選擇看診院區</h2>
     <p class="muted" style="margin-top:4px">${esc(d)} 醫師駐診院區</p>
     <div class="cgrid">` + clinics.map(c =>
       `<div class="ccard ${S.bk.clinic===c?'sel':''}" data-act="pick-clinic2" data-c="${esc(c)}">
@@ -713,10 +717,10 @@ function htmlStep3() {
   const now = new Date();
   if (b.calY == null) { b.calY = now.getFullYear(); b.calM = now.getMonth() + 1; }
   const banner = b.anyDoc
-    ? `<div style="background:#dbeafe;color:#1e3a8a;padding:9px 13px;border-radius:8px;margin-bottom:12px;font-size:13.5px;font-weight:600">🏥 ${esc(b.clinic)} · 不指定醫師模式 <span style="font-weight:400;color:#475569">挑時段時系統會自動配對醫師</span></div>`
+    ? `<div style="background:#dbeafe;color:#1e3a8a;padding:9px 13px;border-radius:8px;margin-bottom:12px;font-size:15.5px;font-weight:600">🏥 ${esc(b.clinic)} · 不指定醫師模式 <span style="font-weight:400;color:#475569">挑時段時系統會自動配對醫師</span></div>`
     : `<div class="muted" style="margin-bottom:12px">已選：<b style="color:var(--txt)">${esc(b.doctor)} 醫師 · ${esc(b.clinic)}</b></div>`;
   const cfgTxt = b.anyDoc ? ['依各醫師設定','依各醫師設定'] : [cfgFor(b.doctor).initMin+' 分鐘', cfgFor(b.doctor).followMin+' 分鐘'];
-  return `<h2 style="font-size:19px">Step 3 · 選擇看診日期與時段</h2>
+  return `<h2 style="font-size:22px">Step 3 · 選擇看診日期與時段</h2>
     <div style="margin-top:10px">${banner}</div>
     <div class="frow" style="max-width:460px"><label>就診類型（時段長度不同，請先選）*</label><div class="vt">
       <button class="${b.type==='initial'?'on':''}" data-act="vt" data-v="initial">初診<br><small class="muted">${cfgTxt[0]}</small></button>
@@ -824,20 +828,20 @@ function htmlBloodSection() {
   const mode = b.blood.mode;
   let inner = '';
   if (mode === 'external') {
-    inner = `<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:10px 12px;font-size:13px;color:#1e40af;line-height:1.6">
+    inner = `<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:10px 12px;font-size:15px;color:#1e40af;line-height:1.6">
       ✓ 使用外院近 <b>14 天內</b>抽血報告。<br>⚠️ 報告請於<b>初診日當天帶來</b>給醫師評估；若資訊不足，當天仍會補抽確認。</div>`;
   } else if (mode === 'sameday' || noneAvail) {
-    inner = `<div style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:8px;padding:10px 12px;font-size:13px;color:#92400e;line-height:1.6">
+    inner = `<div style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:8px;padding:10px 12px;font-size:15px;color:#92400e;line-height:1.6">
       看診日較近，已無法提前抽血。<br>請於<b>初診當日提早 30 分鐘</b>到院抽血。</div>`;
   } else {
-    inner = `<div style="font-size:12.5px;color:var(--txt2);margin-bottom:8px">請選擇到 <b>${esc(b.clinic)}</b> 的抽血日期（最早 ${mdTxt(fmtD(new Date(new Date(b.date+'T00:00').getTime()-6*86400000)))}、最晚 ${mdTxt(fmtD(new Date(new Date(b.date+'T00:00').getTime()-3*86400000)))}）：</div>
+    inner = `<div style="font-size:14.5px;color:var(--txt2);margin-bottom:8px">請選擇到 <b>${esc(b.clinic)}</b> 的抽血日期（最早 ${mdTxt(fmtD(new Date(new Date(b.date+'T00:00').getTime()-6*86400000)))}、最晚 ${mdTxt(fmtD(new Date(new Date(b.date+'T00:00').getTime()-3*86400000)))}）：</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">`
       + dates.map(ds => `<button type="button" class="btn btn-sm ${b.blood.date===ds?'btn-g':'btn-o'}" data-act="blood-date" data-ds="${ds}">${mdTxt(ds)}</button>`).join('')
-      + `</div><div class="muted" style="font-size:11.5px;margin-top:6px">營業時間內到院即可，無需再約時間</div>`;
+      + `</div><div class="muted" style="font-size:13px;margin-top:6px">營業時間內到院即可，無需再約時間</div>`;
   }
   return `<div class="frow" style="margin-top:14px"><label>🩸 初診抽血安排 *</label>
     <div style="border:2px solid #fecaca;border-radius:10px;padding:12px;background:#fff">
-    <div style="font-size:12.5px;color:var(--txt2);margin-bottom:10px">初診需先完成抽血，讓醫師於看診時一併評估身體狀況。</div>
+    <div style="font-size:14.5px;color:var(--txt2);margin-bottom:10px">初診需先完成抽血，讓醫師於看診時一併評估身體狀況。</div>
     <div class="vt" style="margin-bottom:10px">
       <button type="button" class="${mode!=='external'?'on':''}" data-act="blood-mode" data-v="${noneAvail?'sameday':'date'}">🏥 到院抽血</button>
       <button type="button" class="${mode==='external'?'on':''}" data-act="blood-mode" data-v="external">📄 外院 14 天內報告</button>
@@ -848,7 +852,7 @@ function htmlBloodSection() {
 /* ── Step 4：填資料 ── */
 function htmlStep4() {
   const b = S.bk;
-  return `<h2 style="font-size:19px">Step 4 · 填寫就診資料</h2>
+  return `<h2 style="font-size:22px">Step 4 · 填寫就診資料</h2>
     <div class="fgrid" style="margin-top:14px">
     <div>
       <div class="frow"><label>就診類型（於上一步選擇）</label>
@@ -865,7 +869,7 @@ function htmlStep4() {
       ${b.type === 'initial' ? htmlBloodSection() : ''}
     </div>
     <div>
-      <label style="font-size:13px;font-weight:600;color:var(--txt2);display:block;margin-bottom:6px">諮詢項目（可複選、可跳過）</label>
+      <label style="font-size:15px;font-weight:600;color:var(--txt2);display:block;margin-bottom:6px">諮詢項目（可複選、可跳過）</label>
       ${['破痛痩減重','猛健樂 / 朋樂纖針劑套組','代謝檢測'].map(x =>
         `<label class="chk"><input type="checkbox" class="f-item" value="${esc(x)}" ${b.items.includes(x)?'checked':''}> ${esc(x)}</label>`).join('')}
       <p class="muted" style="margin-top:8px">與體踐諮詢項目有助於幫確診前準備，實際適用商品以醫師診斷為準</p>
@@ -880,8 +884,8 @@ function htmlStep5() {
   const b = S.bk;
   const wd = WDS[new Date(b.date+'T00:00').getDay()];
   const doc = b.anyDoc ? b.slotDoctor : b.doctor;
-  const row = (k, v) => `<div style="display:flex;padding:7px 0;border-bottom:1px solid var(--line)"><div style="width:110px;color:var(--txt3);font-size:13.5px">${k}</div><div style="font-weight:600">${v}</div></div>`;
-  return `<h2 style="font-size:19px">Step 5 · 確認預約資訊</h2>
+  const row = (k, v) => `<div style="display:flex;padding:7px 0;border-bottom:1px solid var(--line)"><div style="width:110px;color:var(--txt3);font-size:15.5px">${k}</div><div style="font-weight:600">${v}</div></div>`;
+  return `<h2 style="font-size:22px">Step 5 · 確認預約資訊</h2>
     <div style="margin-top:12px;max-width:560px">
     ${row('預約醫師', esc(doc) + ' 醫師')}
     ${row('看診院區', esc(b.clinic))}
@@ -891,7 +895,7 @@ function htmlStep5() {
     ${b.items.length ? row('諮詢項目', b.items.map(esc).join('、')) : ''}
     ${row('通知方式', b.notify==='sms' ? '簡訊通知' : '不通知')}
     </div>
-    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:13px;color:#92400e">
+    <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:15px;color:#92400e">
     ⚠️ 預約後如需取消／改約，請於就診前 24 小時透過本系統「查詢預約」自行操作；當日異動請洽院區櫃檯。</div>
     <div style="display:flex;justify-content:space-between">
       <button class="btn btn-o" data-act="back" data-s="4">← 上一步</button>
@@ -963,7 +967,7 @@ async function doLookup() {
   if (!future.length) {
     out.innerHTML = `<div style="text-align:center;padding:22px;background:#f8fafc;border-radius:10px">
       <p class="muted">😕 找不到符合的未來預約</p>
-      <p class="muted" style="font-size:12px;margin-top:6px">已搜尋各院區未來 21 天。如已預約但查不到，請聯絡院區櫃台</p></div>`;
+      <p class="muted" style="font-size:14px;margin-top:6px">已搜尋各院區未來 21 天。如已預約但查不到，請聯絡院區櫃台</p></div>`;
     return;
   }
   out.innerHTML = `<h3 style="margin-bottom:8px">您的預約（${future.length} 筆）</h3>` + future.map((a,i) => {
@@ -999,7 +1003,7 @@ function reschCalc(m) {
   m.querySelector('#rs-meds').innerHTML = `
     <div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:13px;margin-top:6px">
       <div style="font-weight:700;color:#92400e;margin-bottom:6px">💊 拿藥週數確認</div>
-      <div style="font-size:13px;color:#92400e">原預約 ${esc(a.date)} → 新預約 ${esc(nd)}（相距 ${Math.abs(diffDays)} 天 ≈ ${weeks} 週）<br>
+      <div style="font-size:15px;color:#92400e">原預約 ${esc(a.date)} → 新預約 ${esc(nd)}（相距 ${Math.abs(diffDays)} 天 ≈ ${weeks} 週）<br>
       建議拿藥 <b>${weeks}</b> 週，避免藥物中斷</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
         <button class="btn btn-a" data-act="resch-go" data-w="${weeks}" data-nd="${nd}" data-nt="${nt}">✓ 我要拿藥（${weeks} 週）</button>
@@ -1092,6 +1096,7 @@ function renderCounter() {
     if (S.cMode === 'week') { c.innerHTML = htmlCWeek(); loadCWeek(); }
     else { c.innerHTML = htmlCDay(); loadCDayGrid(); }
   }
+  else if (S.cView === 'call') { c.innerHTML = htmlCCall(); loadCCall(); }
   else if (S.cView === 'quick') c.innerHTML = htmlCQuick();
   else if (S.cView === 'find') c.innerHTML = htmlCFind();
   else if (S.cView === 'notify') { c.innerHTML = `<div class="card"><h3>📨 通知紀錄</h3><div id="cn-box" class="muted" style="padding:14px">載入中…</div></div>`; loadCNotify(); }
@@ -1168,7 +1173,8 @@ async function loadCWeek() {
       window.__cwIndex[key] = a;
       const st = a.status || a['狀態'] || '';
       const cls = st==='checked_in'||st==='已報到' ? 'done' : st==='rescheduled'||st==='已改約' ? 're' : (a.type==='初診'||a['類型']==='初診') ? 'i' : '';
-      const bloodMark = /🩸/.test(String(a.note||a['備註']||'')) ? ' 🩸' : '';
+      const noteStr = String(a.note||a['備註']||'');
+      const bloodMark = (/🩸/.test(noteStr) ? ' 🩸' : '') + (/☎已通知/.test(noteStr) ? ' ☎' : '');
       return `<div class="cwa ${cls}" data-act="cw-appt" data-k="${key}">
         <b>${t}</b> ${esc(a.name||a['病人姓名']||'(未填)')}${bloodMark}<br><small>${esc(normDoc(a.doctor||a['醫師']||''))} · ${esc(a.type||a['類型']||'複診')}</small></div>`;
     }).join('');
@@ -1288,7 +1294,7 @@ function openApptDetailFromObj(a, dateStr) {
   const t = apptTime(a);
   const st = a.status || a['狀態'] || '';
   const src = a.source || a['來源'] || '';
-  const row = (k, v) => `<div style="display:flex;padding:7px 0;border-bottom:1px solid var(--line)"><div style="width:100px;color:var(--txt3);font-size:13px">${k}</div><div style="font-weight:600">${v}</div></div>`;
+  const row = (k, v) => `<div style="display:flex;padding:7px 0;border-bottom:1px solid var(--line)"><div style="width:100px;color:var(--txt3);font-size:15px">${k}</div><div style="font-weight:600">${v}</div></div>`;
   const m = modal(`<div class="mh">預約詳情 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
     <div class="mb">
     ${row('病人姓名', esc(a.name||a['病人姓名']||'(未填)'))}
@@ -1300,12 +1306,20 @@ function openApptDetailFromObj(a, dateStr) {
     ${(a.medicationWeeks||a['拿藥週數']) ? row('拿藥週數', esc(a.medicationWeeks||a['拿藥週數'])+' 週') : ''}
     ${(a.note||a['備註']) ? row('備註', esc(a.note||a['備註'])) : ''}
     </div>
+    <div style="padding:0 20px 4px;display:flex;gap:6px;flex-wrap:wrap">
+      ${(a.type||a['類型'])==='初診' ? `<span style="font-size:14px;font-weight:700;color:#7f1d1d;align-self:center">🩸院內報告：</span>
+      <button class="btn btn-g btn-sm" data-act="cd-mark" data-op="bin">✓ 已有</button>
+      <button class="btn btn-o btn-sm" data-act="cd-mark" data-op="bext">📄 外院</button>
+      <button class="btn btn-a btn-sm" data-act="cd-mark" data-op="bno">✗ 未抽血</button>` : ''}
+      <button class="btn btn-p btn-sm" data-act="cd-mark" data-op="notified">☎ 已通知</button></div>
     <div class="mf"><button class="btn btn-o" data-act="close-modal">關閉</button>
       <button class="btn btn-a" data-act="c-resch">改約</button>
       <button class="btn btn-r" data-act="c-cancel">取消</button>
       <button class="btn btn-g" data-act="c-checkin">報到</button></div>`);
   m.dataset.appt = JSON.stringify({ apptId:a.apptId||a.id||a['預約編號']||'', clinic:S.cClinic, date:a.date||dateStr,
-    t, doctor:normDoc(a.doctor||a['醫師']||''), name:a.name||a['病人姓名']||'', phone:a.phone||a['電話']||'', type:a.type||a['類型']||'複診' });
+    t, doctor:normDoc(a.doctor||a['醫師']||''), name:a.name||a['病人姓名']||'', phone:a.phone||a['電話']||'', type:a.type||a['類型']||'複診',
+    note:String(a.note||a['備註']||'') });
+  window.__cdCurAppt = a;
 }
 async function cAction(m, action) {
   const a = JSON.parse(m.dataset.appt);
@@ -1337,6 +1351,101 @@ async function cAction(m, action) {
     else toast('改約失敗：'+(res.error||''), 'var(--red)');
   }
 }
+/* ── 通知標記工具（寫入備註持久化）── */
+const TAG_BIN = '🩸院內報告OK', TAG_BEXT = '🩸外院報告(初診日帶來)', TAG_BNO = '🩸未抽血已提醒';
+const BLOOD_CLEAR = /🩸院內報告OK|🩸外院報告\(初診日帶來\)|🩸外院報告|🩸報告OK|🩸未抽血已提醒/g;
+function tagNote(note, addTag, clearRes) {
+  let n = String(note || '');
+  clearRes.forEach(r => { n = n.replace(r, ''); });
+  n = n.replace(/\s{2,}/g, ' ').trim();
+  return (n ? n + ' ' : '') + addTag;
+}
+async function apptSetNote(a, newNote) {
+  const id = a.apptId || a.id || a['預約編號'] || '';
+  if (!id) { toast('此筆缺預約編號，無法標記', 'var(--red)'); return false; }
+  const res = await api.post('updateAppointmentFields', {
+    apptId: id, fields: { '備註': newNote },
+    employeeName: (S.cUser || {}).name || '', employeeRole: (S.cUser || {}).role || '', employeeId: (S.cUser || {}).employeeId || ''
+  }, true);
+  if (res.ok) { a.note = newNote; a['備註'] = newNote; S.apptCache.clear(); return true; }
+  toast('更新失敗：' + (res.error || ''), 'var(--red)');
+  return false;
+}
+async function markAppt(a, op) {
+  const note = String(a.note || a['備註'] || '');
+  const now = new Date();
+  let newNote;
+  if (op === 'notified') newNote = tagNote(note, `☎已通知${now.getMonth()+1}/${now.getDate()}`, [/☎已通知[0-9\/]*/g]);
+  else if (op === 'bin') newNote = tagNote(note, TAG_BIN, [BLOOD_CLEAR]);
+  else if (op === 'bext') newNote = tagNote(note, TAG_BEXT, [BLOOD_CLEAR]);
+  else newNote = tagNote(note, TAG_BNO, [BLOOD_CLEAR]);
+  const ok = await apptSetNote(a, newNote);
+  if (ok) toast({ notified:'✓ 已標記通知', bin:'✓ 已確認院內抽血報告', bext:'✓ 已標記外院報告（初診日帶來）', bno:'✓ 已標記未抽血並提醒當日補抽' }[op]);
+  return ok;
+}
+/* ── 📞 明日通知清單 ── */
+function htmlCCall() {
+  const d = new Date(S.cDate + 'T00:00');
+  return `<div class="card">
+    <div class="dnav">
+      <select id="cd-clinic" data-act2="cd-clinic">${clinicOpts()}</select>
+      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="-1">←</button>
+      <button class="btn btn-p btn-sm" data-act="cc-tomorrow">明日</button>
+      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="1">→</button>
+      <button class="dpill" data-act="cd-pill">📅 ${S.cDate.replace(/-/g,'/')}（週${WDS[d.getDay()]}）<span class="pe">✏️</span></button>
+      <span style="flex:1"></span>
+      <button class="btn btn-sm ${S.ccInitOnly?'btn-p':'btn-o'}" data-act="cc-initonly">只看初診</button>
+      <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
+    </div>
+    <p class="muted" style="margin-bottom:10px">📞 看診前一日電話通知 — 打電話提醒明日看診；<b>初診同時確認院內抽血報告</b>，按對應狀態即記錄</p>
+    <div id="cc-box" class="muted" style="padding:14px;text-align:center">載入中…</div>
+  </div>`;
+}
+async function loadCCall() {
+  const clinic = S.cClinic, date = S.cDate;
+  S.apptCache.delete(clinic + '|' + date);
+  const list = (await getAppts(clinic, date))
+    .filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消')
+    .filter(a => !S.ccInitOnly || (a.type || a['類型']) === '初診')
+    .map(a => ({ a, t: apptTime(a) }))
+    .sort((x, y) => x.t.localeCompare(y.t));
+  const box = $('#cc-box');
+  if (!box || S.cClinic !== clinic || S.cDate !== date) return;
+  window.__ccIndex = list.map(x => x.a);
+  if (!list.length) { box.innerHTML = '<p class="muted">本日無預約</p>'; return; }
+  let notified = 0;
+  const rows = list.map(({ a, t }, i) => {
+    const note = String(a.note || a['備註'] || '');
+    const isInit = (a.type || a['類型']) === '初診';
+    const done = /☎已通知/.test(note);
+    if (done) notified++;
+    const phone = String(a.phone || a['電話'] || '');
+    const bState = /🩸院內報告OK|🩸報告OK/.test(note) ? 'bin' : /🩸外院報告/.test(note) ? 'bext' : /🩸未抽血已提醒/.test(note) ? 'bno' : '';
+    const bloodField = !isInit ? '' : `
+      <div style="margin-top:8px;padding:9px 12px;background:#fff5f5;border:1.5px solid #fecaca;border-radius:8px">
+        <span style="font-size:14.5px;font-weight:700;color:#7f1d1d;margin-right:8px">🩸 院內抽血報告：</span>
+        <button class="btn btn-sm ${bState==='bin'?'btn-g':'btn-o'}" data-act="cc-mark" data-op="bin" data-i="${i}">✓ 已有院內報告</button>
+        <button class="btn btn-sm ${bState==='bext'?'btn-g':'btn-o'}" data-act="cc-mark" data-op="bext" data-i="${i}">📄 外院報告</button>
+        <button class="btn btn-sm ${bState==='bno'?'btn-a':'btn-o'}" data-act="cc-mark" data-op="bno" data-i="${i}">✗ 未抽血·已提醒</button>
+        ${!bState ? '<span class="tag tag-r" style="margin-left:6px">未確認</span>' : ''}
+      </div>`;
+    const bloodDateTxt = (note.match(/🩸抽血日:[0-9-]+/) || [''])[0].replace('🩸抽血日:', '');
+    return `<div class="acard" style="align-items:flex-start;${done ? 'background:#f0fdf4;border-color:#bbf7d0' : ''}">
+      <div class="info" style="flex:1">
+        <div class="ad">${t} ${esc(a.name || a['病人姓名'] || '(未填)')}
+          <span class="tag ${isInit ? 'tag-b' : ''}" style="margin-left:6px">${esc(a.type || a['類型'] || '複診')}</span>
+          ${done ? `<span class="tag tag-g" style="margin-left:4px">${esc((note.match(/☎已通知[0-9\/]*/) || ['☎已通知'])[0])}</span>` : ''}</div>
+        <div class="am" style="font-size:17px;margin-top:4px">📱 <a href="tel:${esc(phone)}" style="color:var(--blue);font-weight:800;font-size:18.5px">${esc(phone) || '—'}</a>
+          · ${esc(normDoc(a.doctor || a['醫師'] || ''))} 醫師${bloodDateTxt ? ` · <span class="muted">約定抽血日 ${esc(bloodDateTxt.slice(5))}</span>` : ''}</div>
+        ${bloodField}
+      </div>
+      <button class="btn ${done ? 'btn-o' : 'btn-p'}" data-act="cc-mark" data-op="notified" data-i="${i}" style="white-space:nowrap">☎ 已通知</button>
+      </div>`;
+  }).join('');
+  box.style.textAlign = '';
+  box.innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${list.length} 筆 · 已通知 ${notified} 筆</div>` + rows;
+}
+
 /* ── 電話預約快速登錄 ── */
 function htmlCQuick() {
   const opts = CLINICS.map(c => `<option ${c.name===S.cClinic?'selected':''}>${c.name}</option>`).join('');
@@ -1351,7 +1460,7 @@ function htmlCQuick() {
       <div class="frow"><label>類型 *</label><select id="q-type"><option value="複診">複診</option><option value="初診">初診</option></select></div>
       <div class="frow"><label>備註</label><input id="q-note" placeholder="例：來電指定下午"></div>
     </div>
-    <div style="background:#fff5f5;border:1.5px solid #fecaca;border-radius:8px;padding:10px 14px;margin:4px 0 10px;font-size:12.5px;color:#7f1d1d;line-height:1.7">
+    <div style="background:#fff5f5;border:1.5px solid #fecaca;border-radius:8px;padding:10px 14px;margin:4px 0 10px;font-size:14.5px;color:#7f1d1d;line-height:1.7">
       🩸 <b>初診抽血規則</b>：看診日前 3～6 天需先到院抽血（例：8/27 看診 → 最早 8/21、最晚 8/24）。<br>
       或外院近 14 天內報告（初診日帶來，必要時當日補抽）。建立初診時請與病人約定抽血日並寫入備註。</div>
     <button class="btn btn-p" data-act="q-book" style="margin-top:6px">建立預約</button>
@@ -1451,7 +1560,7 @@ function htmlATimeCfg() {
     const c = cfgFor(d.shortName);
     const ov = !!S.timeCfg.overrides[d.shortName];
     return `<tr data-d="${esc(d.shortName)}">
-      <td><b>${esc(d.shortName)}</b> 醫師<div class="muted" style="font-size:11px">${d.clinics.map(esc).join('・')}</div></td>
+      <td><b>${esc(d.shortName)}</b> 醫師<div class="muted" style="font-size:12.5px">${d.clinics.map(esc).join('・')}</div></td>
       <td><input type="number" class="tc-i" value="${c.initMin}" min="5" max="60" step="5" style="width:76px"> 分</td>
       <td><input type="number" class="tc-f" value="${c.followMin}" min="5" max="60" step="5" style="width:76px"> 分</td>
       <td>${ov ? '<span class="tag tag-b">個別設定</span>' : '<span class="muted">公版</span>'}</td>
@@ -1473,7 +1582,7 @@ function htmlASched() {
   S.schedules.forEach(s => byC[s.clinic] = (byC[s.clinic]||0) + 1);
   const chips = Object.entries(byC).sort().map(([c,n]) => `<span class="tag tag-b" style="margin:2px">${esc(c)} ${n}</span>`).join('');
   return `<div class="card">
-    <div class="syncbar"><div style="font-size:13.5px;color:#1e3a8a"><b>📡 Drive 班表同步</b> · <span id="as-info">檢查中…</span></div>
+    <div class="syncbar"><div style="font-size:15.5px;color:#1e3a8a"><b>📡 Drive 班表同步</b> · <span id="as-info">檢查中…</span></div>
     <button class="btn btn-p btn-sm" data-act="a-sync">🔄 立即同步</button></div>
     <h3>📅 班表管理（目前 ${S.schedules.length} 筆）</h3>
     <div style="margin:10px 0">${chips}</div>
@@ -1652,7 +1761,19 @@ document.addEventListener('click', async e => {
     /* counter */
     case 'c-login': { const u = await counterLogin('#cl-id','#cl-pw','#cl-err', false); if (u) { S.cUser = u; cShow(); } break; }
     case 'c-logout': S.cUser = null; $('#c-main').style.display='none'; $('#c-login').style.display='block'; break;
-    case 'c-menu': S.cView = el.dataset.v; renderCounter(); break;
+    case 'c-menu': {
+      S.cView = el.dataset.v;
+      if (el.dataset.v === 'call') { const t = new Date(); t.setDate(t.getDate() + 1); S.cDate = fmtD(t); }
+      renderCounter(); break; }
+    case 'cc-tomorrow': { const t = new Date(); t.setDate(t.getDate() + 1); S.cDate = fmtD(t); renderCounter(); break; }
+    case 'cc-initonly': S.ccInitOnly = !S.ccInitOnly; renderCounter(); break;
+    case 'cc-mark': {
+      const a = (window.__ccIndex || [])[+el.dataset.i];
+      if (!a) break;
+      el.disabled = true;
+      const ok = await markAppt(a, el.dataset.op);
+      if (ok) loadCCall(); else el.disabled = false;
+      break; }
     case 'cd-nav': { const d = new Date(S.cDate+'T00:00'); d.setDate(d.getDate() + +el.dataset.d); S.cDate = fmtD(d); renderCounter(); break; }
     case 'cd-today': S.cDate = fmtD(new Date()); renderCounter(); break;
     case 'cd-sess': S.cSession = el.dataset.s; renderCounter(); break;
@@ -1671,6 +1792,14 @@ document.addEventListener('click', async e => {
       if (a) openApptDetailFromObj(a, el.dataset.k.split('|')[0]);
       break; }
     case 'appt-detail': openApptDetail(el.dataset.k); break;
+    case 'cd-mark': {
+      const a = window.__cdCurAppt;
+      if (!a) break;
+      el.disabled = true;
+      const ok = await markAppt(a, el.dataset.op);
+      if (ok) { closeModals(); renderCounter(); }
+      else el.disabled = false;
+      break; }
     case 'c-checkin': cAction(m, 'checkin'); break;
     case 'c-cancel': cAction(m, 'cancel'); break;
     case 'c-resch': cAction(m, 'resch'); break;
