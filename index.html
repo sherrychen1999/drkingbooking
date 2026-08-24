@@ -160,6 +160,18 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .tbl td{padding:9px 10px;border-bottom:1px solid var(--line)}
 .tbl tr:hover td{background:#f8fafc}
 .syncbar{background:#eff6ff;border:2px solid #93c5fd;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+/* 醫師排序拖曳列表 */
+.ord-list{max-width:560px}
+.ord-item{display:flex;align-items:center;gap:12px;background:#fff;border:2px solid var(--line);border-radius:10px;padding:9px 14px;margin-bottom:7px;cursor:grab;user-select:none;transition:border-color .12s,box-shadow .12s}
+.ord-item:active{cursor:grabbing}
+.ord-item.dragging{opacity:.45;border-style:dashed}
+.ord-item.dragover{border-color:var(--blue);box-shadow:0 0 0 3px #dbeafe}
+.ord-item .oi{width:30px;height:30px;border-radius:8px;background:#eff6ff;color:#1e40af;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0}
+.ord-item .on2{font-weight:700;flex:1}
+.ord-item .on2 small{display:block;color:var(--txt3);font-weight:400;font-size:12.5px}
+.ord-item .ob{display:flex;gap:4px}
+.ord-item .ob button{width:34px;height:30px;border:1px solid #cbd5e1;background:#f8fafc;border-radius:6px;font-size:14px}
+.ord-item.vip{border-color:#fcd34d;background:#fffdf5}
 /* 日期 pill + 迷你月曆 */
 .dpill{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border:1.5px solid #cbd5e1;border-radius:22px;background:#fff;font-weight:700;cursor:pointer;font-size:16px;color:var(--txt)}
 .dpill:hover{border-color:var(--blue);color:var(--blue)}
@@ -264,6 +276,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
       <div class="mi on" data-act="a-menu" data-v="dash">📈 營運儀表板</div>
       <div class="mi" data-act="a-menu" data-v="sched">📅 班表管理</div>
       <div class="mi" data-act="a-menu" data-v="timecfg">⏱ 預約時間設定</div>
+      <div class="mi" data-act="a-menu" data-v="order">↕ 前台醫師排序</div>
       <div class="mi" data-act="a-menu" data-v="emp">👥 使用者權限</div>
       <div class="mi" data-act="a-menu" data-v="report">📊 區間報表</div>
     </div>
@@ -323,6 +336,8 @@ const S = {
   photos: {},             // shortName → dataURL
   apptCache: new Map(),   // 'clinic|date' → appointments[]
   timeCfg: { defaults:{initMin:30, followMin:15}, overrides:{} },  // 預約時長規則
+  docOrder: [],           // 前台醫師顯示順序（後端儲存）
+  ordDraft: null,         // 排序編輯草稿
   // 預約流程狀態
   bk: null,               // 見 resetBk()
   lookupResults: [],
@@ -384,6 +399,29 @@ function apptEndMin(a, docN) {
 async function loadTimeCfg() {
   const res = await api.get('getTimeSettings');
   if (res.ok) S.timeCfg = { defaults: res.defaults || {initMin:30, followMin:15}, overrides: res.overrides || {} };
+}
+async function loadDocOrder() {
+  const res = await api.get('getDoctorOrder');
+  if (res.ok && Array.isArray(res.order)) S.docOrder = res.order;
+}
+/* 預設排序：三位總院長優先 → 其餘依院區順序分組 */
+const CLINIC_ORDER = ['鶯歌院區','三樹院區','樹林院區','桃園院區','土城院區','八德院區','龍潭院區','大溪院區','大竹院區','大湳院區','平鎮院區','埔心院區','觀音院區','龍岡院區','虎尾幼安'];
+const VIP_DOCTORS = ['蕭捷健','蕭捷存','黃錦崧'];
+function defaultDoctorOrder() {
+  const names = S.doctors.map(d => d.shortName);
+  const rest = names.filter(n => !VIP_DOCTORS.includes(n));
+  const pos = n => {
+    let best = 99;
+    sched.clinicsFor(n).forEach(c => { const i = CLINIC_ORDER.indexOf(c); if (i >= 0 && i < best) best = i; });
+    return best;
+  };
+  rest.sort((a, b) => pos(a) - pos(b) || a.localeCompare(b, 'zh-Hant'));
+  return [...VIP_DOCTORS.filter(v => names.includes(v)), ...rest];
+}
+function applyDoctorOrder() {
+  const order = (S.docOrder && S.docOrder.length) ? S.docOrder : defaultDoctorOrder();
+  const idx = n => { const i = order.indexOf(n); return i < 0 ? 999 : i; };
+  S.doctors.sort((a, b) => idx(a.shortName) - idx(b.shortName) || a.shortName.localeCompare(b.shortName, 'zh-Hant'));
 }
 
 /* ───── 初診抽血窗口：看診日 T-6（最早）～ T-3（最晚），同院區 ───── */
@@ -483,8 +521,8 @@ function refreshSchedulesInBg() {
 function buildDoctors() {
   // 由班表推導醫師清單（後端為準），照片另外補
   const names = sched.doctorNames();
-  S.doctors = names.map(n => ({ shortName:n, name:n+' 醫師', clinics:sched.clinicsFor(n) }))
-                   .sort((a,b) => b.clinics.length - a.clinics.length || a.shortName.localeCompare(b.shortName,'zh-Hant'));
+  S.doctors = names.map(n => ({ shortName:n, name:n+' 醫師', clinics:sched.clinicsFor(n) }));
+  applyDoctorOrder();
 }
 function loadPhotosInBg() {
   api.get('getDoctorPhotos').then(res => {
@@ -517,7 +555,7 @@ function apptTime(a) {
 
 /* ───── 開機序列 ───── */
 async function boot() {
-  const [ok] = await Promise.all([loadSchedules(false), loadTimeCfg()]);
+  const [ok] = await Promise.all([loadSchedules(false), loadTimeCfg(), loadDocOrder()]);
   buildDoctors();
   $('#splash-msg').textContent = ok ? `已載入 ${S.schedules.length} 筆班表` : '⚠️ 後端無班表資料';
   if (!ok) toast('⚠️ 無法載入班表，請稍後重試或聯絡管理員', 'var(--red)');
@@ -1539,6 +1577,7 @@ function renderAdmin() {
   if (S.aView === 'dash') { c.innerHTML = `<div class="card"><h3>📈 營運儀表板</h3><div id="ad-box" class="muted" style="padding:14px">載入中…</div></div>`; loadADash(); }
   else if (S.aView === 'sched') { c.innerHTML = htmlASched(); loadASyncStatus(); }
   else if (S.aView === 'timecfg') c.innerHTML = htmlATimeCfg();
+  else if (S.aView === 'order') { c.innerHTML = htmlAOrder(); bindOrderDrag(); }
   else if (S.aView === 'emp') { c.innerHTML = `<div class="card"><h3>👥 使用者權限</h3><div id="ae-box" class="muted" style="padding:14px">載入中…</div></div>`; loadAEmp(); }
   else if (S.aView === 'report') c.innerHTML = htmlAReport();
 }
@@ -1553,6 +1592,65 @@ async function loadADash() {
     ${stat(S.schedules.length, '班表總筆數')}${stat(S.doctors.length, '醫師數')}</div>
     <p class="muted">資料來源：後端資料庫（Drive 每日 03:00 自動同步）</p>`;
 }
+/* ── ↕ 前台醫師排序 ── */
+function htmlAOrder() {
+  if (!S.ordDraft) S.ordDraft = (S.docOrder && S.docOrder.length) ? [...S.docOrder] : defaultDoctorOrder();
+  // 補上新醫師（班表新增但草稿沒有的）
+  S.doctors.forEach(d => { if (!S.ordDraft.includes(d.shortName)) S.ordDraft.push(d.shortName); });
+  const byName = {}; S.doctors.forEach(d => byName[d.shortName] = d);
+  const rows = S.ordDraft.filter(n => byName[n]).map((n, i) => {
+    const d = byName[n];
+    const vip = VIP_DOCTORS.includes(n);
+    return `<div class="ord-item ${vip ? 'vip' : ''}" draggable="true" data-idx="${i}">
+      <div class="oi">${i + 1}</div>
+      <div class="on2">${esc(n)} 醫師${vip ? ' <span class="tag tag-a" style="font-size:11px">總院長</span>' : ''}
+        <small>${d.clinics.map(esc).join('・')}</small></div>
+      <div class="ob">
+        <button data-act="ord-move" data-i="${i}" data-d="-1" title="上移">▲</button>
+        <button data-act="ord-move" data-i="${i}" data-d="1" title="下移">▼</button>
+      </div></div>`;
+  }).join('');
+  return `<div class="card"><h3>↕ 前台醫師排序</h3>
+    <p class="muted" style="margin:8px 0 4px">用滑鼠<b>按住醫師卡上下拖曳</b>（或按 ▲▼）調整前台「指定預約醫師」的顯示順序。</p>
+    <p class="muted" style="margin-bottom:12px">預設：蕭捷健 → 蕭捷存 → 黃錦崧 → 其餘依院區順序（鶯歌→三樹→樹林→桃園→土城→八德→龍潭→大溪→大竹→大湳→平鎮→埔心→觀音→龍岡）。</p>
+    <div style="display:flex;gap:10px;margin-bottom:14px">
+      <button class="btn btn-g" data-act="ord-save">💾 儲存排序</button>
+      <button class="btn btn-o" data-act="ord-reset">↺ 回預設</button>
+    </div>
+    <div class="ord-list" id="ord-list">${rows}</div></div>`;
+}
+let _ordDragIdx = null;
+function bindOrderDrag() {
+  const list = $('#ord-list');
+  if (!list) return;
+  list.addEventListener('dragstart', e => {
+    const it = e.target.closest('.ord-item'); if (!it) return;
+    _ordDragIdx = +it.dataset.idx;
+    it.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  list.addEventListener('dragend', e => {
+    list.querySelectorAll('.ord-item').forEach(x => x.classList.remove('dragging', 'dragover'));
+  });
+  list.addEventListener('dragover', e => {
+    e.preventDefault();
+    const it = e.target.closest('.ord-item'); if (!it) return;
+    list.querySelectorAll('.ord-item').forEach(x => x.classList.remove('dragover'));
+    it.classList.add('dragover');
+  });
+  list.addEventListener('drop', e => {
+    e.preventDefault();
+    const it = e.target.closest('.ord-item'); if (!it || _ordDragIdx == null) return;
+    const to = +it.dataset.idx;
+    if (to !== _ordDragIdx) {
+      const [moved] = S.ordDraft.splice(_ordDragIdx, 1);
+      S.ordDraft.splice(to, 0, moved);
+    }
+    _ordDragIdx = null;
+    renderAdmin();
+  });
+}
+
 /* ── ⏱ 預約時間設定 ── */
 function htmlATimeCfg() {
   const d0 = S.timeCfg.defaults;
@@ -1811,6 +1909,23 @@ document.addEventListener('click', async e => {
     case 'a-logout': S.aUser = null; $('#a-main').style.display='none'; $('#a-login').style.display='block'; break;
     case 'a-menu': S.aView = el.dataset.v; renderAdmin(); break;
     case 'a-sync': aSync(el); break;
+    case 'ord-move': {
+      const i = +el.dataset.i, d2 = +el.dataset.d, to = i + d2;
+      if (to < 0 || to >= S.ordDraft.length) break;
+      [S.ordDraft[i], S.ordDraft[to]] = [S.ordDraft[to], S.ordDraft[i]];
+      renderAdmin(); break; }
+    case 'ord-save': {
+      el.disabled = true;
+      const res = await api.post('saveDoctorOrder', { order: S.ordDraft, by: S.aUser.name }, true);
+      if (res.ok) { S.docOrder = [...S.ordDraft]; applyDoctorOrder(); toast('✓ 排序已儲存，前台立即生效'); }
+      else toast('儲存失敗：' + (res.error || '後端未部署 saveDoctorOrder'), 'var(--red)');
+      el.disabled = false; break; }
+    case 'ord-reset': {
+      if (!confirm('確定回到預設排序？（總院長優先＋院區順序）')) break;
+      const res = await api.post('resetDoctorOrder', {}, true);
+      if (res.ok) { S.docOrder = []; S.ordDraft = null; applyDoctorOrder(); toast('✓ 已回到預設排序'); renderAdmin(); }
+      else toast('重設失敗：' + (res.error || ''), 'var(--red)');
+      break; }
     case 'tc-uni': {
       const tr = el.closest('tr');
       tr.querySelector('.tc-i').value = tr.querySelector('.tc-f').value;
