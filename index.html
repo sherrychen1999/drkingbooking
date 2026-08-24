@@ -407,16 +407,21 @@ async function loadDocOrder() {
 /* 預設排序：三位總院長優先 → 其餘依院區順序分組 */
 const CLINIC_ORDER = ['鶯歌院區','三樹院區','樹林院區','桃園院區','土城院區','八德院區','龍潭院區','大溪院區','大竹院區','大湳院區','平鎮院區','埔心院區','觀音院區','龍岡院區','虎尾幼安'];
 const VIP_DOCTORS = ['蕭捷健','蕭捷存','黃錦崧'];
+/* 各院區院長（依職稱資料整理；新院長就從管理頁拖上去再儲存即可） */
+const DIRECTOR_DOCTORS = ['林永昌','張慧馨','林秉承','蕭宇伯','張簡千郁','黃炯達','廖崑竹','何冠達','林鼎盛','陳秉峰','梁培毅'];
 function defaultDoctorOrder() {
   const names = S.doctors.map(d => d.shortName);
-  const rest = names.filter(n => !VIP_DOCTORS.includes(n));
   const pos = n => {
     let best = 99;
     sched.clinicsFor(n).forEach(c => { const i = CLINIC_ORDER.indexOf(c); if (i >= 0 && i < best) best = i; });
     return best;
   };
-  rest.sort((a, b) => pos(a) - pos(b) || a.localeCompare(b, 'zh-Hant'));
-  return [...VIP_DOCTORS.filter(v => names.includes(v)), ...rest];
+  const byClinic = (a, b) => pos(a) - pos(b) || a.localeCompare(b, 'zh-Hant');
+  // 三層：總院長 → 各院區院長(依院區序) → 其餘醫師(依院區序)
+  const tier0 = VIP_DOCTORS.filter(v => names.includes(v));
+  const tier1 = names.filter(n => DIRECTOR_DOCTORS.includes(n) && !tier0.includes(n)).sort(byClinic);
+  const tier2 = names.filter(n => !tier0.includes(n) && !tier1.includes(n)).sort(byClinic);
+  return [...tier0, ...tier1, ...tier2];
 }
 function applyDoctorOrder() {
   const order = (S.docOrder && S.docOrder.length) ? S.docOrder : defaultDoctorOrder();
@@ -1601,9 +1606,10 @@ function htmlAOrder() {
   const rows = S.ordDraft.filter(n => byName[n]).map((n, i) => {
     const d = byName[n];
     const vip = VIP_DOCTORS.includes(n);
+    const dir = !vip && DIRECTOR_DOCTORS.includes(n);
     return `<div class="ord-item ${vip ? 'vip' : ''}" draggable="true" data-idx="${i}">
       <div class="oi">${i + 1}</div>
-      <div class="on2">${esc(n)} 醫師${vip ? ' <span class="tag tag-a" style="font-size:11px">總院長</span>' : ''}
+      <div class="on2">${esc(n)} 醫師${vip ? ' <span class="tag tag-a" style="font-size:11px">總院長</span>' : dir ? ' <span class="tag tag-b" style="font-size:11px">院長</span>' : ''}
         <small>${d.clinics.map(esc).join('・')}</small></div>
       <div class="ob">
         <button data-act="ord-move" data-i="${i}" data-d="-1" title="上移">▲</button>
@@ -1612,7 +1618,7 @@ function htmlAOrder() {
   }).join('');
   return `<div class="card"><h3>↕ 前台醫師排序</h3>
     <p class="muted" style="margin:8px 0 4px">用滑鼠<b>按住醫師卡上下拖曳</b>（或按 ▲▼）調整前台「指定預約醫師」的顯示順序。</p>
-    <p class="muted" style="margin-bottom:12px">預設：蕭捷健 → 蕭捷存 → 黃錦崧 → 其餘依院區順序（鶯歌→三樹→樹林→桃園→土城→八德→龍潭→大溪→大竹→大湳→平鎮→埔心→觀音→龍岡）。</p>
+    <p class="muted" style="margin-bottom:12px">預設三層：<b>總院長</b>（蕭捷健→蕭捷存→黃錦崧）→ <b>各院區院長</b>（依院區序）→ <b>其餘醫師</b>（依院區序）。院區順序：鶯歌→三樹→樹林→桃園→土城→八德→龍潭→大溪→大竹→大湳→平鎮→埔心→觀音→龍岡。</p>
     <div style="display:flex;gap:10px;margin-bottom:14px">
       <button class="btn btn-g" data-act="ord-save">💾 儲存排序</button>
       <button class="btn btn-o" data-act="ord-reset">↺ 回預設</button>
