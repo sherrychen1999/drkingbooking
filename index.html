@@ -148,6 +148,8 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .grid-tbl td{border:1px solid var(--line);padding:2px;vertical-align:top;height:34px}
 .grid-tbl td.off{background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 6px,#f1f5f9 6px,#f1f5f9 12px)}
 .grid-tbl .tm{width:52px;text-align:center;color:var(--txt3);font-size:12.5px;background:#f8fafc}
+.slot-add{border:1.5px dashed #cbd5e1;border-radius:6px;color:#94a3b8;font-size:12.5px;font-weight:600;text-align:center;padding:3px 0;margin:1px 2px;cursor:copy;opacity:.5;transition:all .12s;user-select:none}
+.grid-tbl td:hover .slot-add{opacity:1;border-color:var(--blue);color:var(--blue);background:#eff6ff}
 .apt{border-radius:6px;padding:3px 6px;font-size:13px;font-weight:600;cursor:pointer;margin:1px 0;color:#fff;background:var(--blue)}
 .apt.i{background:#7c3aed}.apt.done{background:var(--green)}.apt.re{background:var(--amber)}.apt.x{background:#9ca3af;text-decoration:line-through}
 .orph{background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:12px 14px;margin-bottom:12px}
@@ -1327,7 +1329,7 @@ async function loadCDayGrid() {
         const st = a.status || a['狀態'] || '';
         const cls = st==='checked_in'||st==='已報到' ? 'done' : st==='rescheduled'||st==='已改約' ? 're' : (a.type==='初診'||a['類型']==='初診') ? 'i' : '';
         return `<div class="apt ${cls}" data-act="appt-detail" data-k="${esc(dn)}|${tt}">${esc(a.name||a['病人姓名']||'(未填)')} · ${esc(a.type||a['類型']||'複診')}</div>`;
-      }).join('') + `</td>`;
+      }).join('') + (on && !cell.length ? `<div class="slot-add" data-act="cd-slot" data-doc="${esc(dn)}" data-t="${tt}">＋ 預約</div>` : '') + `</td>`;
     });
     h += `</tr>`;
   }
@@ -1373,45 +1375,73 @@ function isIncomplete(a) {
   const noName = !name || name === '(未填)' || name === '（未填）';
   const noPhone = !phoneOK(a.phone || a['電話']);
   const noCase = (a.type || a['類型']) === '複診' && !caseNoOf(a);
-  const missing = [noName && '姓名', noPhone && '電話', noCase && '病歷號'].filter(Boolean);
+  const note = String(a.note || a['備註'] || '');
+  const noBlood = (a.type || a['類型']) === '初診' && !/🩸(抽血日:|外院報告|初診當日抽血|院內報告OK)/.test(note);
+  const missing = [noName && '姓名', noPhone && '電話', noCase && '病歷號', noBlood && '抽血安排'].filter(Boolean);
   return missing.length ? missing : null;
 }
+/* 抽血選項 UI（掛號/補登共用）：sel = {mode:'date'|'ext'|'same', ds} */
+function bloodPickHtml(date, clinic, sel) {
+  const dates = bloodWindowDates(date, clinic);
+  const none = dates.length === 0;
+  const cur = sel || {};
+  const btn = (v, ds, label, on) =>
+    `<button type="button" class="btn btn-sm ${on ? 'btn-g' : 'btn-o'}" data-act="qk-blood" data-v="${v}" ${ds ? `data-ds="${ds}"` : ''}>${label}</button>`;
+  let h = `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">`;
+  dates.forEach(ds => { h += btn('date', ds, mdTxt(ds), cur.mode === 'date' && cur.ds === ds); });
+  if (none) h += btn('same', '', '初診當日提早30分抽血', cur.mode === 'same');
+  h += btn('ext', '', '📄 外院14天內報告', cur.mode === 'ext');
+  h += `</div><div class="muted" style="font-size:12px;margin-top:4px">${none ? '看診日過近已無提前窗口。' : `窗口：看診日前 3～6 天（8:00-20:00 到院即可）。`}卡位可先不選，補登時再填。</div>`;
+  return h;
+}
+function bloodTagOf(sel) {
+  if (!sel || !sel.mode) return '🩸抽血日未定';
+  if (sel.mode === 'ext') return '🩸外院報告(初診日帶來)';
+  if (sel.mode === 'same') return '🩸初診當日抽血';
+  return '🩸抽血日:' + sel.ds;
+}
+const BLOOD_TAG_CLEAR = /🩸抽血日:[0-9-]+|🩸外院報告\(初診日帶來\)|🩸外院報告|🩸初診當日抽血|🩸抽血日未定/g;
 async function openQuickBook(date, doctor, time) {
   const clinic = S.cClinic;
   const wd = isoWd(date);
   const dayDocs = [...new Set(sched.byClinic(clinic).filter(s => s.weekday === wd).map(s => s.doctor))];
   if (!dayDocs.length) { toast('該日此院區無排班', 'var(--amber)'); return; }
   const appts = await getAppts(clinic, date);
+  const fixed = !!(doctor && time);
   const m = modal(`<div class="mh">🖊 快速掛號 · ${esc(clinic)} ${esc(date)}
       <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
     <div class="mb">
+      ${fixed ? `<div id="qk-banner" style="background:#eff6ff;border:2px solid #93c5fd;border-radius:10px;padding:11px 14px;margin-bottom:14px;font-weight:800;font-size:17px;color:#1e40af">📌 ${esc(doctor)} 醫師 · ${esc(time)} <span id="qk-banner-end"></span></div>` : ''}
       <div class="fgrid">
         <div class="frow"><label>類型 *</label><div class="vt">
-          <button class="qk-vt ${'複診'==='複診'?'on':''}" data-act="qk-type" data-v="複診">複診</button>
+          <button class="qk-vt on" data-act="qk-type" data-v="複診">複診</button>
           <button class="qk-vt" data-act="qk-type" data-v="初診">初診</button></div></div>
-        <div class="frow"><label>醫師 *</label><select id="qk-doc">
+        <div class="frow" ${fixed ? 'style="display:none"' : ''}><label>醫師 *</label><select id="qk-doc">
           ${dayDocs.map(d2 => `<option ${d2===doctor?'selected':''}>${esc(d2)}</option>`).join('')}
-          <option value="__any__">不指定（全覽可約時段）</option></select></div>
-        <div class="frow" style="grid-column:1/-1"><label>時段 *</label><select id="qk-time"></select></div>
+          ${fixed ? '' : '<option value="__any__">不指定（全覽可約時段）</option>'}</select></div>
+        <div class="frow" ${fixed ? 'style="display:none"' : ''} id="qk-time-row"><label>時段 *</label><select id="qk-time"></select></div>
         <div class="frow"><label>病歷號（複診·後台有資料即可卡位）</label>
           <div style="display:flex;gap:6px"><input id="qk-case" placeholder="例：B1234" style="flex:1">
           <button class="btn btn-o btn-sm" data-act="qk-case-fill">🔍 帶入</button></div>
-          <div id="qk-case-msg" class="muted" style="font-size:12.5px;min-height:16px"></div></div>
+          <div id="qk-case-msg" class="muted" style="font-size:13px;min-height:18px"></div></div>
         <div class="frow"><label>電話（或病歷號擇一）</label><input id="qk-phone" type="tel" placeholder="09xxxxxxxx"></div>
         <div class="frow"><label>姓名（可先留空卡位）</label><input id="qk-name"></div>
         <div class="frow"><label>備註</label><input id="qk-note"></div>
       </div>
-      <p class="muted" style="font-size:12.5px">⚡ 卡位規則：<b>電話</b>或<b>已存在的病歷號</b>擇一填寫即可先搶時段；其餘資料稍後從頂部「待補齊」提醒補登。</p>
+      <div class="frow" id="qk-blood-row" style="display:none;margin-top:4px"><label>🩸 初診抽血安排</label>
+        <div id="qk-blood" style="border:2px solid #fecaca;border-radius:10px;padding:11px;background:#fff"></div></div>
+      <p class="muted" style="font-size:13px">⚡ 卡位規則：<b>電話</b>或<b>已存在的病歷號</b>擇一填寫即可先搶時段；其餘資料稍後從頂部「待補齊」提醒補登。</p>
     </div>
     <div class="mf"><button class="btn btn-o" data-act="close-modal">取消</button>
       <button class="btn btn-g" data-act="qk-save">✓ 建立掛號</button></div>`);
-  m.dataset.qk = JSON.stringify({ date, clinic });
+  m.dataset.qk = JSON.stringify({ date, clinic, fixed, fixedDoc: doctor || '', fixedT: time || '' });
   m.dataset.type = '複診';
+  m.dataset.blood = '';
   window.__qkAppts = appts;
   refreshQkTimes(m, time);
 }
 function refreshQkTimes(m, preferT) {
-  const { date, clinic } = JSON.parse(m.dataset.qk);
+  const { date, clinic, fixed, fixedDoc, fixedT } = JSON.parse(m.dataset.qk);
   const wd = isoWd(date);
   const type = m.dataset.type || '複診';
   const docSel = m.querySelector('#qk-doc').value;
@@ -1436,9 +1466,37 @@ function refreshQkTimes(m, preferT) {
   });
   free.sort((a, b) => a.t.localeCompare(b.t) || a.dn.localeCompare(b.dn, 'zh-Hant'));
   const sel = m.querySelector('#qk-time');
+  const want = preferT || fixedT;
   sel.innerHTML = free.length
-    ? free.map(f => `<option value="${f.t}|${esc(f.dn)}" ${f.t===preferT && (docSel==='__any__' || f.dn===docSel) ? 'selected' : ''}>${f.t}～${m2t(t2m(f.t)+f.dur)}${docSel==='__any__' ? '｜' + esc(f.dn) + ' 醫師' : ''}</option>`).join('')
+    ? free.map(f => `<option value="${f.t}|${esc(f.dn)}" ${f.t===want && (docSel==='__any__' || f.dn===docSel) ? 'selected' : ''}>${f.t}～${m2t(t2m(f.t)+f.dur)}${docSel==='__any__' ? '｜' + esc(f.dn) + ' 醫師' : ''}</option>`).join('')
     : '<option value="">（無可約時段）</option>';
+  // 固定模式：更新頂欄結束時間；若該時段裝不下(如初診30分)→解鎖時段下拉讓櫃檯改選
+  if (fixed) {
+    const type = m.dataset.type || '複診';
+    const dur = durFor(type === '初診' ? 'initial' : 'followup', fixedDoc);
+    const hasFixed = free.some(f => f.t === fixedT && f.dn === fixedDoc);
+    const endEl = m.querySelector('#qk-banner-end');
+    const row = m.querySelector('#qk-time-row');
+    if (hasFixed) {
+      sel.value = fixedT + '|' + fixedDoc;
+      if (endEl) endEl.textContent = `～${m2t(t2m(fixedT) + dur)}（${type} ${dur} 分）`;
+      if (row) row.style.display = 'none';
+    } else {
+      if (endEl) endEl.innerHTML = `<span style="color:var(--red);font-size:14px">此時段裝不下${type}（${dur}分），請改選 ↓</span>`;
+      if (row) row.style.display = '';
+    }
+  }
+  // 初診 → 顯示抽血安排區
+  const bRow = m.querySelector('#qk-blood-row');
+  if (bRow) {
+    const isInit = (m.dataset.type || '複診') === '初診';
+    bRow.style.display = isInit ? '' : 'none';
+    if (isInit) {
+      let selB = null;
+      try { selB = JSON.parse(m.dataset.blood || 'null'); } catch(_){}
+      m.querySelector('#qk-blood').innerHTML = bloodPickHtml(date, clinic, selB);
+    }
+  }
 }
 async function qkSave(m, btn) {
   const { date, clinic } = JSON.parse(m.dataset.qk);
@@ -1456,10 +1514,15 @@ async function qkSave(m, btn) {
   }
   btn.disabled = true; btn.textContent = '建立中…';
   const dur = durFor(type === '初診' ? 'initial' : 'followup', dn);
+  let qNote = m.querySelector('#qk-note').value.trim();
+  if (type === '初診') {
+    let selB = null; try { selB = JSON.parse(m.dataset.blood || 'null'); } catch(_){}
+    qNote = tagNote(qNote, bloodTagOf(selB), [BLOOD_TAG_CLEAR]);
+  }
   const res = await api.post('createCounterBooking', {
     clinic, date, startTime: time, endTime: m2t(t2m(time) + dur), doctor: dn,
     name: name || '(未填)', phone: phone, caseFull: caseNo,
-    type, note: m.querySelector('#qk-note').value.trim(),
+    type, note: qNote,
     employeeId: S.cUser.employeeId, employeeName: S.cUser.name, source: 'walk_in'
   }, true);
   if (res.ok) {
@@ -1470,6 +1533,14 @@ async function qkSave(m, btn) {
   } else { btn.disabled = false; btn.textContent = '✓ 建立掛號'; toast('失敗：' + (res.error || ''), 'var(--red)'); }
 }
 /* 補登 modal */
+function fxBloodSel(a) {
+  const note = String(a.note || a['備註'] || '');
+  const md = note.match(/🩸抽血日:([0-9-]+)/);
+  if (md) return { mode:'date', ds: md[1] };
+  if (/🩸外院報告/.test(note)) return { mode:'ext' };
+  if (/🩸初診當日抽血/.test(note)) return { mode:'same' };
+  return null;
+}
 function openFixAppt(a, dateStr) {
   const m = modal(`<div class="mh">✏️ 補齊資料 · ${esc(dateStr)} ${esc(apptTime(a))}
       <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
@@ -1478,18 +1549,32 @@ function openFixAppt(a, dateStr) {
       <div class="frow"><label>電話 *</label><input id="fx-phone" value="${esc(a.phone||a['電話']||'')}"></div>
       <div class="frow"><label>病歷號${(a.type||a['類型'])==='複診'?' *':'（初診無）'}</label><input id="fx-case" value="${esc(caseNoOf(a))}"></div>
       <div class="frow"><label>身分證（選填）</label><input id="fx-id" value="${esc(a.idNo||a['身分證']||'')}"></div>
-    </div></div>
+    </div>
+    ${(a.type||a['類型'])==='初診' ? `<div class="frow" style="margin-top:4px"><label>🩸 初診抽血安排 *</label>
+      <div id="qk-blood" style="border:2px solid #fecaca;border-radius:10px;padding:11px;background:#fff">${bloodPickHtml(dateStr, S.cClinic, fxBloodSel(a))}</div></div>` : ''}
+    </div>
     <div class="mf"><button class="btn btn-o" data-act="close-modal">取消</button>
       <button class="btn btn-g" data-act="fx-save">💾 儲存</button></div>`);
-  m.dataset.fx = JSON.stringify({ apptId: a.apptId || a.id || a['預約編號'] || '', clinic: S.cClinic, date: dateStr });
+  m.dataset.fx = JSON.stringify({ apptId: a.apptId || a.id || a['預約編號'] || '', clinic: S.cClinic, date: dateStr,
+    type: a.type || a['類型'] || '複診', note: String(a.note || a['備註'] || '') });
+  const b = fxBloodSel(a);
+  m.dataset.blood = b ? JSON.stringify(b) : '';
+  m.dataset.qk = JSON.stringify({ date: dateStr, clinic: S.cClinic, fixed: false });   // 供 qk-blood handler 重繪
 }
 async function fxSave(m, btn) {
-  const { apptId, clinic, date } = JSON.parse(m.dataset.fx);
+  const { apptId, clinic, date, type, note } = JSON.parse(m.dataset.fx);
   btn.disabled = true;
-  const res = await api.post('updateAppointmentFields', { apptId, fields: {
+  const fields = {
     '病人姓名': $('#fx-name').value.trim(), '電話': $('#fx-phone').value.trim(),
     '病例號': $('#fx-case').value.trim(), '身分證': $('#fx-id').value.trim()
-  }, employeeName: S.cUser.name, employeeId: S.cUser.employeeId }, true);
+  };
+  if (type === '初診') {
+    let selB = null; try { selB = JSON.parse(m.dataset.blood || 'null'); } catch(_){}
+    if (!selB) { toast('請選擇抽血安排', 'var(--amber)'); btn.disabled = false; return; }
+    fields['備註'] = tagNote(note, bloodTagOf(selB), [BLOOD_TAG_CLEAR]);
+  }
+  const res = await api.post('updateAppointmentFields', { apptId, fields,
+    employeeName: S.cUser.name, employeeId: S.cUser.employeeId }, true);
   if (res.ok) { S.apptCache.delete(clinic + '|' + date); toast('✓ 資料已補齊'); closeModals(); renderCounter(); }
   else { btn.disabled = false; toast('儲存失敗：' + (res.error || ''), 'var(--red)'); }
 }
@@ -2227,6 +2312,15 @@ document.addEventListener('click', async e => {
       } else {
         m.dataset.caseVerified = '';
         msg.innerHTML = '<span style="color:var(--red)">✗ 後台查無此病歷號（初診請改填電話）</span>';
+      }
+      break; }
+    case 'qk-blood': {
+      const v = el.dataset.v;
+      m.dataset.blood = JSON.stringify(v === 'date' ? { mode:'date', ds: el.dataset.ds } : { mode: v });
+      if (m.querySelector('#qk-time')) refreshQkTimes(m);
+      else {   // 補登 modal：只重繪抽血區
+        const { date, clinic } = JSON.parse(m.dataset.qk);
+        m.querySelector('#qk-blood').innerHTML = bloodPickHtml(date, clinic, JSON.parse(m.dataset.blood));
       }
       break; }
     case 'qk-save': qkSave(m, el); break;
