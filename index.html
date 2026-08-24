@@ -68,7 +68,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .step.on{background:var(--blue);color:#fff}.step.done{background:var(--green);color:#fff}
 .sline{width:34px;height:3px;background:#e2e8f0;border-radius:2px}.sline.done{background:var(--green)}
 /* ===== doctor / clinic grid ===== */
-.dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-top:14px}
+.dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;margin-top:14px}
 .dcard{background:#fff;border:2px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s}
 .dcard:hover{border-color:var(--purple);transform:translateY(-3px);box-shadow:0 10px 24px rgba(109,40,217,.16)}
 .dcard.sel{border-color:var(--purple);background:#f5f3ff}
@@ -565,14 +565,18 @@ function clinicWeekTable(clinic) {
 /* ── 醫師介紹 modal ── */
 async function openDoctorIntro(shortName) {
   const ph = S.photos[shortName];
-  const av = ph ? `background-image:url('${esc(ph)}');background-size:cover;background-position:center` : '';
+  const hero = ph
+    ? `<img src="${esc(ph)}" alt="${esc(shortName)}" style="width:100%;max-height:66vh;object-fit:contain;background:#f8fafc;display:block;cursor:zoom-in" onclick="window.open(this.src.replace(/sz=w\d+/,'sz=w2400'))">`
+    : '';
   const m = modal(`<div class="mh"><div style="display:flex;gap:12px;align-items:center">
-      <div style="width:96px;height:96px;border-radius:14px;background:var(--purple);color:#fff;font-size:36px;font-weight:700;display:flex;align-items:center;justify-content:center;${av}">${ph?'':esc(shortName.charAt(0))}</div>
-      <div><div>${esc(shortName)} 醫師</div><div id="di-tag" class="muted" style="font-weight:400;font-style:italic">載入中…</div></div></div>
+      <div>${esc(shortName)} 醫師</div>
+      <div id="di-tag" class="muted" style="font-weight:400;font-style:italic;font-size:13.5px"></div></div>
       <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    ${hero}
     <div class="mb"><div id="di-bio" class="muted">載入介紹中…</div><div id="di-photos" style="margin-top:14px"></div></div>
     <div class="mf"><button class="btn btn-o" data-act="close-modal">看看別位醫師</button>
       <button class="btn btn-p" data-act="book-doc" data-d="${esc(shortName)}">✓ 預約這位醫師</button></div>`);
+  m.querySelector('.modal').style.maxWidth = '760px';
   const res = await api.post('getDoctorProfile', { shortName }, false);
   const d = (res.ok && res.data) || {};
   const tagEl = m.querySelector('#di-tag'), bioEl = m.querySelector('#di-bio'), phEl = m.querySelector('#di-photos');
