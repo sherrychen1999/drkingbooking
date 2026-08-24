@@ -360,7 +360,7 @@ async function loadSchedules(force) {
     try {
       const c = JSON.parse(sessionStorage.getItem('kw10_sched') || 'null');
       if (c && Date.now() - c.at < CFG.CACHE_TTL && c.data.length > 0) {
-        S.schedules = c.data; S.loadedAt = c.at;
+        S.schedules = dietOnly(c.data); S.loadedAt = c.at;
         refreshSchedulesInBg();          // 背景靜默更新
         return true;
       }
@@ -368,7 +368,7 @@ async function loadSchedules(force) {
   }
   const res = await api.get('getSchedules');
   if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
-    S.schedules = res.data.map(normSched).filter(Boolean);
+    S.schedules = dietOnly(res.data.map(normSched).filter(Boolean));
     S.loadedAt = Date.now();
     try { sessionStorage.setItem('kw10_sched', JSON.stringify({ at:S.loadedAt, data:S.schedules })); } catch(_){}
     return true;
@@ -396,10 +396,15 @@ function normSched(s) {
   return { id:s.id||'', clinic:String(s.clinic).trim(), doctor:normDoc(s.doctor), weekday:wd,
            session:s.session||'', start, end, note:cleanNote(s.note), enabled:s.enabled!==false };
 }
+function dietOnly(arr) {
+  // 預約系統只顯示「減重專診」班表；若後端只有減重資料則原樣返回
+  const diet = arr.filter(s => s.session === '減重專診' || /減重/.test(s.note));
+  return diet.length ? diet : arr;
+}
 function refreshSchedulesInBg() {
   api.get('getSchedules').then(res => {
     if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
-      S.schedules = res.data.map(normSched).filter(Boolean);
+      S.schedules = dietOnly(res.data.map(normSched).filter(Boolean));
       S.loadedAt = Date.now();
       try { sessionStorage.setItem('kw10_sched', JSON.stringify({ at:S.loadedAt, data:S.schedules })); } catch(_){}
     }
