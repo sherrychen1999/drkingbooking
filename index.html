@@ -337,7 +337,9 @@ const S = {
   apptCache: new Map(),   // 'clinic|date' → appointments[]
   timeCfg: { defaults:{initMin:30, followMin:15}, overrides:{} },  // 預約時長規則
   docOrder: [],           // 前台醫師顯示順序（後端儲存）
+  docTitles: {},          // 醫師職稱（後端儲存，可後台編輯）
   ordDraft: null,         // 排序編輯草稿
+  ordTitlesDraft: null,   // 職稱編輯草稿
   // 預約流程狀態
   bk: null,               // 見 resetBk()
   lookupResults: [],
@@ -403,12 +405,29 @@ async function loadTimeCfg() {
 async function loadDocOrder() {
   const res = await api.get('getDoctorOrder');
   if (res.ok && Array.isArray(res.order)) S.docOrder = res.order;
+  if (res.ok && res.titles) S.docTitles = res.titles;
 }
 /* 預設排序：三位總院長優先 → 其餘依院區順序分組 */
 const CLINIC_ORDER = ['鶯歌院區','三樹院區','樹林院區','桃園院區','土城院區','八德院區','龍潭院區','大溪院區','大竹院區','大湳院區','平鎮院區','埔心院區','觀音院區','龍岡院區','虎尾幼安'];
 const VIP_DOCTORS = ['蕭捷健','蕭捷存','黃錦崧'];
-/* 各院區院長（依職稱資料整理；新院長就從管理頁拖上去再儲存即可） */
-const DIRECTOR_DOCTORS = ['林永昌','張慧馨','林秉承','蕭宇伯','張簡千郁','黃炯達','廖崑竹','何冠達','林鼎盛','陳秉峰','梁培毅'];
+/* 內建預設職稱（後台「前台醫師排序」頁可改，改完存後端為準） */
+const TITLE_OPTIONS = ['無', '醫學會理事長', '總院長', '院長'];
+const DEFAULT_TITLES = {
+  '蕭捷健':'醫學會理事長', '蕭捷存':'總院長', '黃錦崧':'總院長',
+  '林永昌':'院長','張慧馨':'院長','林秉承':'院長','蕭宇伯':'院長','張簡千郁':'院長',
+  '黃炯達':'院長','廖崑竹':'院長','何冠達':'院長','林鼎盛':'院長','陳秉峰':'院長','梁培毅':'院長'
+};
+function effTitle(n) {
+  if (n in S.docTitles) return S.docTitles[n];      // 後端有設定 → 以後端為準
+  return DEFAULT_TITLES[n] || '';
+}
+const TITLE_RANK = { '醫學會理事長': 0, '總院長': 1, '院長': 2, '': 3 };
+function titleTag(n, size) {
+  const t = effTitle(n);
+  if (!t) return '';
+  const cls = t === '院長' ? 'tag-b' : 'tag-a';
+  return ` <span class="tag ${cls}" style="font-size:${size || 12}px">${t}</span>`;
+}
 function defaultDoctorOrder() {
   const names = S.doctors.map(d => d.shortName);
   const pos = n => {
@@ -416,12 +435,13 @@ function defaultDoctorOrder() {
     sched.clinicsFor(n).forEach(c => { const i = CLINIC_ORDER.indexOf(c); if (i >= 0 && i < best) best = i; });
     return best;
   };
-  const byClinic = (a, b) => pos(a) - pos(b) || a.localeCompare(b, 'zh-Hant');
-  // 三層：總院長 → 各院區院長(依院區序) → 其餘醫師(依院區序)
-  const tier0 = VIP_DOCTORS.filter(v => names.includes(v));
-  const tier1 = names.filter(n => DIRECTOR_DOCTORS.includes(n) && !tier0.includes(n)).sort(byClinic);
-  const tier2 = names.filter(n => !tier0.includes(n) && !tier1.includes(n)).sort(byClinic);
-  return [...tier0, ...tier1, ...tier2];
+  const vipIdx = n => { const i = VIP_DOCTORS.indexOf(n); return i < 0 ? 9 : i; };
+  // 四層：理事長 → 總院長 → 各院區院長(依院區序) → 其餘醫師(依院區序)
+  return [...names].sort((a, b) =>
+    (TITLE_RANK[effTitle(a)] ?? 3) - (TITLE_RANK[effTitle(b)] ?? 3)
+    || vipIdx(a) - vipIdx(b)
+    || pos(a) - pos(b)
+    || a.localeCompare(b, 'zh-Hant'));
 }
 function applyDoctorOrder() {
   const order = (S.docOrder && S.docOrder.length) ? S.docOrder : defaultDoctorOrder();
@@ -622,7 +642,7 @@ function htmlStep1() {
       const sel = S.bk.doctor === d.shortName ? ' sel' : '';
       return `<div class="dcard${sel}" data-act="pick-doc" data-d="${esc(d.shortName)}">
         <div class="ph">${ph ? `<div class="pimg" ${av}></div>` : esc(d.shortName.charAt(0))}</div>
-        <div class="inf"><div class="nm">${esc(d.shortName)} 醫師</div><div class="cl">${d.clinics.map(esc).join('・')}</div></div></div>`;
+        <div class="inf"><div class="nm">${esc(d.shortName)} 醫師${titleTag(d.shortName, 12)}</div><div class="cl">${d.clinics.map(esc).join('・')}</div></div></div>`;
     }).join('') + `</div>`;
   } else if (S.bk.clinic && !S.bk.doctor) {
     // 院區已選 → 顯示該院區門診表
@@ -681,7 +701,7 @@ async function openDoctorIntro(shortName) {
     ? `<div class="poster-wrap" onclick="window.open('${esc(thumb(ph, 2400))}')"><img src="${esc(thumb(ph, 2000))}" alt="${esc(shortName)}"></div>`
     : '';
   const m = modal(`<div class="mh"><div style="display:flex;gap:12px;align-items:center">
-      <div>${esc(shortName)} 醫師</div>
+      <div>${esc(shortName)} 醫師${titleTag(shortName, 13)}</div>
       <div id="di-tag" class="muted" style="font-weight:400;font-style:italic;font-size:15.5px"></div></div>
       <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
     ${hero}
@@ -1602,15 +1622,22 @@ function htmlAOrder() {
   if (!S.ordDraft) S.ordDraft = (S.docOrder && S.docOrder.length) ? [...S.docOrder] : defaultDoctorOrder();
   // 補上新醫師（班表新增但草稿沒有的）
   S.doctors.forEach(d => { if (!S.ordDraft.includes(d.shortName)) S.ordDraft.push(d.shortName); });
+  if (!S.ordTitlesDraft) {
+    S.ordTitlesDraft = {};
+    S.doctors.forEach(d => S.ordTitlesDraft[d.shortName] = effTitle(d.shortName));
+  }
   const byName = {}; S.doctors.forEach(d => byName[d.shortName] = d);
   const rows = S.ordDraft.filter(n => byName[n]).map((n, i) => {
     const d = byName[n];
-    const vip = VIP_DOCTORS.includes(n);
-    const dir = !vip && DIRECTOR_DOCTORS.includes(n);
-    return `<div class="ord-item ${vip ? 'vip' : ''}" draggable="true" data-idx="${i}">
+    const t = S.ordTitlesDraft[n] || '';
+    const hl = TITLE_RANK[t] < 2 ? 'vip' : '';
+    const tagH = t ? ` <span class="tag ${t === '院長' ? 'tag-b' : 'tag-a'}" style="font-size:12px">${t}</span>` : '';
+    const opts = TITLE_OPTIONS.map(o => `<option value="${o === '無' ? '' : o}" ${(o === '無' ? '' : o) === t ? 'selected' : ''}>${o}</option>`).join('');
+    return `<div class="ord-item ${hl}" draggable="true" data-idx="${i}">
       <div class="oi">${i + 1}</div>
-      <div class="on2">${esc(n)} 醫師${vip ? ' <span class="tag tag-a" style="font-size:11px">總院長</span>' : dir ? ' <span class="tag tag-b" style="font-size:11px">院長</span>' : ''}
+      <div class="on2">${esc(n)} 醫師${tagH}
         <small>${d.clinics.map(esc).join('・')}</small></div>
+      <select class="ord-title" data-n="${esc(n)}" style="padding:5px 8px;font-size:13px">${opts}</select>
       <div class="ob">
         <button data-act="ord-move" data-i="${i}" data-d="-1" title="上移">▲</button>
         <button data-act="ord-move" data-i="${i}" data-d="1" title="下移">▼</button>
@@ -1618,7 +1645,7 @@ function htmlAOrder() {
   }).join('');
   return `<div class="card"><h3>↕ 前台醫師排序</h3>
     <p class="muted" style="margin:8px 0 4px">用滑鼠<b>按住醫師卡上下拖曳</b>（或按 ▲▼）調整前台「指定預約醫師」的顯示順序。</p>
-    <p class="muted" style="margin-bottom:12px">預設三層：<b>總院長</b>（蕭捷健→蕭捷存→黃錦崧）→ <b>各院區院長</b>（依院區序）→ <b>其餘醫師</b>（依院區序）。院區順序：鶯歌→三樹→樹林→桃園→土城→八德→龍潭→大溪→大竹→大湳→平鎮→埔心→觀音→龍岡。</p>
+    <p class="muted" style="margin-bottom:12px">預設四層：<b>醫學會理事長</b>（蕭捷健）→ <b>總院長</b>（蕭捷存→黃錦崧）→ <b>各院區院長</b>（依院區序）→ <b>其餘醫師</b>（依院區序）。每位醫師的職稱可用右側下拉直接改，改完按「儲存排序」一起存。</p>
     <div style="display:flex;gap:10px;margin-bottom:14px">
       <button class="btn btn-g" data-act="ord-save">💾 儲存排序</button>
       <button class="btn btn-o" data-act="ord-reset">↺ 回預設</button>
@@ -1922,14 +1949,14 @@ document.addEventListener('click', async e => {
       renderAdmin(); break; }
     case 'ord-save': {
       el.disabled = true;
-      const res = await api.post('saveDoctorOrder', { order: S.ordDraft, by: S.aUser.name }, true);
-      if (res.ok) { S.docOrder = [...S.ordDraft]; applyDoctorOrder(); toast('✓ 排序已儲存，前台立即生效'); }
+      const res = await api.post('saveDoctorOrder', { order: S.ordDraft, titles: S.ordTitlesDraft || {}, by: S.aUser.name }, true);
+      if (res.ok) { S.docOrder = [...S.ordDraft]; S.docTitles = { ...(S.ordTitlesDraft || {}) }; applyDoctorOrder(); toast('✓ 排序與職稱已儲存，前台立即生效'); renderAdmin(); }
       else toast('儲存失敗：' + (res.error || '後端未部署 saveDoctorOrder'), 'var(--red)');
       el.disabled = false; break; }
     case 'ord-reset': {
       if (!confirm('確定回到預設排序？（總院長優先＋院區順序）')) break;
       const res = await api.post('resetDoctorOrder', {}, true);
-      if (res.ok) { S.docOrder = []; S.ordDraft = null; applyDoctorOrder(); toast('✓ 已回到預設排序'); renderAdmin(); }
+      if (res.ok) { S.docOrder = []; S.docTitles = {}; S.ordDraft = null; S.ordTitlesDraft = null; applyDoctorOrder(); toast('✓ 已回到預設排序與職稱'); renderAdmin(); }
       else toast('重設失敗：' + (res.error || ''), 'var(--red)');
       break; }
     case 'tc-uni': {
@@ -1963,6 +1990,10 @@ document.addEventListener('click', async e => {
 /* change 事件（櫃台院區切換） */
 document.addEventListener('change', e => {
   if (e.target.id === 'cd-clinic') { S.cClinic = e.target.value; renderCounter(); }
+  if (e.target.classList && e.target.classList.contains('ord-title')) {
+    S.ordTitlesDraft[e.target.dataset.n] = e.target.value;
+    renderAdmin();
+  }
 });
 function captureF4() {
   const g = id => $(id) ? $(id).value.trim() : '';
