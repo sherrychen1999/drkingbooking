@@ -162,8 +162,9 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .syncbar{background:#eff6ff;border:2px solid #93c5fd;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 /* 醫師排序拖曳列表 */
 .ord-list{max-width:560px}
-.ord-item{display:flex;align-items:center;gap:12px;background:#fff;border:2px solid var(--line);border-radius:10px;padding:9px 14px;margin-bottom:7px;cursor:grab;user-select:none;transition:border-color .12s,box-shadow .12s}
-.ord-item:active{cursor:grabbing}
+.ord-item{display:flex;align-items:center;gap:10px;background:#fff;border:2px solid var(--line);border-radius:10px;padding:9px 14px;margin-bottom:7px;transition:border-color .12s,box-shadow .12s}
+.ord-item .oh{width:34px;height:34px;border-radius:8px;background:#f1f5f9;color:#64748b;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:grab;flex-shrink:0;user-select:none}
+.ord-item .oh:active{cursor:grabbing;background:#e2e8f0}
 .ord-item.dragging{opacity:.45;border-style:dashed}
 .ord-item.dragover{border-color:var(--blue);box-shadow:0 0 0 3px #dbeafe}
 .ord-item .oi{width:30px;height:30px;border-radius:8px;background:#eff6ff;color:#1e40af;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0}
@@ -277,6 +278,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
       <div class="mi" data-act="a-menu" data-v="sched">📅 班表管理</div>
       <div class="mi" data-act="a-menu" data-v="timecfg">⏱ 預約時間設定</div>
       <div class="mi" data-act="a-menu" data-v="order">↕ 前台醫師排序</div>
+      <div class="mi" data-act="a-menu" data-v="profile">📝 醫師介紹編輯</div>
       <div class="mi" data-act="a-menu" data-v="emp">👥 使用者權限</div>
       <div class="mi" data-act="a-menu" data-v="report">📊 區間報表</div>
     </div>
@@ -1162,7 +1164,7 @@ function renderCounter() {
   else if (S.cView === 'call') { c.innerHTML = htmlCCall(); loadCCall(); }
   else if (S.cView === 'quick') c.innerHTML = htmlCQuick();
   else if (S.cView === 'find') c.innerHTML = htmlCFind();
-  else if (S.cView === 'notify') { c.innerHTML = `<div class="card"><h3>📨 通知紀錄</h3><div id="cn-box" class="muted" style="padding:14px">載入中…</div></div>`; loadCNotify(); }
+  else if (S.cView === 'notify') { c.innerHTML = htmlCNotify(); loadCNotify(); }
   else if (S.cView === 'report') { c.innerHTML = `<div class="card"><h3>📊 當日報表</h3><div id="cr-box" class="muted" style="padding:14px">載入中…</div></div>`; loadCReport(); }
 }
 /* ── 今日看診表 ── */
@@ -1438,12 +1440,14 @@ async function markAppt(a, op) {
   const note = String(a.note || a['備註'] || '');
   const now = new Date();
   let newNote;
-  if (op === 'notified') newNote = tagNote(note, `☎已通知${now.getMonth()+1}/${now.getDate()}`, [/☎已通知[0-9\/]*/g]);
+  const PHONE_CLEAR = /☎已通知[0-9\/]*|☎未接聽[0-9\/]*/g;
+  if (op === 'notified') newNote = tagNote(note, `☎已通知${now.getMonth()+1}/${now.getDate()}`, [PHONE_CLEAR]);
+  else if (op === 'noans') newNote = tagNote(note, `☎未接聽${now.getMonth()+1}/${now.getDate()}`, [PHONE_CLEAR]);
   else if (op === 'bin') newNote = tagNote(note, TAG_BIN, [BLOOD_CLEAR]);
   else if (op === 'bext') newNote = tagNote(note, TAG_BEXT, [BLOOD_CLEAR]);
   else newNote = tagNote(note, TAG_BNO, [BLOOD_CLEAR]);
   const ok = await apptSetNote(a, newNote);
-  if (ok) toast({ notified:'✓ 已標記通知', bin:'✓ 已確認院內抽血報告', bext:'✓ 已標記外院報告（初診日帶來）', bno:'✓ 已標記未抽血並提醒當日補抽' }[op]);
+  if (ok) toast({ notified:'✓ 已標記通知', noans:'✓ 已標記未接聽', bin:'✓ 已確認院內抽血報告', bext:'✓ 已標記外院報告（初診日帶來）', bno:'✓ 已標記未抽血並提醒當日補抽' }[op]);
   return ok;
 }
 /* ── 📞 明日通知清單 ── */
@@ -1497,12 +1501,16 @@ async function loadCCall() {
       <div class="info" style="flex:1">
         <div class="ad">${t} ${esc(a.name || a['病人姓名'] || '(未填)')}
           <span class="tag ${isInit ? 'tag-b' : ''}" style="margin-left:6px">${esc(a.type || a['類型'] || '複診')}</span>
-          ${done ? `<span class="tag tag-g" style="margin-left:4px">${esc((note.match(/☎已通知[0-9\/]*/) || ['☎已通知'])[0])}</span>` : ''}</div>
+          ${done ? `<span class="tag tag-g" style="margin-left:4px">${esc((note.match(/☎已通知[0-9\/]*/) || ['☎已通知'])[0])}</span>` : ''}
+          ${/☎未接聽/.test(note) ? `<span class="tag tag-a" style="margin-left:4px">${esc((note.match(/☎未接聽[0-9\/]*/) || ['☎未接聽'])[0])}</span>` : ''}</div>
         <div class="am" style="font-size:17px;margin-top:4px">📱 <a href="tel:${esc(phone)}" style="color:var(--blue);font-weight:800;font-size:18.5px">${esc(phone) || '—'}</a>
           · ${esc(normDoc(a.doctor || a['醫師'] || ''))} 醫師${bloodDateTxt ? ` · <span class="muted">約定抽血日 ${esc(bloodDateTxt.slice(5))}</span>` : ''}</div>
         ${bloodField}
       </div>
-      <button class="btn ${done ? 'btn-o' : 'btn-p'}" data-act="cc-mark" data-op="notified" data-i="${i}" style="white-space:nowrap">☎ 已通知</button>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="btn ${done ? 'btn-o' : 'btn-p'}" data-act="cc-mark" data-op="notified" data-i="${i}" style="white-space:nowrap">☎ 已通知</button>
+        <button class="btn ${/☎未接聽/.test(note) ? 'btn-a' : 'btn-o'} btn-sm" data-act="cc-mark" data-op="noans" data-i="${i}" style="white-space:nowrap">✗ 未接聽</button>
+      </div>
       </div>`;
   }).join('');
   box.style.textAlign = '';
@@ -1568,16 +1576,69 @@ async function counterFind() {
     + `</tbody></table>`;
 }
 /* ── 通知紀錄 / 當日報表 ── */
+function htmlCNotify() {
+  const d = new Date(S.cDate + 'T00:00');
+  return `<div class="card">
+    <div class="dnav">
+      <select id="cd-clinic" data-act2="cd-clinic">${clinicOpts()}</select>
+      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="-1">←</button>
+      <button class="btn btn-p btn-sm" data-act="cd-today">今日</button>
+      <button class="btn btn-o btn-sm" data-act="cd-nav" data-d="1">→</button>
+      <button class="dpill" data-act="cd-pill">📅 ${S.cDate.replace(/-/g,'/')}（週${WDS[d.getDay()]}）<span class="pe">✏️</span></button>
+      <span style="flex:1"></span>
+      <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
+    </div>
+    <p class="muted" style="margin-bottom:10px">📨 本日看診預約的通知總覽：電話（前一日人工通知）＋ 簡訊/LINE 自動發送結果</p>
+    <div id="cn-box" class="muted" style="padding:14px;text-align:center">載入中…</div>
+  </div>`;
+}
 async function loadCNotify() {
-  const res = await api.post('getNotifyLogByClinicDate', { clinic:S.cClinic, date:S.cDate }, true);
-  const rows = (res.ok && res.data) || [];
-  const el = $('#cn-box'); if (!el) return;
-  el.innerHTML = !rows.length ? '<p class="muted">本日無通知紀錄</p>'
-    : `<table class="tbl"><thead><tr><th>時間</th><th>病人</th><th>電話</th><th>管道</th><th>內容</th><th>結果</th></tr></thead><tbody>`
-      + rows.map(r => `<tr><td>${esc(r.time||r['時間']||'')}</td><td>${esc(r.name||r['病人姓名']||'')}</td>
-        <td>${esc(r.phone||r['電話']||'')}</td><td>${esc(r.channel||r['管道']||'')}</td>
-        <td class="muted" style="max-width:280px">${esc(r.message||r['內容']||'')}</td><td>${esc(r.result||r['結果']||'')}</td></tr>`).join('')
-      + `</tbody></table>`;
+  const clinic = S.cClinic, date = S.cDate;
+  S.apptCache.delete(clinic + '|' + date);
+  const [appts, logRes] = await Promise.all([
+    getAppts(clinic, date),
+    api.post('getNotifyLogByClinicDate', { clinic, date }, true)
+  ]);
+  const el = $('#cn-box');
+  if (!el || S.cClinic !== clinic || S.cDate !== date) return;
+  const smsMap = (logRes.ok && logRes.data) || logRes || {};
+  const list = appts.filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消')
+    .map(a => ({ a, t: apptTime(a) })).sort((x, y) => x.t.localeCompare(y.t));
+  window.__cnIndex = list.map(x => x.a);
+  if (!list.length) { el.innerHTML = '<p class="muted">本日無預約</p>'; return; }
+  let phoneDone = 0, smsSent = 0;
+  const rows = list.map(({ a, t }, i) => {
+    const note = String(a.note || a['備註'] || '');
+    const id = a.apptId || a.id || a['預約編號'] || '';
+    // 電話狀態
+    let phoneTag;
+    if (/☎已通知/.test(note)) { phoneDone++; phoneTag = `<span class="tag tag-g">✓ ${esc((note.match(/☎已通知[0-9\/]*/)||['已通知'])[0].replace('☎',''))}</span>`; }
+    else if (/☎未接聽/.test(note)) phoneTag = `<span class="tag tag-a">✗ ${esc((note.match(/☎未接聽[0-9\/]*/)||['未接聽'])[0].replace('☎',''))}</span>`;
+    else phoneTag = '<span class="tag tag-r">未通知</span>';
+    // 簡訊/LINE 狀態
+    const s = smsMap[id] || {};
+    let smsTag;
+    if (s.smsStatus === 'sent') { smsSent++; smsTag = `<span class="tag tag-g">✓ 已送達${s.smsSentAt ? ' ' + esc(String(s.smsSentAt).slice(5, 16).replace('T', ' ')) : ''}</span>`; }
+    else if (s.smsStatus === 'failed') smsTag = '<span class="tag tag-r">✗ 發送失敗</span>';
+    else smsTag = '<span class="muted">—</span>';
+    const lineTag = s.lineStatus === 'sent' ? '<span class="tag tag-g">✓ LINE</span>' : s.lineStatus === 'failed' ? '<span class="tag tag-r">✗ LINE</span>' : '';
+    return `<tr>
+      <td><b>${t}</b></td>
+      <td>${esc(a.name || a['病人姓名'] || '(未填)')}<br><span class="tag ${(a.type||a['類型'])==='初診'?'tag-b':''}" style="font-size:11px">${esc(a.type || a['類型'] || '複診')}</span></td>
+      <td><a href="tel:${esc(a.phone||a['電話']||'')}" style="color:var(--blue);font-weight:700">${esc(a.phone || a['電話'] || '—')}</a></td>
+      <td>${esc(normDoc(a.doctor || a['醫師'] || ''))}</td>
+      <td>${phoneTag}<div style="margin-top:4px">
+        <button class="btn btn-p btn-sm" data-act="cn-mark" data-op="notified" data-i="${i}">已通知</button>
+        <button class="btn btn-o btn-sm" data-act="cn-mark" data-op="noans" data-i="${i}">未接聽</button></div></td>
+      <td>${smsTag} ${lineTag}</td>
+      <td class="muted" style="max-width:180px;font-size:12px">${esc(note.replace(/[☎🩸][^ ]*/g, '').trim())}</td>
+    </tr>`;
+  }).join('');
+  el.style.textAlign = '';
+  el.innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${list.length} 筆 · 電話已通知 ${phoneDone} · 簡訊送達 ${smsSent}</div>
+    <div style="overflow:auto"><table class="tbl"><thead><tr>
+    <th>時段</th><th>病人</th><th>電話</th><th>醫師</th><th>☎ 電話通知</th><th>📨 簡訊/LINE</th><th>備註</th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 async function loadCReport() {
   const res = await api.post('getDailyReport', { clinic:S.cClinic, date:S.cDate }, true);
@@ -1603,6 +1664,7 @@ function renderAdmin() {
   else if (S.aView === 'sched') { c.innerHTML = htmlASched(); loadASyncStatus(); }
   else if (S.aView === 'timecfg') c.innerHTML = htmlATimeCfg();
   else if (S.aView === 'order') { c.innerHTML = htmlAOrder(); bindOrderDrag(); }
+  else if (S.aView === 'profile') c.innerHTML = htmlAProfile();
   else if (S.aView === 'emp') { c.innerHTML = `<div class="card"><h3>👥 使用者權限</h3><div id="ae-box" class="muted" style="padding:14px">載入中…</div></div>`; loadAEmp(); }
   else if (S.aView === 'report') c.innerHTML = htmlAReport();
 }
@@ -1617,6 +1679,33 @@ async function loadADash() {
     ${stat(S.schedules.length, '班表總筆數')}${stat(S.doctors.length, '醫師數')}</div>
     <p class="muted">資料來源：後端資料庫（Drive 每日 03:00 自動同步）</p>`;
 }
+/* ── 📝 醫師介紹編輯 ── */
+function htmlAProfile() {
+  const rows = S.doctors.map(d => `<tr>
+    <td><b>${esc(d.shortName)}</b> 醫師${titleTag(d.shortName, 12)}<div class="muted" style="font-size:12px">${d.clinics.map(esc).join('・')}</div></td>
+    <td style="text-align:right"><button class="btn btn-p btn-sm" data-act="ap-edit" data-d="${esc(d.shortName)}">✏️ 編輯介紹</button></td></tr>`).join('');
+  return `<div class="card"><h3>📝 醫師介紹編輯</h3>
+    <p class="muted" style="margin:8px 0 12px">編輯前台醫師字卡的「一句話」與「介紹文字」；BA 作品集資料夾 ID 可選填（Drive 資料夾）。</p>
+    <table class="tbl"><tbody>${rows}</tbody></table></div>`;
+}
+async function openProfileEdit(shortName) {
+  const m = modal(`<div class="mh">📝 編輯介紹：${esc(shortName)} 醫師
+      <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb">
+      <div class="frow"><label>一句話（顯示在名字下方，如座右銘）</label><input id="ap-tag" placeholder="載入中…" disabled></div>
+      <div class="frow"><label>介紹文字（學經歷、專長、減重理念，可多行）</label><textarea id="ap-bio" rows="8" placeholder="載入中…" disabled></textarea></div>
+      <div class="frow"><label>BA 作品集 Drive 資料夾 ID（選填）</label><input id="ap-folder" placeholder="載入中…" disabled></div>
+    </div>
+    <div class="mf"><button class="btn btn-o" data-act="close-modal">取消</button>
+      <button class="btn btn-g" data-act="ap-save" data-d="${esc(shortName)}">💾 儲存</button></div>`);
+  const res = await api.post('getDoctorProfile', { shortName }, false);
+  const d = (res.ok && res.data) || {};
+  const tagEl = m.querySelector('#ap-tag'), bioEl = m.querySelector('#ap-bio'), folEl = m.querySelector('#ap-folder');
+  if (tagEl) { tagEl.disabled = false; tagEl.placeholder = '例：減重不該懲罰自己'; tagEl.value = d.tagline || ''; }
+  if (bioEl) { bioEl.disabled = false; bioEl.placeholder = '學經歷、專長…'; bioEl.value = d.bio || ''; }
+  if (folEl) { folEl.disabled = false; folEl.placeholder = '1AbCd…（Drive 資料夾網址最後那串）'; folEl.value = d.folderId || d['Drive資料夾ID'] || ''; }
+}
+
 /* ── ↕ 前台醫師排序 ── */
 function htmlAOrder() {
   if (!S.ordDraft) S.ordDraft = (S.docOrder && S.docOrder.length) ? [...S.docOrder] : defaultDoctorOrder();
@@ -1633,7 +1722,8 @@ function htmlAOrder() {
     const hl = TITLE_RANK[t] < 2 ? 'vip' : '';
     const tagH = t ? ` <span class="tag ${t === '院長' ? 'tag-b' : 'tag-a'}" style="font-size:12px">${t}</span>` : '';
     const opts = TITLE_OPTIONS.map(o => `<option value="${o === '無' ? '' : o}" ${(o === '無' ? '' : o) === t ? 'selected' : ''}>${o}</option>`).join('');
-    return `<div class="ord-item ${hl}" draggable="true" data-idx="${i}">
+    return `<div class="ord-item ${hl}" data-idx="${i}">
+      <div class="oh" title="按住這裡拖曳排序">☰</div>
       <div class="oi">${i + 1}</div>
       <div class="on2">${esc(n)} 醫師${tagH}
         <small>${d.clinics.map(esc).join('・')}</small></div>
@@ -1656,14 +1746,19 @@ let _ordDragIdx = null;
 function bindOrderDrag() {
   const list = $('#ord-list');
   if (!list) return;
+  // 只有按住「☰ 把手」才啟用拖曳，卡片其他區域（職稱下拉、按鈕）正常點擊
+  list.addEventListener('mousedown', e => {
+    const h = e.target.closest('.oh');
+    if (h) h.closest('.ord-item').draggable = true;
+  });
   list.addEventListener('dragstart', e => {
-    const it = e.target.closest('.ord-item'); if (!it) return;
+    const it = e.target.closest('.ord-item'); if (!it || !it.draggable) return;
     _ordDragIdx = +it.dataset.idx;
     it.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
   });
   list.addEventListener('dragend', e => {
-    list.querySelectorAll('.ord-item').forEach(x => x.classList.remove('dragging', 'dragover'));
+    list.querySelectorAll('.ord-item').forEach(x => { x.classList.remove('dragging', 'dragover'); x.draggable = false; });
   });
   list.addEventListener('dragover', e => {
     e.preventDefault();
@@ -1898,6 +1993,13 @@ document.addEventListener('click', async e => {
       renderCounter(); break; }
     case 'cc-tomorrow': { const t = new Date(); t.setDate(t.getDate() + 1); S.cDate = fmtD(t); renderCounter(); break; }
     case 'cc-initonly': S.ccInitOnly = !S.ccInitOnly; renderCounter(); break;
+    case 'cn-mark': {
+      const a = (window.__cnIndex || [])[+el.dataset.i];
+      if (!a) break;
+      el.disabled = true;
+      const ok = await markAppt(a, el.dataset.op);
+      if (ok) loadCNotify(); else el.disabled = false;
+      break; }
     case 'cc-mark': {
       const a = (window.__ccIndex || [])[+el.dataset.i];
       if (!a) break;
@@ -1942,6 +2044,18 @@ document.addEventListener('click', async e => {
     case 'a-logout': S.aUser = null; $('#a-main').style.display='none'; $('#a-login').style.display='block'; break;
     case 'a-menu': S.aView = el.dataset.v; renderAdmin(); break;
     case 'a-sync': aSync(el); break;
+    case 'ap-edit': openProfileEdit(el.dataset.d); break;
+    case 'ap-save': {
+      el.disabled = true;
+      const res = await api.post('saveDoctorProfile', {
+        '醫師短名': el.dataset.d,
+        '一句話': $('#ap-tag').value.trim(),
+        '介紹文字': $('#ap-bio').value.trim(),
+        'Drive資料夾ID': $('#ap-folder').value.trim()
+      }, true);
+      if (res.ok) { toast('✓ 介紹已更新，前台立即生效'); closeModals(); }
+      else { toast('儲存失敗：' + (res.error || ''), 'var(--red)'); el.disabled = false; }
+      break; }
     case 'ord-move': {
       const i = +el.dataset.i, d2 = +el.dataset.d, to = i + d2;
       if (to < 0 || to >= S.ordDraft.length) break;
