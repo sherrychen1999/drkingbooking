@@ -134,6 +134,14 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 /* ===== counter ===== */
 .cwrap{display:grid;grid-template-columns:210px 1fr;gap:16px}
 @media(max-width:860px){.cwrap{grid-template-columns:1fr}}
+/* ✨ v26.6 櫃台/系統管理＝純電腦使用 → 全寬大版面 */
+#page-counter,#page-admin{max-width:min(1880px,97vw)}
+@media(min-width:1100px){
+  #page-counter .cwrap,#page-admin .cwrap{grid-template-columns:250px 1fr;gap:20px}
+  #page-counter .side .mi,#page-admin .side .mi{font-size:17px;padding:12px 14px}
+  #page-counter .tbl,#page-admin .tbl{font-size:15.5px}
+  #page-counter .card,#page-admin .card{padding:24px}
+}
 .side{background:#fff;border-radius:var(--r);padding:14px;height:fit-content}
 .side .who{font-size:15px;color:var(--txt3)}.side .whon{font-weight:700;font-size:17px;margin:2px 0 10px}
 .side .mi{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;font-size:16px;color:var(--txt2);cursor:pointer;margin-bottom:2px}
