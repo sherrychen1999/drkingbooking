@@ -53,14 +53,14 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .modal .mb{padding:18px 20px}
 .modal .mf{padding:14px 20px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
 /* ===== patient hero + hub ===== */
-.hero{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:var(--r);padding:34px 20px;text-align:center;margin-bottom:18px}
+.hero{background:linear-gradient(135deg,#93a29b,#6f7f76);color:#fff;border-radius:var(--r);padding:34px 20px;text-align:center;margin-bottom:18px;text-shadow:0 1px 2px rgba(0,0,0,.12)}
 .hero h1{font-size:30px}.hero p{margin-top:8px;opacity:.9;font-size:16px}
 #hub{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:760px;margin:0 auto}
 .hub-card{border:none;border-radius:16px;padding:34px 22px;text-align:center;color:#fff;transition:transform .18s,box-shadow .18s}
 .hub-card:hover{transform:translateY(-4px);box-shadow:0 14px 34px rgba(0,0,0,.22)}
 .hub-card .ic{font-size:64.5px}.hub-card h3{font-size:24px;margin:10px 0 6px}.hub-card p{font-size:15px;opacity:.9}
-.hub-new{background:linear-gradient(135deg,#667eea,#764ba2)}
-.hub-find{background:linear-gradient(135deg,#11998e,#38ef7d)}
+.hub-new{background:linear-gradient(135deg,#c4a08a,#a97e63);text-shadow:0 1px 2px rgba(0,0,0,.15)}
+.hub-find{background:linear-gradient(135deg,#96aabb,#71889d);text-shadow:0 1px 2px rgba(0,0,0,.15)}
 @media(max-width:640px){#hub{grid-template-columns:1fr}}
 /* ===== steps ===== */
 .steps{display:flex;align-items:center;justify-content:center;gap:6px;margin:18px 0}
@@ -351,7 +351,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v28.7';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v28.8';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
