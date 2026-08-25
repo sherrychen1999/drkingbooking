@@ -2496,8 +2496,13 @@ async function loadADash() {
     ${stat(d.initial,'初診','#7c3aed')}${stat(d.followup,'複診')}</div>
     <div class="stat-grid" style="margin-top:10px">
     ${stat(d.cancelPure,'取消（未改約）','var(--red)')}${stat(d.reschedNoMeds,'改約・未拿藥','var(--amber)')}${stat(d.reschedMeds,'改約・有拿藥','#b45309')}</div>
+    ${(!S.adClinic && Array.isArray(d.byClinic) && d.byClinic.length > 1) ? `
+      <h4 style="margin:14px 0 6px">🏥 院區別${S.adDoctor ? `（${esc(S.adDoctor)} 醫師）` : ''}</h4>
+      <table class="tbl"><thead><tr><th>院區</th><th>有效預約</th><th>報到</th><th>初診</th><th>複診</th><th>取消</th><th>改約未拿藥</th><th>改約拿藥</th></tr></thead><tbody>
+      ${d.byClinic.map(r=>`<tr><td><b>${esc(r.clinic)}</b></td><td>${r.total}</td><td>${r.checked}</td><td>${r.initial}</td><td>${r.followup}</td>
+        <td style="color:var(--red)">${r.cancelPure}</td><td style="color:var(--amber)">${r.reschedNoMeds}</td><td style="color:#b45309">${r.reschedMeds}</td></tr>`).join('')}</tbody></table>` : ''}
     ${(!S.adClinic && !S.adDoctor) ? `<div class="stat-grid" style="margin-top:10px">${stat(S.schedules.length,'班表總筆數')}${stat(S.doctors.length,'醫師數')}</div>` : ''}
-    <p class="muted" style="margin-top:10px">今日快照，切換院區／醫師即時重算；歷史趨勢請至「📊 區間報表」。</p>`;
+    <p class="muted" style="margin-top:10px">今日快照，切換院區／醫師即時重算；未選院區時數字為跨院加總，上表為院區拆分。歷史趨勢請至「📊 區間報表」。</p>`;
 }
 /* ── 📝 醫師介紹編輯 ── */
 function htmlAProfile() {
@@ -2699,6 +2704,10 @@ async function aReport() {
   $('#ar-out').innerHTML = `<div class="stat-grid">
     ${stat(s.total,'有效預約')}${stat(s.checked,'已報到','var(--green)')}${stat(s.initial,'初診','#7c3aed')}${stat(s.followup,'複診')}
     ${stat(s.noShow,'未到診')}${stat(s.cancelPure,'取消（未改約）','var(--red)')}${stat(s.reschedNoMeds,'改約・未拿藥','var(--amber)')}${stat(s.reschedMeds,'改約・有拿藥','#b45309')}</div>
+    ${(!$('#ar-clinic').value && Array.isArray(res.data.byClinic) && res.data.byClinic.length > 1) ? `
+    <h4 style="margin:16px 0 6px">🏥 院區別</h4>
+    <table class="tbl"><thead><tr><th>院區</th>${head}</tr></thead><tbody>
+      ${res.data.byClinic.map(r=>`<tr><td><b>${esc(r.clinic)}</b></td>${row(r)}</tr>`).join('')}</tbody></table>` : ''}
     <h4 style="margin:16px 0 6px">👨‍⚕️ 醫師別</h4>
     <table class="tbl"><thead><tr><th>醫師</th>${head}</tr></thead><tbody>
       ${byDoctor.map(r=>`<tr><td><b>${esc(r.doctor)}</b></td>${row(r)}</tr>`).join('')}</tbody></table>
