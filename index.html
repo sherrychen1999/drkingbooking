@@ -351,7 +351,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v28.8';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v28.9';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -782,7 +782,10 @@ function htmlStep1() {
   const v = S.bk.view;
   let inner;
   if (v === 'doctor') {
-    inner = `<div class="dgrid">` + S.doctors.map(d => {
+    const filterBox = S.doctors.length > 8
+      ? `<input id="df-q" type="search" placeholder="🔍 輸入醫師姓名快速尋找（例：蕭）" style="width:100%;max-width:420px;margin:0 0 12px;padding:11px 14px;font-size:16px;border-radius:10px">`
+      : '';
+    inner = filterBox + `<div class="dgrid">` + S.doctors.map(d => {
       const ph = S.photos[d.shortName];
       const av = ph ? `style="background-image:url('${esc(thumb(ph, 1000))}')"` : '';
       const sel = S.bk.doctor === d.shortName ? ' sel' : '';
@@ -3511,6 +3514,14 @@ document.addEventListener('click', async e => {
   }
 });
 /* change 事件（櫃台院區切換） */
+document.addEventListener('input', e => {
+  if (e.target.id === 'df-q') {
+    const q = e.target.value.trim();
+    document.querySelectorAll('.dgrid .dcard').forEach(c => {
+      c.style.display = !q || (c.dataset.d || '').includes(q) ? '' : 'none';
+    });
+  }
+});
 document.addEventListener('change', e => {
   if (e.target.id === 'cd-clinic') { S.cClinic = e.target.value; renderCounter(); }
   if (e.target.id === 'ad-clinic') { S.adClinic = e.target.value; S.adDoctor = ''; loadADash(); }
