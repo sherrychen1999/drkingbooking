@@ -2243,17 +2243,31 @@ function htmlCCall() {
 async function loadCCall() {
   const clinic = S.cClinic, date = S.cDate;
   S.apptCache.delete(clinic + '|' + date);
-  const list = (await getAppts(clinic, date))
+  // ✨ v26.4 同步抓自動通知（LINE/簡訊）送達狀態
+  const [applist, rsRes] = await Promise.all([
+    getAppts(clinic, date),
+    api.post('getReminderStatus', { date, clinic }, true)
+  ]);
+  const rsMap = (rsRes.ok && rsRes.data) || {};
+  const autoOf = a => {
+    const rec = (rsMap[String(a.apptId || a.id || a['預約編號'] || '')] || {}).reminder;
+    if (!rec) return { s: 'pending', label: '⏳ 待自動發送（每日 12:00）', cls: 'tag-a' };
+    if (rec.ok) return { s: 'ok', label: (rec.channel === 'line' ? '✓ LINE 已通知' : '✓ 簡訊已通知') + (rec.at ? ' ' + String(rec.at).slice(11, 16) : ''), cls: 'tag-g' };
+    return { s: 'fail', label: '✗ 自動通知失敗', cls: 'tag-r' };
+  };
+  const rank = { fail: 0, pending: 1, ok: 2 };
+  const list = applist
     .filter(a => !isDead(a))
     .filter(a => !S.ccInitOnly || (a.type || a['類型']) === '初診')
-    .map(a => ({ a, t: apptTime(a) }))
-    .sort((x, y) => x.t.localeCompare(y.t));
+    .map(a => ({ a, t: apptTime(a), auto: autoOf(a) }))
+    .sort((x, y) => (rank[x.auto.s] - rank[y.auto.s]) || x.t.localeCompare(y.t));
   const box = $('#cc-box');
   if (!box || S.cClinic !== clinic || S.cDate !== date) return;
   window.__ccIndex = list.map(x => x.a);
   if (!list.length) { box.innerHTML = '<p class="muted">本日無預約</p>'; return; }
-  let notified = 0;
-  const rows = list.map(({ a, t }, i) => {
+  let notified = 0, autoOk = 0, autoFail = 0, autoPend = 0;
+  const rows = list.map(({ a, t, auto }, i) => {
+    if (auto.s === 'ok') autoOk++; else if (auto.s === 'fail') autoFail++; else autoPend++;
     const note = String(a.note || a['備註'] || '');
     const isInit = (a.type || a['類型']) === '初診';
     const done = /☎已通知/.test(note);
@@ -2270,10 +2284,15 @@ async function loadCCall() {
         ${!bState ? '<span class="tag tag-r" style="margin-left:6px">未確認</span>' : ''}
       </div>`;
     const bloodDateTxt = (note.match(/🩸抽血日:[0-9-]+/) || [''])[0].replace('🩸抽血日:', '');
-    return `<div class="acard" style="align-items:flex-start;${done ? 'background:#f0fdf4;border-color:#bbf7d0' : ''}">
+    const cardStyle = done ? 'background:#f0fdf4;border-color:#bbf7d0'
+      : auto.s === 'fail' ? 'background:#fef2f2;border-color:#fca5a5'
+      : auto.s === 'ok' ? 'border-color:#bbf7d0' : '';
+    return `<div class="acard" style="align-items:flex-start;${cardStyle}">
       <div class="info" style="flex:1">
-        <div class="ad">${t} ${esc(a.name || a['病人姓名'] || '(未填)')}
+        <div class="ad"><span style="display:inline-block;background:#1e40af;color:#fff;border-radius:7px;padding:2px 10px;font-size:18px;font-weight:800;margin-right:8px">🕐 ${t}</span>${esc(a.name || a['病人姓名'] || '(未填)')}
           <span class="tag ${isInit ? 'tag-b' : ''}" style="margin-left:6px">${esc(a.type || a['類型'] || '複診')}</span>
+          <span class="tag ${auto.cls}" style="margin-left:4px;font-weight:800">${esc(auto.label)}</span>
+          ${auto.s === 'fail' ? '<span style="color:#b91c1c;font-weight:800;font-size:14px;margin-left:4px">請電話通知 →</span>' : ''}
           ${done ? `<span class="tag tag-g" style="margin-left:4px">${esc((note.match(/☎已通知[0-9\/]*/) || ['☎已通知'])[0])}</span>` : ''}
           ${/☎未接聽/.test(note) ? `<span class="tag tag-a" style="margin-left:4px">${esc((note.match(/☎未接聽[0-9\/]*/) || ['☎未接聽'])[0])}</span>` : ''}</div>
         <div class="am" style="font-size:17px;margin-top:4px">📱 <a href="tel:${esc(phone)}" style="color:var(--blue);font-weight:800;font-size:18.5px">${esc(phone) || '—'}</a>
@@ -2287,7 +2306,18 @@ async function loadCCall() {
       </div>`;
   }).join('');
   box.style.textAlign = '';
-  box.innerHTML = `<div class="muted" style="margin-bottom:8px">共 ${list.length} 筆 · 已通知 ${notified} 筆</div>` + rows;
+  box.innerHTML = `<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:14.5px;align-items:center">
+    <span>共 <b>${list.length}</b> 筆</span>
+    <span style="color:var(--green)">自動通知成功 <b>${autoOk}</b></span>
+    <span style="color:var(--red)">失敗 <b>${autoFail}</b></span>
+    <span style="color:#b45309">待發送 <b>${autoPend}</b></span>
+    <span class="muted">｜ 人工已補 ${notified} 筆</span>
+  </div>
+  <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:9px 13px;margin-bottom:12px;font-size:14px;line-height:1.7">
+    💡 <b>系統每天中午 12:00 自動發送明日提醒</b>（有 LINE 走 LINE、沒有發簡訊）。<br>
+    櫃檯 <b>14:00–16:00</b> 處理本頁：只需電話補通知<b style="color:var(--red)">「✗ 失敗」</b>的（排在最上面）；
+    綠色「✓ 已通知」的不用再打。<b>中午 12 點前</b>看到整排「⏳ 待發送」是正常現象、不是系統異常。
+  </div>` + rows;
 }
 
 /* ── 電話預約快速登錄 ── */
