@@ -2823,6 +2823,11 @@ function htmlATimeCfg() {
   }).join('');
   return `<div class="card"><h3>⏱ 預約時間設定</h3>
     <p class="muted" style="margin:8px 0 4px">公版：初診 <b>${d0.initMin}</b> 分鐘 / 複診 <b>${d0.followMin}</b> 分鐘。時段以「複診分鐘」為間隔切格；初診會佔滿整段時長，重疊時段自動反黑不可約。</p>
+    <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:9px 13px;margin:6px 0 10px;font-size:13px;line-height:1.7">
+      <b>📌 調整用時會發生什麼？</b><br>
+      ① <b>已預約的客戶完全不受影響</b>，照原時段看診　② 新預約立即改用新分鐘數切格<br>
+      ③ 系統以「時間重疊」自動避開舊預約，<b>絕不重複掛號</b>　④ 空隙塞不下新時長時，客戶端自然顯示額滿，<b>不需再手動按滿診</b><br>
+      過渡期（舊預約消化完前，約 2~4 週）可能出現塞不進新客的小空隙，屬正常現象。</div>
     <p class="muted" style="margin-bottom:12px">個別調整範例：林秉承 → 初診 10 / 複診 10 = 10 分鐘一位不分初複診。改完立即生效（前台＋櫃台同步）。</p>
     <table class="tbl"><thead><tr><th>醫師</th><th>初診</th><th>複診</th><th>狀態</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
