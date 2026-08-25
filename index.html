@@ -149,10 +149,18 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .grid-tbl td.off{background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 6px,#f1f5f9 6px,#f1f5f9 12px)}
 .grid-tbl .tm{width:52px;text-align:center;color:var(--txt3);font-size:12.5px;background:#f8fafc}
 .bkb{background:#eff6ff;border:2px solid #93c5fd;border-radius:12px;padding:12px 14px;margin-bottom:12px}
-.bkb .bkb-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bkb .bkb-r1,.bkb .bkb-r2{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bkb .bkb-r2{margin-top:9px}
+.bkb .bkb-r2 .grow{flex:1;min-width:110px}
 .bkb .bkb-t{font-weight:800;color:#1e40af;font-size:16px;white-space:nowrap}
 .bkb input,.bkb select{padding:8px 10px;font-size:14.5px;border-radius:8px}
-.bkb .w1{width:112px}.bkb .w2{width:150px}.bkb .w3{width:112px}
+.bkb .w1{width:118px}.bkb .w2{width:172px}.bkb .w3{width:118px}
+.sv-tbl{width:100%;border-collapse:collapse;font-size:14px}
+.sv-tbl th,.sv-tbl td{border:1px solid #e7d9c4;padding:7px;text-align:center;vertical-align:top}
+.sv-tbl th{background:#f3e8d8;color:#6b4c2a;font-size:14.5px}
+.sv-tbl td .svi{margin:3px 0;padding:6px;border-radius:7px;background:#fdf9f1}
+.sv-tbl td .svi b{display:block;font-size:14px;color:#4a3418}
+.sv-tbl td .svi span{font-size:12.5px;color:#8a6d43}
 .bkb .vt2{display:flex;gap:4px}
 .bkb .vt2 button{padding:8px 13px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;font-weight:700;font-size:14px}
 .bkb .vt2 button.on{border-color:var(--blue);background:#dbeafe;color:#1e40af}
@@ -1207,6 +1215,7 @@ function htmlCDay() {
       <button class="dpill" data-act="cd-pill">📅 ${S.cDate.replace(/-/g,'/')}（週${WDS[d.getDay()]}）<span class="pe">✏️</span></button>
       ${modeToggle()}
       <span style="flex:1"></span>
+      <button class="btn btn-o btn-sm" data-act="sv-open">📋 門診表</button>
       ${['all','早診','午診','晚診'].map(s =>
         `<button class="btn btn-sm ${S.cSession===s?'btn-p':'btn-o'}" data-act="cd-sess" data-s="${s}">${s==='all'?'全日':s}</button>`).join('')}
       <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
@@ -1229,6 +1238,7 @@ function htmlCWeek() {
       <button class="dpill" data-act="cd-pill">📅 ${fmtD(ws).replace(/-/g,'/')} — ${fmtD(we).replace(/-/g,'/')}<span class="pe">✏️</span></button>
       ${modeToggle()}
       <span style="flex:1"></span>
+      <button class="btn btn-o btn-sm" data-act="sv-open">📋 門診表</button>
       <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
     </div>
     <div id="cw-box" class="muted" style="padding:16px;text-align:center">載入本週預約中…</div>
@@ -1426,6 +1436,70 @@ function bloodTagOf(sel) {
   return '🩸抽血日:' + sel.ds;
 }
 const BLOOD_TAG_CLEAR = /🩸抽血日:[0-9-]+|🩸外院報告\(初診日帶來\)|🩸外院報告|🩸初診當日抽血|🩸抽血日未定/g;
+/* ── 📋 減重門診表快查（檢視用，零 API：直接讀記憶體班表）── */
+function openSchedViewer() {
+  const m = modal(`<div class="mh">📋 減重門診表
+      <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <div class="vt2" style="display:flex;gap:4px">
+          <button class="btn btn-sm btn-p" data-act="sv-mode" data-v="clinic">依院區</button>
+          <button class="btn btn-sm btn-o" data-act="sv-mode" data-v="doctor">依醫師</button></div>
+        <select id="sv-key" style="min-width:150px"></select>
+      </div>
+      <div id="sv-body"></div>
+    </div>`);
+  m.querySelector('.modal').style.maxWidth = '920px';
+  m.dataset.svMode = 'clinic';
+  svFillKeys(m, S.cClinic);   // 預設 = 目前檢視的院區
+  svRender(m);
+}
+function svFillKeys(m, preset) {
+  const mode = m.dataset.svMode;
+  const sel = m.querySelector('#sv-key');
+  if (mode === 'clinic') {
+    const names = CLINICS.filter(c => sched.byClinic(c.name).length).map(c => c.name);
+    sel.innerHTML = names.map(n => `<option ${n===preset?'selected':''}>${esc(n)}</option>`).join('');
+  } else {
+    sel.innerHTML = S.doctors.map(d => `<option ${d.shortName===preset?'selected':''}>${esc(d.shortName)}</option>`).join('');
+  }
+}
+function svRender(m) {
+  const mode = m.dataset.svMode;
+  const key = m.querySelector('#sv-key').value;
+  const body = m.querySelector('#sv-body');
+  const order = { '早診':0,'午診':1,'晚診':2,'減重專診':3 };
+  if (mode === 'clinic') {
+    const rows = sched.byClinic(key);
+    if (!rows.length) { body.innerHTML = '<p class="muted" style="padding:16px;text-align:center">此院區無班表</p>'; return; }
+    const sessions = [...new Set(rows.map(r => r.session || '門診'))].sort((a,b) => (order[a]??9)-(order[b]??9));
+    let h = `<table class="sv-tbl"><thead><tr><th style="width:60px">時段</th>`;
+    for (let w = 1; w <= 7; w++) h += `<th>週${WDS[w%7]}</th>`;
+    h += `</tr></thead><tbody>`;
+    sessions.forEach(sess => {
+      h += `<tr><th>${esc(sess)}</th>`;
+      for (let w = 1; w <= 7; w++) {
+        const cell = rows.filter(r => (r.session||'門診') === sess && r.weekday === w)
+                         .sort((a,b) => t2m(a.start) - t2m(b.start));
+        h += `<td>` + cell.map(r => `<div class="svi"><b>${esc(r.doctor)} 醫師</b><span>${esc(r.start)}–${esc(r.end)}</span></div>`).join('') + `</td>`;
+      }
+      h += `</tr>`;
+    });
+    body.innerHTML = h + `</tbody></table>`;
+  } else {
+    const rows = sched.byDoctor(key);
+    if (!rows.length) { body.innerHTML = '<p class="muted" style="padding:16px;text-align:center">此醫師無班表</p>'; return; }
+    let h = `<table class="sv-tbl"><thead><tr>`;
+    for (let w = 1; w <= 7; w++) h += `<th>週${WDS[w%7]}</th>`;
+    h += `</tr></thead><tbody><tr>`;
+    for (let w = 1; w <= 7; w++) {
+      const cell = rows.filter(r => r.weekday === w).sort((a,b) => t2m(a.start) - t2m(b.start));
+      h += `<td>` + cell.map(r => `<div class="svi"><b>${esc(r.clinic.replace(/院區$/,''))}</b><span>${esc(r.start)}–${esc(r.end)}</span>${r.note && r.note !== '減重專診' ? `<span>(${esc(r.note)})</span>` : ''}</div>`).join('') + `</td>`;
+    }
+    body.innerHTML = h + `</tr></tbody></table>`;
+  }
+}
+
 /* ── 固定掛號列（日檢視：工具列下、醫師欄上，常駐）── */
 function renderBkb(selDoc, selT) {
   const box = $('#cd-book');
@@ -1439,20 +1513,22 @@ function renderBkb(selDoc, selT) {
   const type = box.dataset.type || '複診';
   box.dataset.type = type;
   box.innerHTML = `<div class="bkb">
-    <div class="bkb-bar">
+    <div class="bkb-r1">
       <span class="bkb-t">🖊 掛號</span>
       <div class="vt2">
         <button class="${type==='複診'?'on':''}" data-act="bkb-type" data-v="複診">複診</button>
         <button class="${type==='初診'?'on':''}" data-act="bkb-type" data-v="初診">初診</button></div>
       <select id="bkb-doc">${dayDocs.map(d2 => `<option ${d2===(selDoc||keep('#bkb-doc'))?'selected':''}>${esc(d2)}</option>`).join('')}</select>
       <select id="bkb-time"></select>
+      <span class="bkb-msg muted"></span>
+    </div>
+    <div class="bkb-r2">
       <input id="bkb-case" class="w1" placeholder="病歷號" value="${esc(keep('#bkb-case'))}">
       <button class="btn btn-o btn-sm" data-act="bkb-case-fill">🔍 帶入</button>
       <input id="bkb-phone" class="w2" type="tel" placeholder="電話（或病歷號擇一）" value="${esc(keep('#bkb-phone'))}">
       <input id="bkb-name" class="w3" placeholder="姓名(可空)" value="${esc(keep('#bkb-name'))}">
-      <input id="bkb-note" class="w3" placeholder="備註" value="${esc(keep('#bkb-note'))}">
+      <input id="bkb-note" class="grow" placeholder="備註" value="${esc(keep('#bkb-note'))}">
       <button class="btn btn-g" data-act="bkb-save">✓ 建立</button>
-      <span class="bkb-msg muted"></span>
     </div>
     <div class="bkb-blood" style="display:none"></div>
   </div>`;
@@ -2438,6 +2514,14 @@ document.addEventListener('click', async e => {
       break; }
     case 'appt-detail': openApptDetail(el.dataset.k); break;
     case 'cd-slot': bkbSet(el.dataset.doc, el.dataset.t); break;
+    case 'sv-open': openSchedViewer(); break;
+    case 'sv-mode': {
+      m.dataset.svMode = el.dataset.v;
+      m.querySelectorAll('[data-act="sv-mode"]').forEach(b => {
+        b.classList.toggle('btn-p', b === el); b.classList.toggle('btn-o', b !== el);
+      });
+      svFillKeys(m, el.dataset.v === 'clinic' ? S.cClinic : (S.doctors[0]||{}).shortName);
+      svRender(m); break; }
     case 'bkb-type': {
       $('#cd-book').dataset.type = el.dataset.v;
       document.querySelectorAll('[data-act="bkb-type"]').forEach(b => b.classList.toggle('on', b === el));
@@ -2586,6 +2670,7 @@ document.addEventListener('change', e => {
   }
   if (e.target.id === 'qk-doc') refreshQkTimes(e.target.closest('.mask'));
   if (e.target.id === 'bkb-doc') bkbRefresh();
+  if (e.target.id === 'sv-key') svRender(e.target.closest('.mask'));
 });
 function captureF4() {
   const g = id => $(id) ? $(id).value.trim() : '';
