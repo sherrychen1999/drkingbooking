@@ -282,6 +282,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
       <button class="btn btn-o btn-sm" data-act="c-logout" style="margin-bottom:12px">登出</button>
       <div class="mi on" data-act="c-menu" data-v="day">📅 今日看診表</div>
       <div class="mi" data-act="c-menu" data-v="call">📞 明日通知</div>
+      <div class="mi" data-act="c-menu" data-v="meds">💊 拿藥需求</div>
       <div class="mi" data-act="c-menu" data-v="quick">📞 電話預約登錄</div>
       <div class="mi" data-act="c-menu" data-v="find">🔎 病人查詢</div>
       <div class="mi" data-act="c-menu" data-v="notify">📨 通知紀錄</div>
@@ -393,6 +394,9 @@ resetBk();
 /* ───── 工具 ───── */
 const $ = s => document.querySelector(s);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const _DEAD = {'已取消':1,'cancelled':1,'已改約':1,'rescheduled':1};
+const isDead = a => !!(_DEAD[a.status] || _DEAD[a['狀態']]);
+const tomorrowMD = () => { const d = new Date(Date.now()+864e5); return (d.getMonth()+1)+'/'+d.getDate(); };
 const pad2 = n => String(n).padStart(2,'0');
 const fmtD = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 const t2m = t => { const m = String(t||'').match(/(\d{1,2}):(\d{2})/); return m ? +m[1]*60 + +m[2] : NaN; };
@@ -886,7 +890,7 @@ async function loadStep3Slots() {
   // 每位醫師的已佔用區間（初診佔 30 分就整段擋掉）
   const blocks = {};
   appts.forEach(a => {
-    if (a.status === 'cancelled' || a['狀態'] === '已取消') return;
+    if (isDead(a)) return;
     const dn = normDoc(a.doctor || a['醫師'] || '');
     const st = t2m(apptTime(a));
     if (isNaN(st)) return;
@@ -1152,7 +1156,7 @@ async function rsFillTimes(m) {
   const cfg = cfgFor(doc);
   const dur = type === 'initial' ? cfg.initMin : cfg.followMin;
   const wd = isoWd(ds);
-  const appts = (await getAppts(cli, ds)).filter(x => x.status !== 'cancelled' && x['狀態'] !== '已取消');
+  const appts = (await getAppts(cli, ds)).filter(x => !isDead(x));
   if (m.querySelector('#rs-date').value !== ds) return;
   const blocks = [];
   appts.forEach(x => {
@@ -1186,6 +1190,7 @@ function reschCalc(m) {
       <div style="margin-top:10px;font-size:14px;color:#92400e">
         拿藥院區：<b style="font-size:15.5px">${esc(lastCli)}</b><span class="muted" style="font-size:12.5px;margin-left:6px">（您最近看診的院區）</span>
         <div style="font-size:12.5px;color:#92400e;margin-top:5px">如需跨院區拿藥，請加 LINE <b style="user-select:all">@slsectgoodfood</b> 聯繫客服協助安排</div>
+        <div style="font-size:13px;color:#166534;background:#dcfce7;border-radius:6px;padding:6px 9px;margin-top:6px">💊 藥品可於 <b>明日 ${tomorrowMD()} 起</b>至 ${esc(lastCli)} 領取（營業時間內，無需掛號）</div>
         <span id="rs-medcli" data-v="${esc(lastCli)}" style="display:none"></span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
@@ -1206,13 +1211,13 @@ async function reschGo(m, btn) {
     oldApptId: a.apptId || a.id || a['預約編號'] || '', clinic: cli,
     date: nd, startTime: nt, endTime: m2t(t2m(nt) + dur),
     doctor: doc, name: a.name || a['病人姓名'] || '', phone: a.phone || a['電話'] || '',
-    type, medicationWeeks: weeks || '',
+    type, medicationWeeks: weeks || '', medClinic: medCli, oldDate: a.date || '', oldTime: a._t || '',
     employeeId: 'SYS', employeeName: '病人自助', employeeRole: 'patient',
-    note: `病人自助改約${weeks ? `（拿藥${weeks}週·${medCli}領）` : '（不拿藥）'}`, source: 'patient'
+    note: `病人自助改約${weeks ? `（拿藥${weeks}週·${medCli}領·${tomorrowMD()}起可領）` : '（不拿藥）'}`, source: 'patient'
   }, true);
   if (res.ok) {
     S.apptCache.clear();
-    toast(`✓ 改約成功！${esc(doc)} 醫師 ${nd} ${nt}${weeks ? ` · ${weeks} 週藥於${medCli}領取` : ''}`);
+    toast(`✓ 改約成功！${esc(doc)} 醫師 ${nd} ${nt}${weeks ? ` · ${weeks} 週藥 ${tomorrowMD()} 起可至${medCli}領取` : ''}`);
     closeModals(); doLookup();
   } else { btn.disabled = false; toast('改約失敗：' + (res.error || '請聯絡櫃台'), 'var(--red)'); }
 }
@@ -1228,6 +1233,7 @@ function openCancel(a) {
           <button class="btn btn-a btn-sm" data-act="cx-meds" data-v="yes">✓ 我要拿藥</button>
           <button class="btn btn-o btn-sm" data-act="cx-meds" data-v="no">✗ 不需拿藥</button>
           <span id="cx-wk" style="display:none">週數：<input type="number" id="cx-weeks" value="1" min="1" max="12" style="width:64px;padding:5px"></span>
+          <div id="cx-pick" style="display:none;flex-basis:100%;font-size:12.5px;color:#166534;background:#dcfce7;border-radius:6px;padding:6px 9px">💊 藥品可於 <b>明日 ${tomorrowMD()} 起</b>至 ${esc(a.clinic)} 領取（無需掛號）</div>
         </div></div></div>
     <div class="mf"><button class="btn btn-o" data-act="close-modal">返回</button>
       <button class="btn btn-r" id="cx-go" data-act="cancel-go" disabled style="opacity:.5">確認取消</button></div>`);
@@ -1240,13 +1246,13 @@ async function cancelGo(m) {
   const res = await api.post('updateAppointmentStatus', {
     apptId: a.apptId || a.id || a['預約編號'] || '', clinic: a.clinic, date: a.date,
     startTime: a._t, doctor: normDoc(a.doctor||a['醫師']), status: 'cancelled',
-    medicationWeeks: weeks || '',
+    name: a.name || a['病人姓名'] || '', medicationWeeks: weeks || '', medClinic: a.clinic,
     employeeId: 'SYS', employeeName: '病人自助', employeeRole: 'patient',
-    note: `病人自助取消${weeks?`（拿藥${weeks}週）`:'（不拿藥）'}`, source: 'patient'
+    note: `病人自助取消${weeks?`（拿藥${weeks}週·${tomorrowMD()}起可領）`:'（不拿藥）'}`, source: 'patient'
   }, true);
   if (res.ok) {
     S.apptCache.clear();
-    toast(`✓ 已取消預約${weeks?`，已開 ${weeks} 週藥`:''}`);
+    toast(`✓ 已取消預約${weeks?`，${weeks} 週藥 ${tomorrowMD()} 起可至${a.clinic}領取`:''}`);
     closeModals(); doLookup();
   } else toast('取消失敗：'+(res.error||'請聯絡櫃台'), 'var(--red)');
 }
@@ -1284,9 +1290,18 @@ function renderCounter() {
   const c = $('#c-content');
   if (S.cView === 'day') {
     if (S.cMode === 'week') { c.innerHTML = htmlCWeek(); loadCWeek(); }
-    else { c.innerHTML = htmlCDay(); loadCDayGrid(); }
+    else { c.innerHTML = htmlCDay(); loadCDayGrid(); fillMedBanner(); }
   }
   else if (S.cView === 'call') { c.innerHTML = htmlCCall(); loadCCall(); }
+  else if (S.cView === 'meds') {
+    c.innerHTML = `<div class="card"><h3>💊 拿藥需求</h3>
+      <div style="display:flex;gap:8px;align-items:center;margin:6px 0 10px">
+        <button class="btn btn-sm ${S.cmAll?'btn-o':'btn-p'}" data-act="cm-scope" data-v="0">${esc(S.cClinic)}</button>
+        <button class="btn btn-sm ${S.cmAll?'btn-p':'btn-o'}" data-act="cm-scope" data-v="1">全部院區</button>
+        <span style="flex:1"></span><button class="btn btn-o btn-sm" data-act="cm-reload">🔄</button></div>
+      <div id="cm-box" class="muted" style="padding:14px">載入中…</div></div>`;
+    loadCMeds();
+  }
   else if (S.cView === 'quick') c.innerHTML = htmlCQuick();
   else if (S.cView === 'find') c.innerHTML = htmlCFind();
   else if (S.cView === 'notify') { c.innerHTML = htmlCNotify(); loadCNotify(); }
@@ -1316,10 +1331,12 @@ function htmlCDay() {
       ${modeToggle()}
       <span style="flex:1"></span>
       <button class="btn btn-o btn-sm" data-act="sv-open">📋 門診表</button>
+      <button class="btn btn-o btn-sm" data-act="roster-print">🖨 看診名單</button>
       ${['all','早診','午診','晚診'].map(s =>
         `<button class="btn btn-sm ${S.cSession===s?'btn-p':'btn-o'}" data-act="cd-sess" data-s="${s}">${s==='all'?'全日':s}</button>`).join('')}
       <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
     </div>
+    <div id="cd-medbn"></div>
     <div id="cd-book"></div>
     <div id="cd-orph"></div>
     <div id="cd-grid" class="muted" style="padding:16px;text-align:center">載入看診表中…</div>
@@ -1357,7 +1374,7 @@ async function loadCWeek() {
   const cols = days.map((ds, i) => {
     const d = new Date(ds + 'T00:00');
     const appts = lists[i]
-      .filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消')
+      .filter(a => !isDead(a))
       .map(a => ({ a, t: apptTime(a) }))
       .sort((x, y) => x.t.localeCompare(y.t));
     total += appts.length;
@@ -1381,7 +1398,7 @@ async function loadCWeek() {
   window.__fxIndex = window.__fxIndex || {};
   const incItems = [];
   days.forEach((ds, i) => lists[i].forEach((a, j) => {
-    if (a.status === 'cancelled' || a['狀態'] === '已取消') return;
+    if (isDead(a)) return;
     const miss = isIncomplete(a);
     if (!miss) return;
     const key = 'w' + i + '_' + j;
@@ -1425,7 +1442,7 @@ async function loadCDayGrid() {
   if (!box) return;
   if (!docs.length) { box.innerHTML = `<p class="muted">😴 ${clinic} 本日無排班</p>`; $('#cd-orph').innerHTML=''; return; }
   S.apptCache.delete(clinic + '|' + date);
-  const appts = (await getAppts(clinic, date)).filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消');
+  const appts = (await getAppts(clinic, date)).filter(a => !isDead(a));
   if (S.cClinic !== clinic || S.cDate !== date) return;
   // 網格範圍
   let minM = Math.min(...dayScheds.map(s => t2m(s.start))), maxM = Math.max(...dayScheds.map(s => t2m(s.end)));
@@ -1643,7 +1660,7 @@ function bkbRefresh(preferT) {
   const doc = bkb.querySelector('#bkb-doc').value;
   const cfg = cfgFor(doc);
   const dur = type === '初診' ? cfg.initMin : cfg.followMin;
-  const appts = (S.apptCache.get(clinic + '|' + date) || []).filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消');
+  const appts = (S.apptCache.get(clinic + '|' + date) || []).filter(a => !isDead(a));
   const blocks = [];
   appts.forEach(a => {
     if (normDoc(a.doctor || a['醫師'] || '') !== normDoc(doc)) return;
@@ -1767,7 +1784,7 @@ function refreshQkTimes(m, preferT) {
   const wd = isoWd(date);
   const type = m.dataset.type || '複診';
   const docSel = m.querySelector('#qk-doc').value;
-  const appts = (window.__qkAppts || []).filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消');
+  const appts = (window.__qkAppts || []).filter(a => !isDead(a));
   const blocks = {};
   appts.forEach(a => {
     const dn = normDoc(a.doctor || a['醫師'] || '');
@@ -2034,7 +2051,7 @@ async function loadCCall() {
   const clinic = S.cClinic, date = S.cDate;
   S.apptCache.delete(clinic + '|' + date);
   const list = (await getAppts(clinic, date))
-    .filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消')
+    .filter(a => !isDead(a))
     .filter(a => !S.ccInitOnly || (a.type || a['類型']) === '初診')
     .map(a => ({ a, t: apptTime(a) }))
     .sort((x, y) => x.t.localeCompare(y.t));
@@ -2116,6 +2133,92 @@ async function quickBook() {
     employeeId:S.cUser.employeeId, employeeName:S.cUser.name, source:'phone_call' }, true);
   if (res.ok) { toast('✓ 預約已建立'); S.apptCache.delete(clinic+'|'+date); }
   else toast('建立失敗：'+(res.error||''), 'var(--red)');
+}
+/* ── 💊 拿藥需求看板 ── */
+async function fetchMedReqs(force) {
+  const now = Date.now();
+  if (!force && S._medCache && now - S._medCache.t < 5*60*1000) return S._medCache.data;
+  const res = await api.post('getMedicationRequests', {}, true);
+  const data = (res.ok && res.data) || [];
+  S._medCache = { t: now, data };
+  return data;
+}
+function medPickDate(r) {
+  const m = String(r['備註']||'').match(/可領日:(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const c = String(r['建立時間']||'').slice(0,10);
+  if (c) { const d = new Date(c+'T00:00'); d.setDate(d.getDate()+1); return fmtD(d); }
+  return '';
+}
+async function loadCMeds() {
+  const box = document.querySelector('#cm-box'); if (!box) return;
+  const all = await fetchMedReqs(true);
+  if (!document.querySelector('#cm-box')) return;
+  const list = all.filter(r => S.cmAll || String(r['院區']) === S.cClinic)
+    .sort((a,b) => String(b['建立時間']||'').localeCompare(String(a['建立時間']||'')));
+  const today = fmtD(new Date());
+  if (!list.length) { box.innerHTML = '<div class="muted" style="padding:10px">目前沒有待處理的拿藥需求 ✓</div>'; return; }
+  window.__cmIndex = list;
+  box.classList.remove('muted'); box.style.padding = '0';
+  box.innerHTML = `<table class="tbl"><thead><tr><th>提出時間</th><th>病人</th><th>電話</th><th>週數</th><th>可領日</th><th>拿藥院區</th><th>來源</th><th>原看診日</th><th>操作</th></tr></thead><tbody>
+    ${list.map((r,i) => {
+      const isToday = String(r['建立時間']||'').slice(0,10) === today;
+      const pk = medPickDate(r);
+      return `<tr style="${isToday?'background:#fffbeb':''}">
+        <td>${esc(String(r['建立時間']||'').slice(5,16).replace('T',' '))}${isToday?' <b style="color:#b45309">今日</b>':''}</td>
+        <td><b>${esc(r['病人姓名']||'')}</b></td><td>${esc(r['電話']||'')}</td>
+        <td><b>${esc(r['拿藥週數']||'')}</b> 週</td>
+        <td><b style="color:#166534">${esc(pk ? pk.slice(5).replace('-','/') : '—')}</b> 起</td>
+        <td>${esc(r['院區']||'')}</td><td>${esc(r['來源']||'')}</td>
+        <td>${esc(String(r['原看診日期']||'').slice(0,10))} ${esc(fmtT(r['原時段'])||'')}</td>
+        <td><button class="btn btn-a btn-sm" data-act="cm-done" data-i="${i}">✓ 已發藥</button></td></tr>`;
+    }).join('')}</tbody></table>`;
+}
+async function fillMedBanner() {
+  if (!document.querySelector('#cd-medbn')) return;
+  const all = await fetchMedReqs(false);
+  const el = document.querySelector('#cd-medbn'); if (!el) return;
+  const today = fmtD(new Date());
+  const mine = all.filter(r => String(r['院區']) === S.cClinic);
+  if (!mine.length) { el.innerHTML = ''; return; }
+  const n = mine.filter(r => String(r['建立時間']||'').slice(0,10) === today).length;
+  el.innerHTML = `<div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:9px 14px;margin:8px 0;display:flex;align-items:center;gap:10px;font-size:14px;flex-wrap:wrap">
+    💊 <b>${esc(S.cClinic)}</b> 有 <b style="color:#b45309;font-size:16px">${mine.length}</b> 筆待發藥的拿藥需求${n?`（今日新增 ${n} 筆）`:''}
+    <span style="flex:1"></span><button class="btn btn-p btn-sm" data-act="cm-goto">查看名單</button></div>`;
+}
+/* ── 🖨 當日看診名單（列印） ── */
+async function rosterPrint(btn) {
+  const w = window.open('', '_blank');
+  if (!w) { toast('請允許彈出視窗以產生名單', 'var(--red)'); return; }
+  w.document.write('<p style="font-family:sans-serif;padding:24px">📋 名單產生中…</p>');
+  if (btn) { btn.disabled = true; btn.textContent = '🖨 產生中…'; }
+  const res = await api.post('getDailyRoster', { clinic: S.cClinic, date: S.cDate }, true);
+  if (btn) { btn.disabled = false; btn.textContent = '🖨 看診名單'; }
+  if (!res.ok) { w.close(); toast('名單產生失敗：' + (res.error || '請確認後端已更新 v11.7'), 'var(--red)'); return; }
+  const rows = res.data || [];
+  const blood = nt => { nt = String(nt||'');
+    if (nt.includes('🩸院內報告OK')) return '✓ 院內報告OK';
+    if (nt.includes('🩸外院報告')) return '外院報告（初診日帶來）';
+    if (nt.includes('🩸初診當日抽血')) return '初診當日抽血';
+    const m = nt.match(/🩸抽血日:(\d{4}-\d{2}-\d{2})/);
+    if (m) return '已排抽血 ' + m[1].slice(5).replace('-','/');
+    return ''; };
+  const html = `<html><head><meta charset="utf-8"><title>看診名單 ${esc(S.cDate)} ${esc(S.cClinic)}</title><style>
+    body{font-family:'Microsoft JhengHei','PingFang TC',sans-serif;margin:24px;color:#111}
+    h2{margin:0 0 4px;font-size:20px} .sub{color:#555;margin-bottom:14px;font-size:13px}
+    table{border-collapse:collapse;width:100%} th,td{border:1px solid #888;padding:6px 9px;font-size:13.5px;text-align:left}
+    th{background:#efefef} .init{color:#b91c1c;font-weight:700}
+    @media print{button{display:none}}
+  </style></head><body>
+    <h2>當日看診名單 · ${esc(S.cClinic)}</h2>
+    <div class="sub">${esc(S.cDate)}（共 ${rows.length} 位）· 產生於 ${new Date().toLocaleString('zh-TW')}</div>
+    <button onclick="print()" style="margin-bottom:12px;padding:8px 20px;cursor:pointer;font-size:14px">🖨 列印</button>
+    <table><thead><tr><th>時段</th><th>醫師</th><th>初/複診</th><th>姓名</th><th>病歷號</th><th>出生年月日</th><th>院內抽血報告</th><th>手機號碼</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${esc(r.time||'')}</td><td>${esc(r.doctor||'')}</td>
+      <td class="${r.type==='初診'?'init':''}">${esc(r.type||'')}</td><td>${esc(r.name||'')}</td>
+      <td>${esc(r.caseNo||'')}</td><td>${esc(r.birthday||'')}</td><td>${esc(blood(r.note))}</td><td>${esc(r.phone||'')}</td></tr>`).join('')}
+    </tbody></table></body></html>`;
+  w.document.open(); w.document.write(html); w.document.close();
 }
 /* ── 病人查詢 ── */
 function htmlCFind() {
@@ -2199,7 +2302,7 @@ async function loadCNotify() {
   const el = $('#cn-box');
   if (!el || S.cClinic !== clinic || S.cDate !== date) return;
   const smsMap = (logRes.ok && logRes.data) || logRes || {};
-  const list = appts.filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消')
+  const list = appts.filter(a => !isDead(a))
     .map(a => ({ a, t: apptTime(a) })).sort((x, y) => x.t.localeCompare(y.t));
   window.__cnIndex = list.map(x => x.a);
   if (!list.length) { el.innerHTML = '<p class="muted">本日無預約</p>'; return; }
@@ -2579,6 +2682,7 @@ document.addEventListener('click', async e => {
     case 'cx-meds': {
       m.dataset.meds = el.dataset.v;
       m.querySelector('#cx-wk').style.display = el.dataset.v === 'yes' ? 'inline' : 'none';
+      const _cp = m.querySelector('#cx-pick'); if (_cp) _cp.style.display = el.dataset.v === 'yes' ? 'block' : 'none';
       const go = m.querySelector('#cx-go'); go.disabled = false; go.style.opacity = '1';
       m.querySelectorAll('[data-act="cx-meds"]').forEach(b => b.classList.toggle('btn-a', b === el));
       break; }
@@ -2594,6 +2698,17 @@ document.addEventListener('click', async e => {
       renderCounter(); break; }
     case 'cc-tomorrow': { const t = new Date(); t.setDate(t.getDate() + 1); S.cDate = fmtD(t); renderCounter(); break; }
     case 'cc-initonly': S.ccInitOnly = !S.ccInitOnly; renderCounter(); break;
+    case 'cm-scope': S.cmAll = el.dataset.v === '1'; renderCounter(); break;
+    case 'cm-reload': S._medCache = null; loadCMeds(); break;
+    case 'cm-goto': S.cView = 'meds'; renderCounter(); break;
+    case 'cm-done': {
+      const r = (window.__cmIndex || [])[+el.dataset.i]; if (!r) break;
+      el.disabled = true; el.textContent = '處理中…';
+      const res = await api.post('markMedicationReady', { '通知編號': r['通知編號'], operator: (S.cUser && S.cUser.name) || 'counter' }, true);
+      if (res.ok) { toast('✓ 已標記發藥完成'); S._medCache = null; loadCMeds(); }
+      else { el.disabled = false; el.textContent = '✓ 已發藥'; toast('失敗：' + (res.error || ''), 'var(--red)'); }
+      break; }
+    case 'roster-print': rosterPrint(el); break;
     case 'cn-mark': {
       const a = (window.__cnIndex || [])[+el.dataset.i];
       if (!a) break;
