@@ -270,11 +270,12 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 <div id="page-counter" class="page">
   <div id="c-login" class="card login-card">
     <div style="font-size:46px">💼</div><h2 style="margin:8px 0 4px">櫃台管理登入</h2>
-    <p class="muted" style="margin-bottom:14px">請輸入員工編號與密碼</p>
+    <p class="muted" style="margin-bottom:14px">請用「員工入口網」的帳號密碼登入</p>
     <input id="cl-id" placeholder="員工編號" autocomplete="off">
     <input id="cl-pw" type="password" placeholder="密碼">
     <div id="cl-err" style="color:var(--red);font-size:15px;min-height:18px;margin-bottom:6px"></div>
     <button class="btn btn-p" style="width:100%" data-act="c-login">登入</button>
+    <p class="muted" style="font-size:12.5px;margin-top:12px;line-height:1.6">🔑 忘記密碼？請至<b>員工入口網</b>修改密碼，改完即可直接在此登入（帳密即時同步）。</p>
   </div>
   <div id="c-main" class="cwrap" style="display:none">
     <div class="side">
@@ -301,6 +302,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
     <input id="al-pw" type="password" placeholder="密碼">
     <div id="al-err" style="color:var(--red);font-size:15px;min-height:18px;margin-bottom:6px"></div>
     <button class="btn btn-p" style="width:100%" data-act="a-login">登入</button>
+    <p class="muted" style="font-size:12.5px;margin-top:12px;line-height:1.6">🔑 忘記密碼？請至<b>員工入口網</b>修改密碼，改完即可直接在此登入（帳密即時同步）。</p>
   </div>
   <div id="a-main" class="cwrap" style="display:none">
     <div class="side">
@@ -1343,17 +1345,38 @@ async function counterLogin(idEl, pwEl, errEl, isAdmin) {
   if (res.ok && res.data) {
     $(errEl).textContent = '';
     const d = res.data;
-    return { employeeId:id, name:d.name||d['員工姓名']||id, role:d.role||'counter',
+    return { employeeId:id, name:d.name||d['員工姓名']||id, role:d.role||'counter', roleLabel:d.roleLabel||'',
              clinics:d.clinics||[], clinic:d.clinic||d['所屬院區']||'' };
   }
   $(errEl).textContent = res.error === 'cloud_disabled' ? '雲端未啟用' : '帳號或密碼錯誤';
   return null;
 }
+/* 員工所屬院區 → 系統院區名（容錯：「三樹」「三樹院區」都認得；全院區/空白回傳空） */
+function matchClinic(name) {
+  name = String(name || '').trim();
+  if (!name || name === '全院區') return '';
+  const hit = CLINICS.find(c => c.name === name)
+    || CLINICS.find(c => name.includes(c.name.replace('院區', '')));
+  return hit ? hit.name : '';
+}
+/* ✨ v23 檢視範圍：減重櫃檯/管理職＝全院區；其他身份＝僅自己執登院區 */
+function userScope(u) {
+  if (!u) return 'all';
+  if (u.employeeId === '0006' || u.role === 'admin') return 'all';
+  const label = String(u.roleLabel || '') + String(u.role || '');
+  if (/減重櫃檯|管理|執行長|總院長|院長|admin|shareholder/.test(label)) return 'all';
+  const c = (u.clinics || []).map(matchClinic).find(Boolean);
+  return c || 'all';   // 過渡期：未填院區者暫不鎖（請盡快補所屬院區）
+}
+const cScope = () => (S.cUser && S.cUser.scope) || 'all';
 function cShow() {
+  S.cUser.scope = userScope(S.cUser);
   $('#c-login').style.display = 'none'; $('#c-main').style.display = 'grid';
   $('#c-who').textContent = `${S.cUser.name}（${S.cUser.clinic||'全院區'}）`;
   if (!S.cDate) S.cDate = fmtD(new Date());
-  if (!S.cClinic) S.cClinic = (S.cUser.clinics && S.cUser.clinics[0]) || CLINICS[0].name;
+  const _sc = cScope();
+  if (_sc !== 'all') S.cClinic = _sc;
+  else if (!S.cClinic) S.cClinic = (S.cUser.clinics || []).map(matchClinic).find(Boolean) || CLINICS[0].name;
   renderCounter();
 }
 function renderCounter() {
@@ -1368,7 +1391,7 @@ function renderCounter() {
     c.innerHTML = `<div class="card"><h3>💊 拿藥需求</h3>
       <div style="display:flex;gap:8px;align-items:center;margin:6px 0 10px">
         <button class="btn btn-sm ${S.cmAll?'btn-o':'btn-p'}" data-act="cm-scope" data-v="0">${esc(S.cClinic)}</button>
-        <button class="btn btn-sm ${S.cmAll?'btn-p':'btn-o'}" data-act="cm-scope" data-v="1">全部院區</button>
+        ${cScope() === 'all' ? `<button class="btn btn-sm ${S.cmAll?'btn-p':'btn-o'}" data-act="cm-scope" data-v="1">全部院區</button>` : ''}
         <span style="flex:1"></span><button class="btn btn-o btn-sm" data-act="cm-reload">🔄</button></div>
       <div id="cm-box" class="muted" style="padding:14px">載入中…</div></div>`;
     loadCMeds();
@@ -1379,7 +1402,11 @@ function renderCounter() {
   else if (S.cView === 'report') { c.innerHTML = `<div class="card"><h3>📊 當日報表</h3><div id="cr-box" class="muted" style="padding:14px">載入中…</div></div>`; loadCReport(); }
 }
 /* ── 今日看診表 ── */
-function clinicOpts() { return CLINICS.map(c => `<option ${c.name===S.cClinic?'selected':''}>${c.name}</option>`).join(''); }
+function clinicOpts() {
+  const sc = cScope();
+  const list = sc === 'all' ? CLINICS : CLINICS.filter(c => c.name === sc);
+  return list.map(c => `<option ${c.name===S.cClinic?'selected':''}>${c.name}</option>`).join('');
+}
 function weekStart(ds) {
   const d = new Date(ds + 'T00:00');
   const wd = d.getDay() === 0 ? 7 : d.getDay();
@@ -1646,7 +1673,8 @@ function svFillKeys(m, preset) {
   const mode = m.dataset.svMode;
   const sel = m.querySelector('#sv-key');
   if (mode === 'clinic') {
-    const names = CLINICS.filter(c => sched.byClinic(c.name).length).map(c => c.name);
+    const sc = cScope();
+    const names = CLINICS.filter(c => (sc === 'all' || c.name === sc) && sched.byClinic(c.name).length).map(c => c.name);
     sel.innerHTML = names.map(n => `<option ${n===preset?'selected':''}>${esc(n)}</option>`).join('');
   } else {
     sel.innerHTML = S.doctors.map(d => `<option ${d.shortName===preset?'selected':''}>${esc(d.shortName)}</option>`).join('');
@@ -2311,15 +2339,19 @@ async function counterFind() {
   $('#cf-out').innerHTML = '<p class="muted">查詢中…</p>';
   const res = await api.post('searchPatientHistory', { keyword: kw }, true);
   const d = (res.ok && res.data) || {};
-  const rows = d.history || [];
+  const sc = cScope();
+  let rows = d.history || [];
+  if (sc !== 'all') rows = rows.filter(r => String(r.clinic || r['院區'] || '') === sc);
   const pt = d.patient || null;
-  const ct = d.counts || {};
-  if (!pt && !rows.length) { $('#cf-out').innerHTML = '<p class="muted">查無資料（後台病人資料庫沒有符合的姓名/電話/病歷號）</p>'; return; }
+  const ct = sc === 'all' ? (d.counts || {}) : {};
+  if (!pt && !rows.length) { $('#cf-out').innerHTML = `<p class="muted">查無資料${sc !== 'all' ? `（僅能查詢 ${esc(sc)} 的紀錄）` : '（後台病人資料庫沒有符合的姓名/電話/病歷號）'}</p>`; return; }
   const fmtD2 = v => { const s = String(v || ''); const mm = s.match(/^\d{4}-\d{2}-\d{2}/); return mm ? mm[0] : s.split('T')[0]; };
   const summary = pt ? `<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:11px 14px;margin-bottom:10px">
     <b style="font-size:17px">${esc(pt['姓名'] || '(未填)')}</b>
     <span class="muted" style="margin-left:8px">📱 ${esc(pt['電話'] || '—')} · 病歷號 ${esc(pt['病例號'] || '—')}</span>
-    <div class="muted" style="font-size:13.5px;margin-top:4px">共 ${ct.total ?? rows.length} 次預約 · 已報到 ${ct.checked ?? 0} · 取消 ${ct.cancelled ?? 0} · 改約 ${ct.rescheduled ?? 0}</div></div>` : '';
+    <div class="muted" style="font-size:13.5px;margin-top:4px">${sc === 'all'
+      ? `共 ${ct.total ?? rows.length} 次預約 · 已報到 ${ct.checked ?? 0} · 取消 ${ct.cancelled ?? 0} · 改約 ${ct.rescheduled ?? 0}`
+      : `🔒 僅顯示 ${esc(sc)} 的紀錄（共 ${rows.length} 筆）`}</div></div>` : '';
   const tbl = !rows.length ? '<p class="muted">此病人尚無預約紀錄</p>'
     : `<table class="tbl"><thead><tr><th>日期</th><th>時段</th><th>病人</th><th>電話</th><th>院區</th><th>醫師</th><th>類型</th><th>狀態</th><th>拿藥</th></tr></thead><tbody>`
     + rows.slice(0, 100).map(r => `<tr><td>${esc(fmtD2(r['看診日期']) || r.date || '')}</td><td>${esc(apptTime(r))}</td>
