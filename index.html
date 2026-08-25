@@ -385,7 +385,7 @@ function resetBk() {
   S.bk = { step:1, view:'doctor', doctor:null, clinic:null, anyDoc:false,
            date:null, weekday:null, slot:null, slotDoctor:null,
            calY:null, calM:null, type:'followup',
-           name:'', phone:'', idNo:'', notify:'sms', items:[], remember:false,
+           name:'', phone:'', notify:'sms', items:[], remember:false,
            blood:{ mode:'date', date:null } };
 }
 resetBk();
@@ -956,7 +956,6 @@ function htmlStep4() {
         ${b.type==='initial'?'初診':'複診'} · ${durFor(b.type, b.anyDoc ? b.slotDoctor : b.doctor)} 分鐘</div></div>
       <div class="frow"><label>姓名 *</label><input id="f-name" value="${esc(b.name)}"></div>
       <div class="frow"><label>聯絡電話 *</label><input id="f-phone" type="tel" value="${esc(b.phone)}" placeholder="09xx-xxx-xxx"></div>
-      <div class="frow" id="f-id-row" style="${b.type==='followup'?'':'display:none'}"><label>身分證字號（複診）</label><input id="f-id" value="${esc(b.idNo)}"></div>
       <div class="frow"><label>通知方式</label><div class="vt">
         <button class="${b.notify==='sms'?'on':''}" data-act="nt" data-v="sms">📱 簡訊通知</button>
         <button class="${b.notify==='none'?'on':''}" data-act="nt" data-v="none">不通知</button>
@@ -1011,7 +1010,7 @@ async function confirmBooking() {
   const endMin = t2m(b.slot) + dur;
   const res = await api.post('createPatientBooking', {
     clinic: b.clinic, date: b.date, startTime: b.slot, endTime: m2t(endMin),
-    doctor: doc, name: b.name, phone: b.phone, idNo: b.idNo,
+    doctor: doc, name: b.name, phone: b.phone,
     type: b.type === 'initial' ? '初診' : '複診',
     consultItems: b.items.join('、'), notify: b.notify,
     note: bloodNote(b),
@@ -1019,7 +1018,7 @@ async function confirmBooking() {
   }, false);
   if (res.ok) {
     S.apptCache.delete(b.clinic + '|' + b.date);
-    if (b.remember) { try { localStorage.setItem('kw10_me', JSON.stringify({ name:b.name, phone:b.phone, idNo:b.idNo })); } catch(_){} }
+    if (b.remember) { try { localStorage.setItem('kw10_me', JSON.stringify({ name:b.name, phone:b.phone })); } catch(_){} }
     toast(`✓ 預約成功！${b.notify==='sms' ? '通知已透過簡訊發送' : ''}`);
     showHub();
   } else {
@@ -1037,7 +1036,7 @@ async function doLookup() {
   out.innerHTML = `<p class="muted" style="text-align:center;padding:16px">查詢中…（搜尋各院區，約 5 秒）</p>`;
   const match = a => String(a.phone || a['電話'] || '').replace(/\D/g, '') === pN;
   const tasks = [
-    api.post('searchPatientHistory', { keyword: pN }, true).then(r => (r.ok && r.data) || [])
+    api.post('searchPatientHistory', { keyword: pN }, true).then(r => ((r.ok && r.data) || {}).history || [])
   ];
   const today = new Date(); today.setHours(0,0,0,0);
   const dates = Array.from({length:21}, (_,i) => { const d = new Date(today); d.setDate(d.getDate()+i); return fmtD(d); });
@@ -1771,7 +1770,6 @@ function openFixAppt(a, dateStr) {
       <div class="frow"><label>姓名 *</label><input id="fx-name" value="${esc((a.name||a['病人姓名']||'').replace(/^\(未填\)$/,''))}"></div>
       <div class="frow"><label>電話 *</label><input id="fx-phone" value="${esc(a.phone||a['電話']||'')}"></div>
       <div class="frow"><label>病歷號${(a.type||a['類型'])==='複診'?' *':'（初診無）'}</label><input id="fx-case" value="${esc(caseNoOf(a))}"></div>
-      <div class="frow"><label>身分證（選填）</label><input id="fx-id" value="${esc(a.idNo||a['身分證']||'')}"></div>
     </div>
     ${(a.type||a['類型'])==='初診' ? `<div class="frow" style="margin-top:4px"><label>🩸 初診抽血安排 *</label>
       <div id="qk-blood" style="border:2px solid #fecaca;border-radius:10px;padding:11px;background:#fff">${bloodPickHtml(dateStr, S.cClinic, fxBloodSel(a))}</div></div>` : ''}
@@ -1789,7 +1787,7 @@ async function fxSave(m, btn) {
   btn.disabled = true;
   const fields = {
     '病人姓名': $('#fx-name').value.trim(), '電話': $('#fx-phone').value.trim(),
-    '病例號': $('#fx-case').value.trim(), '身分證': $('#fx-id').value.trim()
+    '病例號': $('#fx-case').value.trim()
   };
   if (type === '初診') {
     let selB = null; try { selB = JSON.parse(m.dataset.blood || 'null'); } catch(_){}
@@ -2022,7 +2020,7 @@ async function quickBook() {
 /* ── 病人查詢 ── */
 function htmlCFind() {
   return `<div class="card"><h3>🔎 病人查詢</h3>
-    <div style="display:flex;gap:8px;margin:12px 0"><input id="cf-kw" placeholder="姓名 / 電話 / 身分證 / 病例號" style="flex:1">
+    <div style="display:flex;gap:8px;margin:12px 0"><input id="cf-kw" placeholder="姓名 / 電話 / 病歷號" style="flex:1">
     <button class="btn btn-p" data-act="cf-go">查詢</button></div>
     <div id="cf-out"></div></div>`;
 }
@@ -2030,14 +2028,24 @@ async function counterFind() {
   const kw = $('#cf-kw').value.trim(); if (!kw) return;
   $('#cf-out').innerHTML = '<p class="muted">查詢中…</p>';
   const res = await api.post('searchPatientHistory', { keyword: kw }, true);
-  const rows = (res.ok && res.data) || [];
-  if (!rows.length) { $('#cf-out').innerHTML = '<p class="muted">查無資料</p>'; return; }
-  $('#cf-out').innerHTML = `<table class="tbl"><thead><tr><th>日期</th><th>時段</th><th>病人</th><th>電話</th><th>院區</th><th>醫師</th><th>類型</th><th>狀態</th><th>拿藥</th></tr></thead><tbody>`
-    + rows.slice(0, 100).map(r => `<tr><td>${esc(r.date||r['看診日期']||'')}</td><td>${esc(apptTime(r))}</td>
+  const d = (res.ok && res.data) || {};
+  const rows = d.history || [];
+  const pt = d.patient || null;
+  const ct = d.counts || {};
+  if (!pt && !rows.length) { $('#cf-out').innerHTML = '<p class="muted">查無資料（後台病人資料庫沒有符合的姓名/電話/病歷號）</p>'; return; }
+  const fmtD2 = v => { const s = String(v || ''); const mm = s.match(/^\d{4}-\d{2}-\d{2}/); return mm ? mm[0] : s.split('T')[0]; };
+  const summary = pt ? `<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:11px 14px;margin-bottom:10px">
+    <b style="font-size:17px">${esc(pt['姓名'] || '(未填)')}</b>
+    <span class="muted" style="margin-left:8px">📱 ${esc(pt['電話'] || '—')} · 病歷號 ${esc(pt['病例號'] || '—')}</span>
+    <div class="muted" style="font-size:13.5px;margin-top:4px">共 ${ct.total ?? rows.length} 次預約 · 已報到 ${ct.checked ?? 0} · 取消 ${ct.cancelled ?? 0} · 改約 ${ct.rescheduled ?? 0}</div></div>` : '';
+  const tbl = !rows.length ? '<p class="muted">此病人尚無預約紀錄</p>'
+    : `<table class="tbl"><thead><tr><th>日期</th><th>時段</th><th>病人</th><th>電話</th><th>院區</th><th>醫師</th><th>類型</th><th>狀態</th><th>拿藥</th></tr></thead><tbody>`
+    + rows.slice(0, 100).map(r => `<tr><td>${esc(fmtD2(r['看診日期']) || r.date || '')}</td><td>${esc(apptTime(r))}</td>
       <td>${esc(r.name||r['病人姓名']||'')}</td><td>${esc(r.phone||r['電話']||'')}</td><td>${esc(r.clinic||r['院區']||'')}</td>
       <td>${esc(normDoc(r.doctor||r['醫師']||''))}</td><td>${esc(r.type||r['類型']||'')}</td>
       <td>${esc(r.status||r['狀態']||'')}</td><td>${esc(r.medicationWeeks||r['拿藥週數']||'')}</td></tr>`).join('')
     + `</tbody></table>`;
+  $('#cf-out').innerHTML = summary + tbl;
 }
 /* ── 通知紀錄 / 當日報表 ── */
 function htmlCNotify() {
@@ -2442,7 +2450,7 @@ document.addEventListener('click', async e => {
       if (!S.bk.slot) { toast('請選擇時段', 'var(--amber)'); break; }
       // 帶入記住的資訊
       try { const me = JSON.parse(localStorage.getItem('kw10_me')||'null');
-        if (me) { S.bk.name = S.bk.name || me.name || ''; S.bk.phone = S.bk.phone || me.phone || ''; S.bk.idNo = S.bk.idNo || me.idNo || ''; S.bk.remember = true; } } catch(_){}
+        if (me) { S.bk.name = S.bk.name || me.name || ''; S.bk.phone = S.bk.phone || me.phone || ''; S.bk.remember = true; } } catch(_){}
       S.bk.step = 4; renderStep(); break;
     /* step4 */
     case 'vt': S.bk.type = el.dataset.v; S.bk.slot = null; S.bk.blood = { mode:'date', date:null }; renderStep(); break;
@@ -2677,7 +2685,6 @@ function captureF4() {
   const g = id => $(id) ? $(id).value.trim() : '';
   S.bk.name = g('#f-name') || S.bk.name;
   S.bk.phone = g('#f-phone') || S.bk.phone;
-  S.bk.idNo = g('#f-id') || S.bk.idNo;
   const rem = $('#f-rem'); if (rem) S.bk.remember = rem.checked;
   S.bk.items = [...document.querySelectorAll('.f-item:checked')].map(x => x.value);
 }
