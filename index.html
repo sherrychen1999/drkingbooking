@@ -1072,53 +1072,151 @@ async function doLookup() {
 }
 function within24h(a) { return new Date(`${a.date}T${a._t||'00:00'}`) - new Date() < 24*3600*1000; }
 
-/* 改約 modal（自動算拿藥週數） */
+/* 改約 modal：預設同醫師同院區、時段限班表可約、拿藥預設最近看診院區 */
 function openResch(a) {
-  const m = modal(`<div class="mh">↔ 改約：${esc(a.date)} ${esc(a._t)} / ${esc(normDoc(a.doctor||a['醫師']))} 醫師
+  const doc0 = normDoc(a.doctor || a['醫師']);
+  const cli0 = a.clinic;
+  const m = modal(`<div class="mh">↔ 改約：${esc(a.date)} ${esc(a._t)} / ${esc(doc0)} 醫師（${esc(cli0)}）
       <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
     <div class="mb">
-      <div class="frow"><label>新日期</label><input type="date" id="rs-date" min="${fmtD(new Date())}"></div>
-      <div class="frow"><label>新時段（HH:MM）</label><input type="time" id="rs-time" step="600"></div>
+      <div class="frow"><label>改約方式</label><div class="vt" style="max-width:560px">
+        <button class="on" data-act="rs-mode" data-v="same">同醫師·同院區</button>
+        <button data-act="rs-mode" data-v="clinicOther">同院區<br><small class="muted">其他醫師</small></button>
+        <button data-act="rs-mode" data-v="doctorOther">同醫師<br><small class="muted">其他院區</small></button>
+      </div></div>
+      <div class="fgrid">
+        <div class="frow"><label>醫師</label><select id="rs-doc"></select></div>
+        <div class="frow"><label>院區</label><select id="rs-clinic"></select></div>
+        <div class="frow"><label>新日期（僅列有門診的日子）</label><select id="rs-date"></select></div>
+        <div class="frow"><label>新時段（僅列可約時段）</label><select id="rs-time"></select></div>
+      </div>
       <div id="rs-meds"></div></div>
     <div class="mf"><button class="btn btn-o" data-act="close-modal">取消</button>
       <button class="btn btn-p" data-act="resch-calc">下一步 · 計算拿藥</button></div>`);
   m.dataset.apptIdx = S.lookupResults.indexOf(a);
+  m.dataset.mode = 'same';
+  m.dataset.doc0 = doc0;
+  m.dataset.cli0 = cli0;
+  m.dataset.lastClinic = cli0;   // 預設 = 原預約院區
+  rsFill(m);
+  // 背景查最近一次「已報到」的院區當拿藥預設
+  api.post('searchPatientHistory', { keyword: String(a.phone || a['電話'] || '').replace(/\D/g, '') }, true).then(r => {
+    const hist = ((r.ok && r.data) || {}).history || [];
+    const visited = hist.find(h => String(h['狀態'] || h.status || '') === '已報到');
+    if (visited && visited['院區']) m.dataset.lastClinic = visited['院區'];
+  }).catch(() => {});
+}
+function rsFill(m) {
+  const mode = m.dataset.mode, doc0 = m.dataset.doc0, cli0 = m.dataset.cli0;
+  const docSel = m.querySelector('#rs-doc'), cliSel = m.querySelector('#rs-clinic');
+  if (mode === 'clinicOther') {
+    const docs = [...new Set(sched.byClinic(cli0).map(s => s.doctor))].filter(d => d !== doc0);
+    docSel.innerHTML = docs.map(d => `<option>${esc(d)}</option>`).join('') || '<option value="">（無其他醫師）</option>';
+    docSel.disabled = false;
+    cliSel.innerHTML = `<option>${esc(cli0)}</option>`; cliSel.disabled = true;
+  } else if (mode === 'doctorOther') {
+    docSel.innerHTML = `<option>${esc(doc0)}</option>`; docSel.disabled = true;
+    const clis = sched.clinicsFor(doc0).filter(c => c !== cli0);
+    cliSel.innerHTML = clis.map(c => `<option>${esc(c)}</option>`).join('') || '<option value="">（無其他院區）</option>';
+    cliSel.disabled = false;
+  } else {
+    docSel.innerHTML = `<option>${esc(doc0)}</option>`; docSel.disabled = true;
+    cliSel.innerHTML = `<option>${esc(cli0)}</option>`; cliSel.disabled = true;
+  }
+  rsFillDates(m);
+}
+function rsFillDates(m) {
+  const doc = m.querySelector('#rs-doc').value, cli = m.querySelector('#rs-clinic').value;
+  const dateSel = m.querySelector('#rs-date');
+  if (!doc || !cli) { dateSel.innerHTML = '<option value="">—</option>'; rsFillTimes(m); return; }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const opts = [];
+  for (let i = 1; i <= 28; i++) {
+    const d = new Date(today); d.setDate(d.getDate() + i);
+    const wd = d.getDay() === 0 ? 7 : d.getDay();
+    if (sched.slotsFor(doc, cli, wd).length) {
+      const ds = fmtD(d);
+      opts.push(`<option value="${ds}">${ds.slice(5).replace('-', '/')}（週${WDS[d.getDay()]}）</option>`);
+    }
+  }
+  dateSel.innerHTML = opts.join('') || '<option value="">（28 天內無門診）</option>';
+  rsFillTimes(m);
+}
+async function rsFillTimes(m) {
+  const doc = m.querySelector('#rs-doc').value, cli = m.querySelector('#rs-clinic').value;
+  const ds = m.querySelector('#rs-date').value;
+  const timeSel = m.querySelector('#rs-time');
+  if (!doc || !cli || !ds) { timeSel.innerHTML = '<option value="">—</option>'; return; }
+  timeSel.innerHTML = '<option value="">載入中…</option>';
+  const a = S.lookupResults[+m.dataset.apptIdx];
+  const type = String(a.type || a['類型'] || '複診') === '初診' ? 'initial' : 'followup';
+  const cfg = cfgFor(doc);
+  const dur = type === 'initial' ? cfg.initMin : cfg.followMin;
+  const wd = isoWd(ds);
+  const appts = (await getAppts(cli, ds)).filter(x => x.status !== 'cancelled' && x['狀態'] !== '已取消');
+  if (m.querySelector('#rs-date').value !== ds) return;
+  const blocks = [];
+  appts.forEach(x => {
+    if (normDoc(x.doctor || x['醫師'] || '') !== normDoc(doc)) return;
+    const st = t2m(apptTime(x)); if (isNaN(st)) return;
+    blocks.push([st, apptEndMin(x, normDoc(doc))]);
+  });
+  const free = [];
+  sched.slotsFor(doc, cli, wd).forEach(r => {
+    for (let t = t2m(r.start); t + dur <= t2m(r.end); t += cfg.followMin) {
+      if (!blocks.some(([bs, be]) => t < be && bs < t + dur)) free.push(m2t(t));
+    }
+  });
+  timeSel.innerHTML = free.length
+    ? free.map(t => `<option value="${t}">${t}～${m2t(t2m(t) + dur)}</option>`).join('')
+    : '<option value="">（本日已滿）</option>';
 }
 function reschCalc(m) {
   const a = S.lookupResults[+m.dataset.apptIdx];
   const nd = m.querySelector('#rs-date').value, nt = m.querySelector('#rs-time').value;
-  if (!nd || !nt) { toast('請選擇新日期與時段', 'var(--amber)'); return; }
+  const doc = m.querySelector('#rs-doc').value, cli = m.querySelector('#rs-clinic').value;
+  if (!nd || !nt || !doc || !cli) { toast('請選擇新日期與時段', 'var(--amber)'); return; }
   const diffDays = Math.round((new Date(nd) - new Date(a.date)) / 86400000);
   const weeks = Math.max(1, Math.ceil(Math.abs(diffDays) / 7));
+  const lastCli = m.dataset.lastClinic || cli;
   m.querySelector('#rs-meds').innerHTML = `
-    <div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:13px;margin-top:6px">
+    <div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:14px;margin-top:8px">
       <div style="font-weight:700;color:#92400e;margin-bottom:6px">💊 拿藥週數確認</div>
-      <div style="font-size:15px;color:#92400e">原預約 ${esc(a.date)} → 新預約 ${esc(nd)}（相距 ${Math.abs(diffDays)} 天 ≈ ${weeks} 週）<br>
+      <div style="font-size:14px;color:#92400e">原預約 ${esc(a.date)} → 新預約 ${esc(nd)}（相距 ${Math.abs(diffDays)} 天 ≈ ${weeks} 週）<br>
       建議拿藥 <b>${weeks}</b> 週，避免藥物中斷</div>
+      <div style="margin-top:10px;font-size:14px;color:#92400e">
+        拿藥院區：<b style="font-size:15.5px">${esc(lastCli)}</b><span class="muted" style="font-size:12.5px;margin-left:6px">（您最近看診的院區）</span>
+        <div style="font-size:12.5px;color:#92400e;margin-top:5px">如需跨院區拿藥，請加 LINE <b style="user-select:all">@slsectgoodfood</b> 聯繫客服協助安排</div>
+        <span id="rs-medcli" data-v="${esc(lastCli)}" style="display:none"></span>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
-        <button class="btn btn-a" data-act="resch-go" data-w="${weeks}" data-nd="${nd}" data-nt="${nt}">✓ 我要拿藥（${weeks} 週）</button>
-        <button class="btn btn-o" data-act="resch-go" data-w="0" data-nd="${nd}" data-nt="${nt}">✗ 不需拿藥</button>
+        <button class="btn btn-a" data-act="resch-go" data-w="${weeks}" data-nd="${nd}" data-nt="${nt}" data-doc="${esc(doc)}" data-cli="${esc(cli)}">✓ 我要拿藥（${weeks} 週）</button>
+        <button class="btn btn-o" data-act="resch-go" data-w="0" data-nd="${nd}" data-nt="${nt}" data-doc="${esc(doc)}" data-cli="${esc(cli)}">✗ 不需拿藥</button>
       </div></div>`;
+  document.querySelectorAll('.mask [data-act="resch-calc"]').forEach(b => b.style.display = 'none');
 }
 async function reschGo(m, btn) {
   const a = S.lookupResults[+m.dataset.apptIdx];
   const weeks = +btn.dataset.w, nd = btn.dataset.nd, nt = btn.dataset.nt;
+  const doc = btn.dataset.doc, cli = btn.dataset.cli;
+  const medCli = weeks ? (m.querySelector('#rs-medcli')?.dataset.v || cli) : '';
   btn.disabled = true;
+  const type = String(a.type || a['類型'] || '複診');
+  const dur = durFor(type === '初診' ? 'initial' : 'followup', doc);
   const res = await api.post('rescheduleAppointment', {
-    oldApptId: a.apptId || a.id || a['預約編號'] || '', clinic: a.clinic,
-    date: nd, startTime: nt,
-    endTime: m2t(t2m(nt) + durFor(String(a.type||a['類型']||'複診')==='初診'?'initial':'followup', normDoc(a.doctor||a['醫師']))),
-    doctor: normDoc(a.doctor||a['醫師']), name: a.name||a['病人姓名']||'', phone: a.phone||a['電話']||'',
-    type: a.type||a['類型']||'複診', medicationWeeks: weeks || '',
-    note: `病人自助改約${weeks?`（拿藥${weeks}週）`:'（不拿藥）'}`, source: 'patient'
+    oldApptId: a.apptId || a.id || a['預約編號'] || '', clinic: cli,
+    date: nd, startTime: nt, endTime: m2t(t2m(nt) + dur),
+    doctor: doc, name: a.name || a['病人姓名'] || '', phone: a.phone || a['電話'] || '',
+    type, medicationWeeks: weeks || '',
+    note: `病人自助改約${weeks ? `（拿藥${weeks}週·${medCli}領）` : '（不拿藥）'}`, source: 'patient'
   }, true);
   if (res.ok) {
     S.apptCache.clear();
-    toast(`✓ 改約成功！新預約 ${nd} ${nt}${weeks?` · 已開 ${weeks} 週藥`:''}`);
+    toast(`✓ 改約成功！${esc(doc)} 醫師 ${nd} ${nt}${weeks ? ` · ${weeks} 週藥於${medCli}領取` : ''}`);
     closeModals(); doLookup();
-  } else { btn.disabled = false; toast('改約失敗：'+(res.error||'請聯絡櫃台'), 'var(--red)'); }
+  } else { btn.disabled = false; toast('改約失敗：' + (res.error || '請聯絡櫃台'), 'var(--red)'); }
 }
-/* 取消 modal */
+/* 取消 modal *//* 取消 modal */
 function openCancel(a) {
   const m = modal(`<div class="mh">✕ 取消預約 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
     <div class="mb">
@@ -2470,6 +2568,10 @@ document.addEventListener('click', async e => {
     case 'lk-go': doLookup(); break;
     case 'resch': { const a = S.lookupResults[+el.dataset.i]; if (within24h(a)) { toast('⚠️ 24 小時內請聯絡櫃台', 'var(--amber)'); break; } openResch(a); break; }
     case 'cancel': { const a = S.lookupResults[+el.dataset.i]; if (within24h(a)) { toast('⚠️ 24 小時內請聯絡櫃台', 'var(--amber)'); break; } openCancel(a); break; }
+    case 'rs-mode': {
+      m.dataset.mode = el.dataset.v;
+      m.querySelectorAll('[data-act="rs-mode"]').forEach(b => b.classList.toggle('on', b === el));
+      rsFill(m); break; }
     case 'resch-calc': reschCalc(m); break;
     case 'resch-go': reschGo(m, el); break;
     case 'cx-meds': {
@@ -2680,6 +2782,8 @@ document.addEventListener('change', e => {
   if (e.target.id === 'qk-doc') refreshQkTimes(e.target.closest('.mask'));
   if (e.target.id === 'bkb-doc') bkbRefresh();
   if (e.target.id === 'sv-key') svRender(e.target.closest('.mask'));
+  if (e.target.id === 'rs-doc' || e.target.id === 'rs-clinic') rsFillDates(e.target.closest('.mask'));
+  if (e.target.id === 'rs-date') rsFillTimes(e.target.closest('.mask'));
 });
 function captureF4() {
   const g = id => $(id) ? $(id).value.trim() : '';
