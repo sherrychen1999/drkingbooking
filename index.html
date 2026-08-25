@@ -69,7 +69,9 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .sline{width:34px;height:3px;background:#e2e8f0;border-radius:2px}.sline.done{background:var(--green)}
 /* ===== doctor / clinic grid ===== */
 .dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;margin-top:14px}
-.dcard{background:#fff;border:2px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s}
+.dcard{background:#fff;border:2px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s;display:flex;flex-direction:column}
+.dcard .ph{flex-shrink:0}
+.dcard .inf{flex:1}
 .dcard:hover{border-color:var(--purple);transform:translateY(-3px);box-shadow:0 10px 24px rgba(109,40,217,.16)}
 .dcard.sel{border-color:var(--purple);background:#f5f3ff}
 .dcard .ph{width:100%;aspect-ratio:3/4;background:linear-gradient(135deg,#a78bfa,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:60px;font-weight:700;color:#fff;position:relative;overflow:hidden}
@@ -349,7 +351,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v28.6';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v28.7';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
