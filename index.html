@@ -344,21 +344,33 @@ const CLINICS = [
 const WDS = ['日','一','二','三','四','五','六'];
 
 /* ───── API 層 ───── */
+const API_TIMEOUT = 30000;   // ✨ v19.1 逾時保護：請求不再無限卡住
+function _friendlyErr(e) {
+  return (e && e.name === 'AbortError')
+    ? '系統繁忙逾時。請先重新整理並查詢確認是否已成功，避免重複送出'
+    : String(e);
+}
 const api = {
   async post(action, payload, withToken) {
     const body = { action, payload: payload || {} };
     if (withToken) body.token = CFG.TOKEN;
+    const ctl = new AbortController();
+    const tm = setTimeout(() => ctl.abort(), API_TIMEOUT);
     try {
-      const r = await fetch(CFG.GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body) });
+      const r = await fetch(CFG.GAS_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body: JSON.stringify(body), signal: ctl.signal });
       return await r.json();
-    } catch (e) { return { ok:false, error:String(e) }; }
+    } catch (e) { return { ok:false, error:_friendlyErr(e) }; }
+    finally { clearTimeout(tm); }
   },
   async get(action, params) {
     const q = new URLSearchParams({ action, ...(params||{}) });
+    const ctl = new AbortController();
+    const tm = setTimeout(() => ctl.abort(), API_TIMEOUT);
     try {
-      const r = await fetch(CFG.GAS_URL + '?' + q);
+      const r = await fetch(CFG.GAS_URL + '?' + q, { signal: ctl.signal });
       return await r.json();
-    } catch (e) { return { ok:false, error:String(e) }; }
+    } catch (e) { return { ok:false, error:_friendlyErr(e) }; }
+    finally { clearTimeout(tm); }
   }
 };
 
