@@ -255,6 +255,10 @@ nav .tabs button.on{background:var(--blue);color:#fff}
     <button class="hub-card hub-new" data-act="hub-new"><div class="ic">🆕</div><h3>我要預約</h3><p>選擇醫師、院區、時段<br>完成新的預約</p></button>
     <button class="hub-card hub-find" data-act="hub-find"><div class="ic">🔍</div><h3>查詢預約</h3><p>查看現有預約<br>改約或取消</p></button>
   </div>
+  <div id="hub-bind" style="display:none;text-align:center;margin:14px auto 0;max-width:760px">
+    <button class="btn btn-o" data-act="bind-open" style="width:100%;padding:12px;font-size:16px">👨‍👩‍👧 親友綁定管理 <span class="muted" id="hub-bind-n"></span></button>
+    <p class="muted" style="font-size:13px;margin-top:6px">綁定家人電話後，他們的預約提醒也會傳到您的 LINE（最多 3 位）</p>
+  </div>
   <!-- 預約流程 -->
   <div id="bkflow" style="display:none">
     <div class="steps" id="steps"></div>
@@ -267,6 +271,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
       <h2 style="margin:12px 0 6px">🔍 查詢預約</h2>
       <p class="muted">輸入預約時留的手機號碼即可查詢</p>
       <div style="margin:14px 0">
+        <div id="lk-quick" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:10px"></div>
         <input id="lk-phone" type="tel" placeholder="手機號碼（09xxxxxxxx）" style="width:100%;text-align:center;font-size:19px;font-weight:700;letter-spacing:1px;padding:13px">
       </div>
       <button class="btn btn-g" style="width:100%;padding:12px" data-act="lk-go">查詢</button>
@@ -342,7 +347,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v27';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v28';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -711,6 +716,7 @@ async function boot() {
           // LINE 名稱先帶入姓名欄（可改）
           S.bk.name = S.bk.name || prof.displayName;
         }
+        if (S.lineUserId) loadBindings();   // ✨ v28 載入親友綁定
       }
     } catch(_){}
   }
@@ -730,8 +736,15 @@ function showFlow() {
   $('#hub').style.display = 'none'; $('#bkflow').style.display = 'block'; $('#lookup').style.display = 'none';
   renderStep();
 }
+function fillLkQuick() {
+  const q = $('#lk-quick');
+  if (!q) return;
+  q.innerHTML = (S.bindings || []).map(b =>
+    `<button class="btn btn-o btn-sm" data-act="lk-quick-pick" data-p="${esc(b.phone)}">🔍 ${esc(b.name || b.phone)}</button>`).join('');
+}
 function showLookup() {
   $('#hub').style.display = 'none'; $('#bkflow').style.display = 'none'; $('#lookup').style.display = 'block';
+  fillLkQuick();
   $('#lk-result').innerHTML = '';
 }
 
@@ -1075,6 +1088,9 @@ function htmlStep4() {
       <div class="frow"><label>就診類型（於上一步選擇）</label>
         <div style="padding:10px 14px;background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;font-weight:700;color:#1e40af">
         ${b.type==='initial'?'初診':'複診'} · ${durFor(b.type, b.anyDoc ? b.slotDoctor : b.doctor, b.clinic)} 分鐘</div></div>
+      ${(S.bindings || []).length ? `<div class="frow"><label>快速帶入</label><div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${S.bindings.map(x => `<button type="button" class="btn btn-o btn-sm" data-act="f-fill" data-n="${esc(x.name || '')}" data-p="${esc(x.phone)}">${esc(x.name || x.phone)}</button>`).join('')}
+      </div></div>` : ''}
       <div class="frow"><label>姓名 *</label><input id="f-name" value="${esc(b.name)}"></div>
       <div class="frow"><label>聯絡電話 *</label><input id="f-phone" type="tel" value="${esc(b.phone)}" placeholder="09xx-xxx-xxx"></div>
       <div class="frow"><label>通知方式</label><div class="vt">
@@ -1146,6 +1162,36 @@ async function confirmBooking() {
   }
 }
 
+/* ── ✨ v28 LINE 親友綁定 ── */
+async function loadBindings() {
+  const res = await api.post('getLineBindings', { userId: S.lineUserId }, false);
+  S.bindings = (res.ok && res.data) || [];
+  const box = $('#hub-bind');
+  if (box) {
+    box.style.display = '';
+    const n = $('#hub-bind-n'); if (n) n.textContent = S.bindings.length ? `（已綁 ${S.bindings.length} 位）` : '';
+  }
+}
+function openBindMgr() {
+  const rows = (S.bindings || []).map((b, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px">
+      <div style="flex:1"><b style="font-size:16px">${esc(b.name || '未命名')}</b>
+        <span class="muted" style="margin-left:8px">${esc(b.phone)}</span></div>
+      <button class="btn btn-o btn-sm" data-act="bind-del" data-i="${i}">解除</button>
+    </div>`).join('');
+  modal(`<div class="mh">👨‍👩‍👧 親友綁定管理 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb">
+      <p class="muted" style="margin-bottom:10px">綁定後，這些電話的預約成功／提醒通知也會傳到您的 LINE。最多 ${3} 位。</p>
+      ${rows || '<p class="muted" style="padding:8px">尚未綁定任何電話</p>'}
+      ${(S.bindings || []).length >= 3 ? '<p class="muted" style="color:var(--amber)">已達 3 位上限，要新增請先解除一位</p>' : `
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <input id="bd-phone" type="tel" placeholder="手機號碼" style="flex:1;min-width:150px">
+        <input id="bd-name" placeholder="稱呼（如：媽媽）" style="width:130px">
+        <button class="btn btn-p" data-act="bind-add">＋ 綁定</button>
+      </div>`}
+    </div>
+    <div class="mf"><button class="btn btn-o" data-act="close-modal">關閉</button></div>`);
+}
 /* ════════════════ 查詢 / 改約 / 取消 ════════════════ */
 async function doLookup() {
   const phone = $('#lk-phone').value.trim();
@@ -3021,6 +3067,26 @@ document.addEventListener('click', async e => {
       break; }
     /* hub */
     case 'hub-new': resetBk(); showFlow(); break;
+    case 'bind-open': openBindMgr(); break;
+    case 'bind-add': {
+      const ph = String($('#bd-phone').value || '').replace(/\D/g, '');
+      if (!/^09\d{8}$/.test(ph)) { toast('請輸入完整手機號碼', 'var(--amber)'); break; }
+      el.disabled = true;
+      const res = await api.post('addLineBinding', { userId: S.lineUserId, phone: ph, name: $('#bd-name').value.trim() }, false);
+      el.disabled = false;
+      if (res.ok) { toast('✓ 已綁定'); closeModals(); await loadBindings(); openBindMgr(); }
+      else toast(res.error === 'limit_reached' ? '最多綁定 3 位，請先解除一位' : '綁定失敗：' + (res.error || ''), 'var(--red)');
+      break; }
+    case 'bind-del': {
+      const b = (S.bindings || [])[+el.dataset.i]; if (!b) break;
+      el.disabled = true;
+      const res = await api.post('removeLineBinding', { userId: S.lineUserId, phone: b.phone }, false);
+      el.disabled = false;
+      if (res.ok) { toast('✓ 已解除綁定'); closeModals(); await loadBindings(); openBindMgr(); }
+      else toast('失敗：' + (res.error || ''), 'var(--red)');
+      break; }
+    case 'lk-quick-pick': $('#lk-phone').value = el.dataset.p; doLookup(); break;
+    case 'f-fill': { const n = $('#f-name'), p = $('#f-phone'); if (n) n.value = el.dataset.n; if (p) p.value = el.dataset.p; break; }
     case 'hub-find': showLookup(); break;
     case 'hub-back': showHub(); break;
     /* step1 */
