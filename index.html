@@ -240,8 +240,8 @@ nav .tabs button.on{background:var(--blue);color:#fff}
   <div class="brand">🏥 金鶯減重診所｜預約系統</div>
   <div class="tabs">
     <button data-act="portal" data-p="patient" class="on">🧑 減重預約</button>
-    <button data-act="portal" data-p="counter">💼 櫃台管理</button>
-    <button data-act="portal" data-p="admin">⚙️ 系統管理</button>
+    <button data-act="portal" data-p="counter" class="staff-only" style="display:none">💼 櫃台管理</button>
+    <button data-act="portal" data-p="admin" class="staff-only" style="display:none">⚙️ 系統管理</button>
   </div>
 </nav>
 <div id="toast"></div>
@@ -342,7 +342,14 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v26.7';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v27';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+/* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
+   前台（客戶）：index.html            → 只看得到「減重預約」
+   前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
+   後台（員工）：index.html?staff=1    → 顯示櫃台管理／系統管理（另有 admin.html 轉址）*/
+const _Q = new URLSearchParams(location.search);
+const IS_STAFF = _Q.has('staff');
+const LOCK_CLINIC_RAW = String(_Q.get('c') || '').trim();
 const CFG = {
   GAS_URL: 'https://script.google.com/macros/s/AKfycbzdTS8wcbpKNpXokQB2KnXqbht-ZJIm1t4adIsyW9gUE0P_7SvvCcP3REJYbohFxfMBag/exec',
   TOKEN: 'kw_jingying_R9x2mQ7kL4nP8vH3aB6cD1eF5g',
@@ -679,7 +686,34 @@ async function boot() {
   if (_v1) _v1.textContent = '前端 ' + FE_VER;
   if (_v2) _v2.textContent = '前端 ' + FE_VER;
   requestAnimationFrame(() => $('#splash').classList.add('done'));
-  if (CFG.LIFF_ID && window.liff) { try { await liff.init({ liffId: CFG.LIFF_ID }); } catch(_){} }
+  // ✨ v27 前後台分流
+  if (IS_STAFF) {
+    document.querySelectorAll('.staff-only').forEach(b => b.style.display = '');
+    document.querySelector('[data-act="portal"][data-p="counter"]')?.click();
+  } else {
+    // 前台：鎖院區（LINE 試營運，例：?c=三樹）
+    const lock = matchClinic(LOCK_CLINIC_RAW);
+    if (lock) {
+      S.lockClinic = lock;
+      S.schedules = S.schedules.filter(s => s.clinic === lock);
+      buildDoctors();
+      renderPatient();
+    }
+  }
+  // ✨ v27 LIFF：取得 LINE 使用者（綁定後提醒可走 LINE OA 推播）
+  if (CFG.LIFF_ID && window.liff) {
+    try {
+      await liff.init({ liffId: CFG.LIFF_ID });
+      if (liff.isInClient() || liff.isLoggedIn()) {
+        const prof = await liff.getProfile();
+        S.lineUserId = prof.userId || '';
+        if (prof.displayName && !localStorage.getItem('kw10_me')) {
+          // LINE 名稱先帶入姓名欄（可改）
+          S.bk.name = S.bk.name || prof.displayName;
+        }
+      }
+    } catch(_){}
+  }
 }
 </script>
 <script>
@@ -744,7 +778,7 @@ function htmlStep1() {
       ${clinicWeekTable(S.bk.clinic)}
       <p class="muted" style="margin-top:8px">點門診表內的醫師時段可直接預約</p>`;
   } else {
-    inner = `<div class="cgrid">` + CLINICS.map(c => {
+    inner = `<div class="cgrid">` + CLINICS.filter(c => !S.lockClinic || c.name === S.lockClinic).map(c => {
       const n = new Set(sched.byClinic(c.name).map(s => normDoc(s.doctor))).size;
       return `<div class="ccard" data-act="pick-clinic" data-c="${esc(c.name)}">
         <h4>📍 ${esc(c.name)}</h4><div class="muted">${esc(c.area)} · ${n} 位醫師 →</div></div>`;
@@ -1094,7 +1128,7 @@ async function confirmBooking() {
     doctor: doc, name: b.name, phone: b.phone,
     type: b.type === 'initial' ? '初診' : '複診',
     consultItems: b.items.join('、'), notify: b.notify,
-    note: bloodNote(b),
+    note: bloodNote(b), lineUserId: S.lineUserId || '',
     source: 'patient_app'
   }, false);
   if (res.ok) {
