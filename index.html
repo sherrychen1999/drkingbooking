@@ -1208,6 +1208,7 @@ async function reschGo(m, btn) {
     date: nd, startTime: nt, endTime: m2t(t2m(nt) + dur),
     doctor: doc, name: a.name || a['病人姓名'] || '', phone: a.phone || a['電話'] || '',
     type, medicationWeeks: weeks || '',
+    employeeId: 'SYS', employeeName: '病人自助', employeeRole: 'patient',
     note: `病人自助改約${weeks ? `（拿藥${weeks}週·${medCli}領）` : '（不拿藥）'}`, source: 'patient'
   }, true);
   if (res.ok) {
@@ -1240,7 +1241,9 @@ async function cancelGo(m) {
   const res = await api.post('updateAppointmentStatus', {
     apptId: a.apptId || a.id || a['預約編號'] || '', clinic: a.clinic, date: a.date,
     startTime: a._t, doctor: normDoc(a.doctor||a['醫師']), status: 'cancelled',
-    medicationWeeks: weeks || '', note: `病人自助取消${weeks?`（拿藥${weeks}週）`:'（不拿藥）'}`, source: 'patient'
+    medicationWeeks: weeks || '',
+    employeeId: 'SYS', employeeName: '病人自助', employeeRole: 'patient',
+    note: `病人自助取消${weeks?`（拿藥${weeks}週）`:'（不拿藥）'}`, source: 'patient'
   }, true);
   if (res.ok) {
     S.apptCache.clear();
