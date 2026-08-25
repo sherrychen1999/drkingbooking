@@ -2471,16 +2471,33 @@ async function loadASms() {
       </div>
     </div>`).join('');
 }
+function dashDoctorOpts(clinic) {
+  const set = new Set();
+  S.schedules.forEach(s => { if (!clinic || s.clinic === clinic) set.add(normDoc(s.doctor)); });
+  return [...set].sort((a,b) => a.localeCompare(b,'zh-Hant'))
+    .map(d => `<option ${d===S.adDoctor?'selected':''}>${esc(d)}</option>`).join('');
+}
 async function loadADash() {
-  const res = await api.post('getDashboardStats', { date: fmtD(new Date()) }, true);
-  const d = (res.ok && res.data) || {};
   const el = $('#ad-box'); if (!el) return;
-  const stat = (v,l) => `<div class="stat"><div class="sv">${v??0}</div><div class="sl">${l}</div></div>`;
-  el.innerHTML = `<div class="stat-grid">
-    ${stat(d.todayTotal ?? d.total, '今日總預約')}${stat(d.todayCheckedIn ?? d.checkedIn, '今日已報到')}
-    ${stat(d.newPatients ?? d.initial, '今日初診')}${stat(d.returnPatients ?? d.followup, '今日複診')}
-    ${stat(S.schedules.length, '班表總筆數')}${stat(S.doctors.length, '醫師數')}</div>
-    <p class="muted">資料來源：後端資料庫（Drive 每日 03:00 自動同步）</p>`;
+  el.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <select id="ad-clinic"><option value="">全部院區</option>${CLINICS.map(c=>`<option ${c.name===S.adClinic?'selected':''}>${c.name}</option>`).join('')}</select>
+      <select id="ad-doctor"><option value="">全部醫師</option>${dashDoctorOpts(S.adClinic)}</select>
+      <span class="muted" style="align-self:center;font-size:13px">📅 今日 ${fmtD(new Date())}</span>
+    </div><div id="ad-stats" class="muted" style="padding:8px">統計中…</div>`;
+  const res = await api.post('getTodayOps', { date: fmtD(new Date()), clinic: S.adClinic || '', doctor: S.adDoctor || '' }, true);
+  const box = $('#ad-stats'); if (!box) return;
+  if (!res.ok) { box.textContent = '載入失敗：' + (res.error || '請確認後端已更新 v12.3'); return; }
+  const d = res.data || {};
+  const stat = (v,l,c) => `<div class="stat"><div class="sv" ${c?`style="color:${c}"`:''}>${v??0}</div><div class="sl">${l}</div></div>`;
+  box.classList.remove('muted'); box.style.padding = '0';
+  box.innerHTML = `<div class="stat-grid">
+    ${stat(d.total,'今日有效預約')}${stat(d.checked,'已報到','var(--green)')}
+    ${stat(d.initial,'初診','#7c3aed')}${stat(d.followup,'複診')}</div>
+    <div class="stat-grid" style="margin-top:10px">
+    ${stat(d.cancelPure,'取消（未改約）','var(--red)')}${stat(d.reschedNoMeds,'改約・未拿藥','var(--amber)')}${stat(d.reschedMeds,'改約・有拿藥','#b45309')}</div>
+    ${(!S.adClinic && !S.adDoctor) ? `<div class="stat-grid" style="margin-top:10px">${stat(S.schedules.length,'班表總筆數')}${stat(S.doctors.length,'醫師數')}</div>` : ''}
+    <p class="muted" style="margin-top:10px">今日快照，切換院區／醫師即時重算；歷史趨勢請至「📊 區間報表」。</p>`;
 }
 /* ── 📝 醫師介紹編輯 ── */
 function htmlAProfile() {
@@ -2665,19 +2682,29 @@ function htmlAReport() {
     <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap">
       <input type="date" id="ar-from" value="${fmtD(w)}"><input type="date" id="ar-to" value="${fmtD(t)}">
       <select id="ar-clinic"><option value="">全部院區</option>${CLINICS.map(c=>`<option>${c.name}</option>`).join('')}</select>
+      <select id="ar-doctor"><option value="">全部醫師</option>${dashDoctorOpts('')}</select>
       <button class="btn btn-p btn-sm" data-act="ar-go">產生報表</button></div>
     <div id="ar-out" class="muted">選擇區間後產生</div></div>`;
 }
 async function aReport() {
   $('#ar-out').innerHTML = '<p class="muted">產生中…</p>';
-  const res = await api.post('getReportByRange', { from:$('#ar-from').value, to:$('#ar-to').value, clinic:$('#ar-clinic').value }, true);
-  const d = (res.ok && res.data) || null;
-  if (!d) { $('#ar-out').innerHTML = '<p class="muted">無資料</p>'; return; }
-  const stat = (v,l) => `<div class="stat"><div class="sv">${v??0}</div><div class="sl">${l}</div></div>`;
-  $('#ar-out').innerHTML = `<div class="stat-grid">${stat(d.total,'總預約')}${stat(d.checkedIn??d.checked_in,'已報到')}
-    ${stat(d.initial,'初診')}${stat(d.followup,'複診')}${stat(d.cancelled,'取消')}${stat(d.rescheduled,'改約')}</div>`
-    + (Array.isArray(d.byDate) ? `<table class="tbl"><thead><tr><th>日期</th><th>預約</th><th>報到</th></tr></thead><tbody>`
-      + d.byDate.map(r => `<tr><td>${esc(r.date)}</td><td>${r.total}</td><td>${r.checkedIn??''}</td></tr>`).join('') + `</tbody></table>` : '');
+  const res = await api.post('getRangeReport', { from:$('#ar-from').value, to:$('#ar-to').value,
+    clinic:$('#ar-clinic').value, doctor:$('#ar-doctor').value }, true);
+  if (!res.ok || !res.data) { $('#ar-out').innerHTML = `<p class="muted">${esc(res.error||'無資料（請確認後端已更新 v12.3）')}</p>`; return; }
+  const { summary:s, byDate, byDoctor } = res.data;
+  const stat = (v,l,c) => `<div class="stat"><div class="sv" ${c?`style="color:${c}"`:''}>${v??0}</div><div class="sl">${l}</div></div>`;
+  const row = r => `<td>${r.total}</td><td>${r.checked}</td><td>${r.initial}</td><td>${r.followup}</td>
+    <td style="color:var(--red)">${r.cancelPure}</td><td style="color:var(--amber)">${r.reschedNoMeds}</td><td style="color:#b45309">${r.reschedMeds}</td>`;
+  const head = `<th>有效預約</th><th>報到</th><th>初診</th><th>複診</th><th>取消</th><th>改約未拿藥</th><th>改約拿藥</th>`;
+  $('#ar-out').innerHTML = `<div class="stat-grid">
+    ${stat(s.total,'有效預約')}${stat(s.checked,'已報到','var(--green)')}${stat(s.initial,'初診','#7c3aed')}${stat(s.followup,'複診')}
+    ${stat(s.noShow,'未到診')}${stat(s.cancelPure,'取消（未改約）','var(--red)')}${stat(s.reschedNoMeds,'改約・未拿藥','var(--amber)')}${stat(s.reschedMeds,'改約・有拿藥','#b45309')}</div>
+    <h4 style="margin:16px 0 6px">👨‍⚕️ 醫師別</h4>
+    <table class="tbl"><thead><tr><th>醫師</th>${head}</tr></thead><tbody>
+      ${byDoctor.map(r=>`<tr><td><b>${esc(r.doctor)}</b></td>${row(r)}</tr>`).join('')}</tbody></table>
+    <h4 style="margin:16px 0 6px">📅 逐日</h4>
+    <table class="tbl"><thead><tr><th>日期</th>${head}</tr></thead><tbody>
+      ${byDate.map(r=>`<tr><td>${esc(r.date)}</td>${row(r)}</tr>`).join('')}</tbody></table>`;
 }
 
 /* ════════════════ 全站事件委派（單一 handler）════════════════ */
@@ -3012,6 +3039,8 @@ document.addEventListener('click', async e => {
 /* change 事件（櫃台院區切換） */
 document.addEventListener('change', e => {
   if (e.target.id === 'cd-clinic') { S.cClinic = e.target.value; renderCounter(); }
+  if (e.target.id === 'ad-clinic') { S.adClinic = e.target.value; S.adDoctor = ''; loadADash(); }
+  if (e.target.id === 'ad-doctor') { S.adDoctor = e.target.value; loadADash(); }
   if (e.target.classList && e.target.classList.contains('ord-title')) {
     S.ordTitlesDraft[e.target.dataset.n] = e.target.value;
     renderAdmin();
