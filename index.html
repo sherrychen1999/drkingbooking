@@ -351,7 +351,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v29';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v29.1';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -2698,10 +2698,17 @@ function renderSentLog(res) {
     el.innerHTML = `<p class="muted">本日尚無發送紀錄${res && !res.ok ? '（後端未部署 getNotifyLogBySentDate，請貼 v11.6）' : ''}</p>`;
     return;
   }
-  const badge = st => /❌|拒收|未送達/.test(st) ? `<span class="tag tag-r">✗ ${esc(st)}</span>`
-    : /成功|已送達|sent/i.test(st) ? `<span class="tag tag-g">✓ ${esc(st)}</span>`
-    : /失敗|fail/i.test(st) ? `<span class="tag tag-r">✗ ${esc(st)}</span>`
-    : `<span class="tag tag-a">${esc(st)}</span>`;
+  const badge = st => {
+    // ✨ v29.1 直觀顯示（滑鼠停留可看原始狀態）
+    const t = `title="${esc(st)}"`;
+    if (/✓已送達/.test(st)) return `<span class="tag tag-g" ${t}>✅ 已送達</span>`;
+    if (/電信拒收/.test(st)) return `<span class="tag tag-r" ${t}>🚫 拒收商業簡訊</span>`;
+    if (/❌未送達/.test(st)) return `<span class="tag tag-r" ${t}>❌ 未送達</span>`;
+    if (/成功 transID=/.test(st)) return `<span class="tag tag-a" ${t}>⏳ 已發送・待電信回報</span>`;
+    if (/成功|已送達|sent/i.test(st)) return `<span class="tag tag-g" ${t}>✓ ${esc(st)}</span>`;
+    if (/失敗|fail/i.test(st)) return `<span class="tag tag-r" ${t}>✗ 發送失敗</span>`;
+    return `<span class="tag tag-a" ${t}>${esc(st)}</span>`;
+  };
   el.style.textAlign = '';
   el.innerHTML = `<div class="muted" style="margin-bottom:6px">共 ${rows.length} 筆（新→舊）</div>
     <div style="overflow:auto;max-height:420px"><table class="tbl"><thead><tr>
@@ -2711,7 +2718,14 @@ function renderSentLog(res) {
       <td>${esc(r.target)}</td>
       <td class="muted" style="max-width:300px;font-size:13px">${esc(r.content)}…</td>
       <td>${badge(r.status)}</td>
-      <td>${(() => { const m = String(r.status||'').match(/transID=(\d+)/); return m ? `<button class="btn btn-o btn-sm" data-act="cn-dr" data-tid="${m[1]}" title="向電信商查詢是否真的送達手機">📡 查送達</button>` : ''; })()}</td></tr>`).join('') + `</tbody></table></div>`;
+      <td>${(() => { const m = String(r.status||'').match(/transID=(\d+)/); return m ? `<button class="btn btn-o btn-sm" data-act="cn-dr" data-tid="${m[1]}" title="查看送達詳情">📡 詳情</button>` : ''; })()}</td></tr>`).join('') + `</tbody></table></div>`;
+  // ✨ v29.1 有未回報的 → 背景向電信商補查，查完自動刷新
+  const pending = rows.some(r => String(r.channel) === 'moding' && /成功 transID=/.test(r.status) && !/▸/.test(r.status));
+  if (pending && window.__cnSweep !== S.cDate) {
+    window.__cnSweep = S.cDate;
+    el.insertAdjacentHTML('afterbegin', `<div class="muted" style="background:#fffbeb;border:1.5px solid #fcd34d;border-radius:8px;padding:7px 12px;margin-bottom:8px">📡 正在向電信商查詢送達結果，數秒後自動更新…</div>`);
+    api.post('sweepNotifyDate', { date: S.cDate }, true).then(() => { if (S.cView === 'notify') loadCNotify(); });
+  }
 }
 async function loadCNotify() {
   const clinic = S.cClinic, date = S.cDate;
