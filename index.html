@@ -137,9 +137,10 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 /* ✨ v26.6 櫃台/系統管理＝純電腦使用 → 全寬大版面 */
 #page-counter,#page-admin{max-width:min(1880px,97vw)}
 @media(min-width:1100px){
+  #page-counter,#page-admin{zoom:1.15}   /* ✨ v26.7 桌機整體放大 15%（全部文字按鈕同步變大） */
   #page-counter .cwrap,#page-admin .cwrap{grid-template-columns:250px 1fr;gap:20px}
   #page-counter .side .mi,#page-admin .side .mi{font-size:17px;padding:12px 14px}
-  #page-counter .tbl,#page-admin .tbl{font-size:15.5px}
+  #page-counter .tbl,#page-admin .tbl{font-size:16px}
   #page-counter .card,#page-admin .card{padding:24px}
 }
 .side{background:#fff;border-radius:var(--r);padding:14px;height:fit-content}
@@ -289,6 +290,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
     <div class="side">
       <div class="who">當前登入</div><div class="whon" id="c-who">—</div>
       <button class="btn btn-o btn-sm" data-act="c-logout" style="margin-bottom:12px">登出</button>
+      <div class="muted" style="font-size:13px;margin-bottom:8px" id="c-ver"></div>
       <div class="mi on" data-act="c-menu" data-v="day">📅 今日看診表</div>
       <div class="mi" data-act="c-menu" data-v="call">📞 明日通知</div>
       <div class="mi" data-act="c-menu" data-v="blood">🩸 抽血名單</div>
@@ -317,6 +319,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
   <div id="a-main" class="cwrap" style="display:none">
     <div class="side">
       <div class="who">系統管理</div><div class="whon" id="a-who">—</div>
+      <div class="muted" style="font-size:13px" id="a-ver"></div>
       <button class="btn btn-o btn-sm" data-act="a-logout" style="margin-bottom:12px">登出</button>
       <div class="mi on" data-act="a-menu" data-v="dash">📈 營運儀表板</div>
       <div class="mi" data-act="a-menu" data-v="sched">📅 班表管理</div>
@@ -339,6 +342,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
+const FE_VER = 'v26.7';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 const CFG = {
   GAS_URL: 'https://script.google.com/macros/s/AKfycbzdTS8wcbpKNpXokQB2KnXqbht-ZJIm1t4adIsyW9gUE0P_7SvvCcP3REJYbohFxfMBag/exec',
   TOKEN: 'kw_jingying_R9x2mQ7kL4nP8vH3aB6cD1eF5g',
@@ -671,6 +675,9 @@ async function boot() {
   if (!ok) toast('⚠️ 無法載入班表，請稍後重試或聯絡管理員', 'var(--red)');
   loadPhotosInBg();
   renderPatient();
+  const _v1 = $('#c-ver'), _v2 = $('#a-ver');
+  if (_v1) _v1.textContent = '前端 ' + FE_VER;
+  if (_v2) _v2.textContent = '前端 ' + FE_VER;
   requestAnimationFrame(() => $('#splash').classList.add('done'));
   if (CFG.LIFF_ID && window.liff) { try { await liff.init({ liffId: CFG.LIFF_ID }); } catch(_){} }
 }
