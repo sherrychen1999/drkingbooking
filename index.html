@@ -351,7 +351,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v28.9';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v29';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -3249,11 +3249,33 @@ document.addEventListener('click', async e => {
       const res = await api.post('getSmsDeliveryReport', { transid: el.dataset.tid }, true);
       el.disabled = false; el.textContent = '📡 查送達';
       if (res.ok) {
-        modal(`<div class="mh">📡 電信商送達報告 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
-          <div class="mb"><p class="muted" style="margin-bottom:8px">transID：${esc(res.data.transid)}</p>
-          <pre style="background:#f8fafc;border:1.5px solid var(--line);border-radius:8px;padding:12px;white-space:pre-wrap;font-size:13.5px">${esc(res.data.report || '（電信商未回報，部分電信不提供）')}</pre>
-          <p class="muted" style="font-size:13px;margin-top:8px">「發送成功」＝簡訊商收單；此報告才是電信端是否投遞到手機的結果。</p></div>
-          <div class="mf"><button class="btn btn-o" data-act="close-modal">關閉</button></div>`);
+        const raw = String(res.data.report || '');
+        // ✨ v29 直觀判讀：大字結論 + 建議行動，原始資料收折
+        let icon, verdict, color, bg, advice = '';
+        if (/拒收/.test(raw)) {
+          icon = '🚫'; verdict = '未送達：客戶門號「拒收商業簡訊」'; color = '#b91c1c'; bg = '#fef2f2';
+          advice = '請改用電話通知，並告知客人：可撥中華電信 0800-080-090 取消拒收設定，或加入診所 LINE 改收 LINE 通知。';
+        } else if (/不能送達|失敗|停機|空號/.test(raw)) {
+          icon = '❌'; verdict = '未送達（電信端投遞失敗）'; color = '#b91c1c'; bg = '#fef2f2';
+          advice = '請改用電話通知，並跟客人核對手機號碼是否正確。';
+        } else if (/送達|DELIVRD|OK/i.test(raw)) {
+          icon = '✅'; verdict = '已成功送達客戶手機'; color = '#15803d'; bg = '#f0fdf4';
+          advice = '客人若說沒看到，請他檢查「未知的寄件人」或垃圾簡訊匣。';
+        } else {
+          icon = '⏳'; verdict = '電信商尚未回報'; color = '#b45309'; bg = '#fffbeb';
+          advice = '剛發送幾分鐘內屬正常，稍後再查一次；少數電信不提供回報。';
+        }
+        modal(`<div class="mh">📡 送達查詢結果 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+          <div class="mb">
+            <div style="background:${bg};border:2px solid ${color};border-radius:12px;padding:18px;text-align:center">
+              <div style="font-size:44px">${icon}</div>
+              <div style="font-size:19px;font-weight:800;color:${color};margin-top:6px">${verdict}</div>
+            </div>
+            <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:10px 14px;font-size:14.5px;line-height:1.7;margin-top:10px">💡 ${advice}</div>
+            <details style="margin-top:10px"><summary class="muted" style="cursor:pointer;font-size:13px">電信商原始回報（transID ${esc(res.data.transid)}）</summary>
+            <pre style="background:#f8fafc;border:1.5px solid var(--line);border-radius:8px;padding:10px;white-space:pre-wrap;font-size:13px;margin-top:6px">${esc(raw || '（無資料）')}</pre></details>
+          </div>
+          <div class="mf"><button class="btn btn-p" style="width:100%" data-act="close-modal">關閉</button></div>`);
       } else toast('查詢失敗：' + (res.error || ''), 'var(--red)');
       break; }
     case 'ds-set': {
