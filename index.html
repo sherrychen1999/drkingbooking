@@ -148,6 +148,28 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .grid-tbl td{border:1px solid var(--line);padding:2px;vertical-align:top;height:34px}
 .grid-tbl td.off{background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 6px,#f1f5f9 6px,#f1f5f9 12px)}
 .grid-tbl .tm{width:52px;text-align:center;color:var(--txt3);font-size:12.5px;background:#f8fafc}
+.bkb{background:#eff6ff;border:2px solid #93c5fd;border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.bkb .bkb-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bkb .bkb-t{font-weight:800;color:#1e40af;font-size:16px;white-space:nowrap}
+.bkb input,.bkb select{padding:8px 10px;font-size:14.5px;border-radius:8px}
+.bkb .w1{width:112px}.bkb .w2{width:150px}.bkb .w3{width:112px}
+.bkb .vt2{display:flex;gap:4px}
+.bkb .vt2 button{padding:8px 13px;border-radius:8px;border:1.5px solid #cbd5e1;background:#fff;font-weight:700;font-size:14px}
+.bkb .vt2 button.on{border-color:var(--blue);background:#dbeafe;color:#1e40af}
+.bkb .bkb-blood{margin-top:9px;padding:10px 13px;background:#fff;border:2px solid #fecaca;border-radius:9px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.bkb .bkb-msg{font-size:13px;min-height:17px}
+.bkb.flash{animation:bkbflash .5s ease-out 2}
+@keyframes bkbflash{50%{box-shadow:0 0 0 4px #93c5fd}}
+.ib-row td{background:#eff6ff!important;border:2px solid var(--blue)!important;padding:10px 12px!important;height:auto!important}
+.ib-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ib-bar .ib-fx{font-weight:800;color:#1e40af;font-size:15.5px;white-space:nowrap}
+.ib-bar input{padding:7px 10px;font-size:14px;border-radius:7px}
+.ib-bar .ib-w1{width:110px}.ib-bar .ib-w2{width:140px}.ib-bar .ib-w3{width:110px}
+.ib-bar .vt2{display:flex;gap:4px}
+.ib-bar .vt2 button{padding:7px 12px;border-radius:7px;border:1.5px solid #cbd5e1;background:#fff;font-weight:700;font-size:13.5px}
+.ib-bar .vt2 button.on{border-color:var(--blue);background:#dbeafe;color:#1e40af}
+.ib-blood{margin-top:8px;padding:9px 12px;background:#fff;border:2px solid #fecaca;border-radius:9px}
+.ib-msg{font-size:12.5px;min-height:16px}
 .slot-add{border:1.5px dashed #cbd5e1;border-radius:6px;color:#94a3b8;font-size:12.5px;font-weight:600;text-align:center;padding:3px 0;margin:1px 2px;cursor:copy;opacity:.5;transition:all .12s;user-select:none}
 .grid-tbl td:hover .slot-add{opacity:1;border-color:var(--blue);color:var(--blue);background:#eff6ff}
 .apt{border-radius:6px;padding:3px 6px;font-size:13px;font-weight:600;cursor:pointer;margin:1px 0;color:#fff;background:var(--blue)}
@@ -1189,6 +1211,7 @@ function htmlCDay() {
         `<button class="btn btn-sm ${S.cSession===s?'btn-p':'btn-o'}" data-act="cd-sess" data-s="${s}">${s==='all'?'全日':s}</button>`).join('')}
       <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
     </div>
+    <div id="cd-book"></div>
     <div id="cd-orph"></div>
     <div id="cd-grid" class="muted" style="padding:16px;text-align:center">載入看診表中…</div>
   </div>`;
@@ -1348,6 +1371,7 @@ async function loadCDayGrid() {
   }).filter(Boolean);
   const orphEl = $('#cd-orph');
   if (orphEl) orphEl.insertAdjacentHTML('afterbegin', incompleteBanner(incItems));
+  renderBkb();
   // 待補登
   const orph = appts.filter(a => {
     const dn = normDoc(a.doctor || a['醫師'] || '');
@@ -1381,12 +1405,13 @@ function isIncomplete(a) {
   return missing.length ? missing : null;
 }
 /* 抽血選項 UI（掛號/補登共用）：sel = {mode:'date'|'ext'|'same', ds} */
-function bloodPickHtml(date, clinic, sel) {
+function bloodPickHtml(date, clinic, sel, act) {
+  act = act || 'qk-blood';
   const dates = bloodWindowDates(date, clinic);
   const none = dates.length === 0;
   const cur = sel || {};
   const btn = (v, ds, label, on) =>
-    `<button type="button" class="btn btn-sm ${on ? 'btn-g' : 'btn-o'}" data-act="qk-blood" data-v="${v}" ${ds ? `data-ds="${ds}"` : ''}>${label}</button>`;
+    `<button type="button" class="btn btn-sm ${on ? 'btn-g' : 'btn-o'}" data-act="${act}" data-v="${v}" ${ds ? `data-ds="${ds}"` : ''}>${label}</button>`;
   let h = `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">`;
   dates.forEach(ds => { h += btn('date', ds, mdTxt(ds), cur.mode === 'date' && cur.ds === ds); });
   if (none) h += btn('same', '', '初診當日提早30分抽血', cur.mode === 'same');
@@ -1401,6 +1426,127 @@ function bloodTagOf(sel) {
   return '🩸抽血日:' + sel.ds;
 }
 const BLOOD_TAG_CLEAR = /🩸抽血日:[0-9-]+|🩸外院報告\(初診日帶來\)|🩸外院報告|🩸初診當日抽血|🩸抽血日未定/g;
+/* ── 固定掛號列（日檢視：工具列下、醫師欄上，常駐）── */
+function renderBkb(selDoc, selT) {
+  const box = $('#cd-book');
+  if (!box) return;
+  const date = S.cDate, clinic = S.cClinic;
+  const wd = isoWd(date);
+  const dayDocs = [...new Set(sched.byClinic(clinic).filter(s => s.weekday === wd).map(s => s.doctor))];
+  if (!dayDocs.length) { box.innerHTML = ''; return; }
+  const prev = box.querySelector('.bkb');
+  const keep = sel => prev ? (prev.querySelector(sel)?.value || '') : '';
+  const type = box.dataset.type || '複診';
+  box.dataset.type = type;
+  box.innerHTML = `<div class="bkb">
+    <div class="bkb-bar">
+      <span class="bkb-t">🖊 掛號</span>
+      <div class="vt2">
+        <button class="${type==='複診'?'on':''}" data-act="bkb-type" data-v="複診">複診</button>
+        <button class="${type==='初診'?'on':''}" data-act="bkb-type" data-v="初診">初診</button></div>
+      <select id="bkb-doc">${dayDocs.map(d2 => `<option ${d2===(selDoc||keep('#bkb-doc'))?'selected':''}>${esc(d2)}</option>`).join('')}</select>
+      <select id="bkb-time"></select>
+      <input id="bkb-case" class="w1" placeholder="病歷號" value="${esc(keep('#bkb-case'))}">
+      <button class="btn btn-o btn-sm" data-act="bkb-case-fill">🔍 帶入</button>
+      <input id="bkb-phone" class="w2" type="tel" placeholder="電話（或病歷號擇一）" value="${esc(keep('#bkb-phone'))}">
+      <input id="bkb-name" class="w3" placeholder="姓名(可空)" value="${esc(keep('#bkb-name'))}">
+      <input id="bkb-note" class="w3" placeholder="備註" value="${esc(keep('#bkb-note'))}">
+      <button class="btn btn-g" data-act="bkb-save">✓ 建立</button>
+      <span class="bkb-msg muted"></span>
+    </div>
+    <div class="bkb-blood" style="display:none"></div>
+  </div>`;
+  bkbRefresh(selT);
+}
+function bkbRefresh(preferT) {
+  const box = $('#cd-book');
+  const bkb = box && box.querySelector('.bkb');
+  if (!bkb) return;
+  const date = S.cDate, clinic = S.cClinic, wd = isoWd(date);
+  const type = box.dataset.type || '複診';
+  const doc = bkb.querySelector('#bkb-doc').value;
+  const cfg = cfgFor(doc);
+  const dur = type === '初診' ? cfg.initMin : cfg.followMin;
+  const appts = (S.apptCache.get(clinic + '|' + date) || []).filter(a => a.status !== 'cancelled' && a['狀態'] !== '已取消');
+  const blocks = [];
+  appts.forEach(a => {
+    if (normDoc(a.doctor || a['醫師'] || '') !== normDoc(doc)) return;
+    const st = t2m(apptTime(a)); if (isNaN(st)) return;
+    blocks.push([st, apptEndMin(a, normDoc(doc))]);
+  });
+  const free = [];
+  sched.slotsFor(doc, clinic, wd).forEach(r => {
+    for (let t = t2m(r.start); t + dur <= t2m(r.end); t += cfg.followMin) {
+      if (!blocks.some(([bs, be]) => t < be && bs < t + dur)) free.push(m2t(t));
+    }
+  });
+  const sel = bkb.querySelector('#bkb-time');
+  const prevVal = preferT || sel.value;
+  sel.innerHTML = free.length
+    ? free.map(t => `<option ${t===prevVal?'selected':''}>${t}～${m2t(t2m(t)+dur)}</option>`).join('')
+    : '<option value="">（無可約時段）</option>';
+  bkb.querySelector('[data-act="bkb-save"]').disabled = !free.length;
+  // 初診 → 抽血列
+  const bEl = bkb.querySelector('.bkb-blood');
+  const isInit = type === '初診';
+  bEl.style.display = isInit ? '' : 'none';
+  if (isInit) {
+    let selB = null; try { selB = JSON.parse(box.dataset.blood || 'null'); } catch(_){}
+    bEl.innerHTML = `<span style="font-size:14px;font-weight:700;color:#7f1d1d">🩸 抽血安排：</span>` + bloodPickHtml(date, clinic, selB, 'bkb-blood');
+  }
+}
+function bkbSet(doc, t) {
+  const box = $('#cd-book');
+  const bkb = box && box.querySelector('.bkb');
+  if (!bkb) return;
+  bkb.querySelector('#bkb-doc').value = doc;
+  bkbRefresh(t + '～' + '');
+  // 選中對應時段（value 是 "HH:MM～HH:MM" 開頭比對）
+  const sel = bkb.querySelector('#bkb-time');
+  [...sel.options].forEach(o => { if (o.textContent.startsWith(t)) sel.value = o.value || o.textContent; });
+  [...sel.options].forEach(o => { if (o.textContent.startsWith(t)) o.selected = true; });
+  bkb.classList.remove('flash'); void bkb.offsetWidth; bkb.classList.add('flash');
+  bkb.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  bkb.querySelector('#bkb-phone').focus();
+}
+async function bkbSave(btn) {
+  const box = $('#cd-book');
+  const bkb = box.querySelector('.bkb');
+  const date = S.cDate, clinic = S.cClinic;
+  const type = box.dataset.type || '複診';
+  const doc = bkb.querySelector('#bkb-doc').value;
+  const tOpt = bkb.querySelector('#bkb-time').selectedOptions[0];
+  if (!tOpt || !tOpt.textContent.includes('～')) { toast('無可約時段', 'var(--amber)'); return; }
+  const t = tOpt.textContent.split('～')[0];
+  const phone = bkb.querySelector('#bkb-phone').value.trim();
+  const caseNo = bkb.querySelector('#bkb-case').value.trim();
+  const name = bkb.querySelector('#bkb-name').value.trim();
+  const caseVerified = box.dataset.caseVerified === caseNo && caseNo;
+  const msg = bkb.querySelector('.bkb-msg');
+  if (!phoneOK(phone) && !caseVerified) {
+    msg.innerHTML = `<span style="color:#b45309;font-weight:700">${caseNo ? '病歷號未帶入成功（按 🔍）' : '請填電話，或病歷號按 🔍 帶入'}</span>`;
+    return;
+  }
+  btn.disabled = true; btn.textContent = '建立中…';
+  const dur = durFor(type === '初診' ? 'initial' : 'followup', doc);
+  let qNote = bkb.querySelector('#bkb-note').value.trim();
+  if (type === '初診') {
+    let selB = null; try { selB = JSON.parse(box.dataset.blood || 'null'); } catch(_){}
+    qNote = tagNote(qNote, bloodTagOf(selB), [BLOOD_TAG_CLEAR]);
+  }
+  const res = await api.post('createCounterBooking', {
+    clinic, date, startTime: t, endTime: m2t(t2m(t) + dur), doctor: doc,
+    name: name || '(未填)', phone, caseFull: caseNo, type, note: qNote,
+    employeeId: S.cUser.employeeId, employeeName: S.cUser.name, source: 'walk_in'
+  }, true);
+  if (res.ok) {
+    S.apptCache.delete(clinic + '|' + date);
+    box.dataset.blood = ''; box.dataset.caseVerified = '';
+    toast(!name ? '✓ 已卡位！稍後從提醒補齊資料' : '✓ 掛號完成');
+    renderCounter();
+  } else { btn.disabled = false; btn.textContent = '✓ 建立'; toast('失敗：' + (res.error || ''), 'var(--red)'); }
+}
+
 async function openQuickBook(date, doctor, time) {
   const clinic = S.cClinic;
   const wd = isoWd(date);
@@ -2291,7 +2437,33 @@ document.addEventListener('click', async e => {
       if (a) openApptDetailFromObj(a, el.dataset.k.split('|')[0]);
       break; }
     case 'appt-detail': openApptDetail(el.dataset.k); break;
-    case 'cd-slot': openQuickBook(S.cDate, el.dataset.doc, el.dataset.t); break;
+    case 'cd-slot': bkbSet(el.dataset.doc, el.dataset.t); break;
+    case 'bkb-type': {
+      $('#cd-book').dataset.type = el.dataset.v;
+      document.querySelectorAll('[data-act="bkb-type"]').forEach(b => b.classList.toggle('on', b === el));
+      bkbRefresh(); break; }
+    case 'bkb-blood': {
+      $('#cd-book').dataset.blood = JSON.stringify(el.dataset.v === 'date' ? { mode:'date', ds: el.dataset.ds } : { mode: el.dataset.v });
+      bkbRefresh(); break; }
+    case 'bkb-case-fill': {
+      const box = $('#cd-book');
+      const caseNo = box.querySelector('#bkb-case').value.trim();
+      const msg = box.querySelector('.bkb-msg');
+      if (!caseNo) { msg.textContent = '請先輸入病歷號'; break; }
+      msg.textContent = '查詢中…';
+      const res = await api.get('lookupPatient', { keyword: caseNo });
+      const hit = (res.ok && res.data && res.data[0]) || null;
+      if (hit) {
+        box.querySelector('#bkb-name').value = hit.name || hit['病人姓名'] || hit['姓名'] || '';
+        box.querySelector('#bkb-phone').value = hit.phone || hit['電話'] || '';
+        box.dataset.caseVerified = caseNo;
+        msg.innerHTML = '<span style="color:var(--green);font-weight:700">✓ 已帶入</span>';
+      } else {
+        box.dataset.caseVerified = '';
+        msg.innerHTML = '<span style="color:var(--red)">✗ 查無此病歷號</span>';
+      }
+      break; }
+    case 'bkb-save': bkbSave(el); break;
     case 'cw-add': openQuickBook(el.dataset.ds, null, null); break;
     case 'qk-type': {
       m.dataset.type = el.dataset.v;
@@ -2413,6 +2585,7 @@ document.addEventListener('change', e => {
     renderAdmin();
   }
   if (e.target.id === 'qk-doc') refreshQkTimes(e.target.closest('.mask'));
+  if (e.target.id === 'bkb-doc') bkbRefresh();
 });
 function captureF4() {
   const g = id => $(id) ? $(id).value.trim() : '';
