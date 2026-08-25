@@ -1033,42 +1033,41 @@ async function doLookup() {
   const pN = phone.replace(/\D/g, '');
   if (!/^09\d{8}$/.test(pN)) { toast('請輸入完整手機號碼（09 開頭 10 碼）', 'var(--amber)'); return; }
   const out = $('#lk-result');
-  out.innerHTML = `<p class="muted" style="text-align:center;padding:16px">查詢中…（搜尋各院區，約 5 秒）</p>`;
-  const match = a => String(a.phone || a['電話'] || '').replace(/\D/g, '') === pN;
-  const tasks = [
-    api.post('searchPatientHistory', { keyword: pN }, true).then(r => ((r.ok && r.data) || {}).history || [])
-  ];
-  const today = new Date(); today.setHours(0,0,0,0);
-  const dates = Array.from({length:21}, (_,i) => { const d = new Date(today); d.setDate(d.getDate()+i); return fmtD(d); });
-  CLINICS.forEach(c => dates.forEach(ds =>
-    tasks.push(getAppts(c.name, ds).then(list => list.filter(match).map(a => ({...a, clinic:c.name, date:ds}))))));
-  const results = (await Promise.all(tasks)).flat().filter(match);
+  out.innerHTML = `<p class="muted" style="text-align:center;padding:16px">查詢中…</p>`;
+  // 單一 API：後端直接掃全預約表比對電話（快速且不轟炸後端）
+  const res = await api.post('searchPatientHistory', { keyword: pN }, true);
+  const all = ((res.ok && res.data) || {}).history || [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
   const seen = new Set();
-  const future = results.filter(a => {
+  const future = all.filter(a => {
     const t = apptTime(a);
-    const k = `${a.date}|${t}|${normDoc(a.doctor||a['醫師'])}`;
+    const ds = String(a['看診日期'] || a.date || '').slice(0, 10);
+    a.date = ds; a._t = t;
+    a.clinic = a.clinic || a['院區'] || '';
+    const k = `${ds}|${t}|${normDoc(a.doctor || a['醫師'])}`;
     if (seen.has(k)) return false; seen.add(k);
-    const d = new Date((a.date||'') + 'T00:00');
+    const d = new Date(ds + 'T00:00');
     if (isNaN(d) || d < today) return false;
-    if (a.status === 'cancelled' || a['狀態'] === '已取消') return false;
-    a._t = t; return true;
-  }).sort((x,y) => (x.date+x._t).localeCompare(y.date+y._t));
+    const st = String(a['狀態'] || a.status || '');
+    if (st === '已取消' || st === '已改約' || a.status === 'cancelled') return false;
+    return true;
+  }).sort((x, y) => (x.date + x._t).localeCompare(y.date + y._t));
   S.lookupResults = future;
   if (!future.length) {
     out.innerHTML = `<div style="text-align:center;padding:22px;background:#f8fafc;border-radius:10px">
       <p class="muted">😕 找不到此電話的未來預約</p>
-      <p class="muted" style="font-size:14px;margin-top:6px">已搜尋各院區未來 21 天。如已預約但查不到，請聯絡院區櫃台</p></div>`;
+      <p class="muted" style="font-size:13.5px;margin-top:6px">如已預約但查不到，請聯絡院區櫃台</p></div>`;
     return;
   }
-  out.innerHTML = `<h3 style="margin-bottom:8px">您的預約（${future.length} 筆）</h3>` + future.map((a,i) => {
-    const wd = WDS[new Date(a.date+'T00:00').getDay()];
+  out.innerHTML = `<h3 style="margin-bottom:8px">您的預約（${future.length} 筆）</h3>` + future.map((a, i) => {
+    const wd = WDS[new Date(a.date + 'T00:00').getDay()];
     return `<div class="acard"><div>
       <div class="ad">${esc(a.date)}（週${wd}）${esc(a._t)}</div>
-      <div class="am">${esc(a.name||a['病人姓名']||'')} · ${esc(normDoc(a.doctor||a['醫師']))} 醫師 · ${esc(a.clinic)} · ${esc(a.type||a['類型']||'複診')}</div></div>
+      <div class="am">${esc(a.name || a['病人姓名'] || '')} · ${esc(normDoc(a.doctor || a['醫師']))} 醫師 · ${esc(a.clinic)} · ${esc(a.type || a['類型'] || '複診')}</div></div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-a btn-sm" data-act="resch" data-i="${i}">↔ 改約</button>
         <button class="btn btn-r btn-sm" data-act="cancel" data-i="${i}">✕ 取消</button></div></div>`;
-  }).join('') + `<p class="muted" style="margin-top:12px">⚠️ 24 小時內的預約請聯絡院區櫃台處理</p>`;
+  }).join('') + `<p class="muted" style="margin-top:12px;font-size:13.5px">⚠️ 24 小時內的預約請聯絡院區櫃台處理</p>`;
 }
 function within24h(a) { return new Date(`${a.date}T${a._t||'00:00'}`) - new Date() < 24*3600*1000; }
 
