@@ -1191,6 +1191,8 @@ function reschCalc(m) {
   const nd = m.querySelector('#rs-date').value, nt = m.querySelector('#rs-time').value;
   const doc = m.querySelector('#rs-doc').value, cli = m.querySelector('#rs-clinic').value;
   if (!nd || !nt || !doc || !cli) { toast('請選擇新日期與時段', 'var(--amber)'); return; }
+  // ✨ v20 初診改約：不提供拿藥，改為抽血日確認/重排
+  if (String(a.type || a['類型'] || '複診') === '初診') { reschCalcInit(m, a, nd, nt, doc, cli); return; }
   const diffDays = Math.round((new Date(nd) - new Date(a.date)) / 86400000);
   const weeks = Math.max(1, Math.ceil(Math.abs(diffDays) / 7));
   const lastCli = m.dataset.lastClinic || cli;
@@ -1210,6 +1212,61 @@ function reschCalc(m) {
         <button class="btn btn-o" data-act="resch-go" data-w="0" data-nd="${nd}" data-nt="${nt}" data-doc="${esc(doc)}" data-cli="${esc(cli)}">✗ 不需拿藥</button>
       </div></div>`;
   document.querySelectorAll('.mask [data-act="resch-calc"]').forEach(b => b.style.display = 'none');
+}
+/* ✨ v20 初診改約：抽血日確認/重排（不提供拿藥） */
+function reschCalcInit(m, a, nd, nt, doc, cli) {
+  const note = String(a.note || a['備註'] || '');
+  const mB = note.match(/🩸抽血日:(\d{4}-\d{2}-\d{2})/);
+  const todayIso = fmtD(new Date());
+  const needRepick = !!(mB && mB[1] >= todayIso);   // 原抽血日還沒到 → 依新看診日重排
+  m.dataset.newDate = nd; m.dataset.newTime = nt; m.dataset.newDoc = doc; m.dataset.newCli = cli;
+  S.rsBlood = null;
+  let inner;
+  if (needRepick) {
+    inner = `<div style="font-size:14px;color:#92400e">您原訂 <b>${esc(mdTxt(mB[1]))}</b> 的抽血尚未進行，看診日改為 <b>${esc(mdTxt(nd))}</b> 後需重新選擇抽血日（${esc(cli)}）：</div>
+      <div style="margin-top:8px">${bloodPickHtml(nd, cli, {}, 'rs-blood')}</div>`;
+  } else {
+    const done = mB ? `已於 ${esc(mdTxt(mB[1]))} 完成抽血，報告將由醫師於新看診日評估`
+      : note.includes('🩸外院報告') ? '外院近 14 天內報告請於新看診日帶來給醫師評估'
+      : note.includes('🩸初診當日抽血') ? '維持初診當日提早 30 分鐘到院抽血'
+      : '抽血安排維持不變';
+    inner = `<div style="font-size:14px;color:#92400e">${done}</div>`;
+  }
+  m.querySelector('#rs-meds').innerHTML = `
+    <div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:14px;margin-top:8px">
+      <div style="font-weight:700;color:#92400e;margin-bottom:6px">🩸 初診抽血安排</div>${inner}
+      <div class="muted" style="font-size:12.5px;margin-top:8px">初診改約不提供拿藥服務</div>
+      <div style="margin-top:10px"><button class="btn btn-a" data-act="resch-go-init" ${needRepick ? 'disabled style="opacity:.5"' : ''}>✓ 確認改約</button></div>
+    </div>`;
+  document.querySelectorAll('.mask [data-act="resch-calc"]').forEach(b => b.style.display = 'none');
+}
+async function reschGoInit(m, btn) {
+  const a = S.lookupResults[+m.dataset.apptIdx];
+  const nd = m.dataset.newDate, nt = m.dataset.newTime, doc = m.dataset.newDoc, cli = m.dataset.newCli;
+  btn.disabled = true;
+  const dur = durFor('initial', doc);
+  const oldNote = String(a.note || a['備註'] || '');
+  // 抽血標記帶進新預約（有重選用新的，否則沿用舊標記）
+  let bloodTag = '';
+  if (S.rsBlood && S.rsBlood.mode) bloodTag = bloodTagOf(S.rsBlood);
+  else { const hit = oldNote.match(BLOOD_TAG_CLEAR); if (hit) bloodTag = hit[0]; }
+  let newNote = '病人自助改約（初診）';
+  if (bloodTag) newNote = tagNote(newNote, bloodTag, [BLOOD_TAG_CLEAR]);
+  const res = await api.post('rescheduleAppointment', {
+    oldApptId: a.apptId || a.id || a['預約編號'] || '', clinic: cli,
+    date: nd, startTime: nt, endTime: m2t(t2m(nt) + dur),
+    doctor: doc, name: a.name || a['病人姓名'] || '', phone: a.phone || a['電話'] || '',
+    type: '初診', medicationWeeks: '', oldDate: a.date || '', oldTime: a._t || '',
+    employeeId: 'SYS', employeeName: '病人自助', employeeRole: 'patient',
+    note: newNote, source: 'patient'
+  }, true);
+  if (res.ok) {
+    S.apptCache.clear();
+    const bm = !S.rsBlood ? '' : S.rsBlood.mode === 'date' ? ` · 抽血日 ${mdTxt(S.rsBlood.ds)}（8:00-20:00 到院）`
+      : S.rsBlood.mode === 'same' ? ' · 初診當日提早 30 分抽血' : ' · 外院報告初診日帶來';
+    toast(`✓ 改約成功！${esc(doc)} 醫師 ${nd} ${nt}${bm}`);
+    closeModals(); doLookup();
+  } else { btn.disabled = false; toast('改約失敗：' + (res.error || '請聯絡櫃台'), 'var(--red)'); }
 }
 async function reschGo(m, btn) {
   const a = S.lookupResults[+m.dataset.apptIdx];
@@ -1235,22 +1292,23 @@ async function reschGo(m, btn) {
 }
 /* 取消 modal *//* 取消 modal */
 function openCancel(a) {
+  const isInit = String(a.type || a['類型'] || '複診') === '初診';
   const m = modal(`<div class="mh">✕ 取消預約 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
     <div class="mb">
       <div style="background:#fef2f2;border:2px solid #fecaca;border-radius:8px;padding:11px 14px;margin-bottom:12px">
       <b>${esc(a.date)} ${esc(a._t)}</b><br>${esc(normDoc(a.doctor||a['醫師']))} 醫師 · ${esc(a.clinic)}</div>
-      <div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:13px">
+      ${isInit ? `<div class="muted" style="font-size:13.5px;padding:4px 2px">初診取消無拿藥需求，按下方按鈕即可完成取消。</div>` : `<div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:13px">
         <div style="font-weight:700;color:#92400e;margin-bottom:6px">💊 取消前是否需要先領藥？</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button class="btn btn-a btn-sm" data-act="cx-meds" data-v="yes">✓ 我要拿藥</button>
           <button class="btn btn-o btn-sm" data-act="cx-meds" data-v="no">✗ 不需拿藥</button>
           <span id="cx-wk" style="display:none">週數：<input type="number" id="cx-weeks" value="1" min="1" max="12" style="width:64px;padding:5px"></span>
           <div id="cx-pick" style="display:none;flex-basis:100%;font-size:12.5px;color:#166534;background:#dcfce7;border-radius:6px;padding:6px 9px">💊 藥品可於 <b>明日 ${tomorrowMD()} 起</b>至 ${esc(a.clinic)} 領取（無需掛號）</div>
-        </div></div></div>
+        </div></div>`}</div>
     <div class="mf"><button class="btn btn-o" data-act="close-modal">返回</button>
-      <button class="btn btn-r" id="cx-go" data-act="cancel-go" disabled style="opacity:.5">確認取消</button></div>`);
+      <button class="btn btn-r" id="cx-go" data-act="cancel-go" ${isInit ? '' : 'disabled style="opacity:.5"'}>確認取消</button></div>`);
   m.dataset.apptIdx = S.lookupResults.indexOf(a);
-  m.dataset.meds = '';
+  m.dataset.meds = isInit ? 'no' : '';
 }
 async function cancelGo(m) {
   const a = S.lookupResults[+m.dataset.apptIdx];
@@ -2166,13 +2224,14 @@ async function loadCMeds() {
   const box = document.querySelector('#cm-box'); if (!box) return;
   const all = await fetchMedReqs(true);
   if (!document.querySelector('#cm-box')) return;
+  const stRank = s => s === '待處理' ? 0 : 1;
   const list = all.filter(r => S.cmAll || String(r['院區']) === S.cClinic)
-    .sort((a,b) => String(b['建立時間']||'').localeCompare(String(a['建立時間']||'')));
+    .sort((a,b) => stRank(String(a['狀態'])) - stRank(String(b['狀態'])) || String(b['建立時間']||'').localeCompare(String(a['建立時間']||'')));
   const today = fmtD(new Date());
   if (!list.length) { box.innerHTML = '<div class="muted" style="padding:10px">目前沒有待處理的拿藥需求 ✓</div>'; return; }
   window.__cmIndex = list;
   box.classList.remove('muted'); box.style.padding = '0';
-  box.innerHTML = `<table class="tbl"><thead><tr><th>提出時間</th><th>病人</th><th>電話</th><th>週數</th><th>可領日</th><th>拿藥院區</th><th>來源</th><th>原看診日</th><th>操作</th></tr></thead><tbody>
+  box.innerHTML = `<table class="tbl"><thead><tr><th>提出時間</th><th>病人</th><th>電話</th><th>週數</th><th>可領日</th><th>拿藥院區</th><th>來源</th><th>原看診日</th><th>狀態</th><th>操作</th></tr></thead><tbody>
     ${list.map((r,i) => {
       const isToday = String(r['建立時間']||'').slice(0,10) === today;
       const pk = medPickDate(r);
@@ -2183,7 +2242,12 @@ async function loadCMeds() {
         <td><b style="color:#166534">${esc(pk ? pk.slice(5).replace('-','/') : '—')}</b> 起</td>
         <td>${esc(r['院區']||'')}</td><td>${esc(r['來源']||'')}</td>
         <td>${esc(String(r['原看診日期']||'').slice(0,10))} ${esc(fmtT(r['原時段'])||'')}</td>
-        <td><button class="btn btn-a btn-sm" data-act="cm-done" data-i="${i}">✓ 已發藥</button></td></tr>`;
+        <td>${String(r['狀態'])==='待處理'
+          ? '<span style="color:#b45309;font-weight:700">待開單</span>'
+          : '<span style="color:#1d4ed8;font-weight:700">已開單</span>'}</td>
+        <td>${String(r['狀態'])==='待處理'
+          ? `<button class="btn btn-a btn-sm" data-act="cm-order" data-i="${i}" title="藥單已送出給藥局">✓ 已預約拿藥</button>`
+          : `<button class="btn btn-p btn-sm" data-act="cm-pick" data-i="${i}" title="病人已到院領藥">✓ 已領藥</button>`}</td></tr>`;
     }).join('')}</tbody></table>`;
 }
 async function fillMedBanner() {
@@ -2193,9 +2257,11 @@ async function fillMedBanner() {
   const today = fmtD(new Date());
   const mine = all.filter(r => String(r['院區']) === S.cClinic);
   if (!mine.length) { el.innerHTML = ''; return; }
+  const toOrder = mine.filter(r => String(r['狀態']) === '待處理').length;
+  const toPick = mine.length - toOrder;
   const n = mine.filter(r => String(r['建立時間']||'').slice(0,10) === today).length;
   el.innerHTML = `<div style="background:#fffbeb;border:2px solid #fcd34d;border-radius:10px;padding:9px 14px;margin:8px 0;display:flex;align-items:center;gap:10px;font-size:14px;flex-wrap:wrap">
-    💊 <b>${esc(S.cClinic)}</b> 有 <b style="color:#b45309;font-size:16px">${mine.length}</b> 筆待發藥的拿藥需求${n?`（今日新增 ${n} 筆）`:''}
+    💊 <b>${esc(S.cClinic)}</b> 拿藥需求：${toOrder?`<b style="color:#b45309;font-size:16px">${toOrder}</b> 筆待開單`:''}${toOrder&&toPick?'、':''}${toPick?`<b style="color:#1d4ed8;font-size:16px">${toPick}</b> 筆已開單待領藥`:''}${n?`（今日新增 ${n} 筆）`:''}
     <span style="flex:1"></span><button class="btn btn-p btn-sm" data-act="cm-goto">查看名單</button></div>`;
 }
 /* ── 🖨 當日看診名單（列印） ── */
@@ -2690,6 +2756,12 @@ document.addEventListener('click', async e => {
       m.querySelectorAll('[data-act="rs-mode"]').forEach(b => b.classList.toggle('on', b === el));
       rsFill(m); break; }
     case 'resch-calc': reschCalc(m); break;
+    case 'rs-blood': {
+      S.rsBlood = { mode: el.dataset.v, ds: el.dataset.ds || '' };
+      m.querySelectorAll('[data-act="rs-blood"]').forEach(b => { b.classList.toggle('btn-g', b === el); b.classList.toggle('btn-o', b !== el); });
+      const go = m.querySelector('[data-act="resch-go-init"]'); if (go) { go.disabled = false; go.style.opacity = '1'; }
+      break; }
+    case 'resch-go-init': reschGoInit(m, el); break;
     case 'resch-go': reschGo(m, el); break;
     case 'cx-meds': {
       m.dataset.meds = el.dataset.v;
@@ -2713,12 +2785,13 @@ document.addEventListener('click', async e => {
     case 'cm-scope': S.cmAll = el.dataset.v === '1'; renderCounter(); break;
     case 'cm-reload': S._medCache = null; loadCMeds(); break;
     case 'cm-goto': S.cView = 'meds'; renderCounter(); break;
-    case 'cm-done': {
+    case 'cm-order': case 'cm-pick': {
       const r = (window.__cmIndex || [])[+el.dataset.i]; if (!r) break;
+      const to = act === 'cm-order' ? '已開單' : '已領藥';
       el.disabled = true; el.textContent = '處理中…';
-      const res = await api.post('markMedicationReady', { '通知編號': r['通知編號'], operator: (S.cUser && S.cUser.name) || 'counter' }, true);
-      if (res.ok) { toast('✓ 已標記發藥完成'); S._medCache = null; loadCMeds(); }
-      else { el.disabled = false; el.textContent = '✓ 已發藥'; toast('失敗：' + (res.error || ''), 'var(--red)'); }
+      const res = await api.post('updateMedRequestStatus', { '通知編號': r['通知編號'], to, operator: (S.cUser && S.cUser.name) || 'counter' }, true);
+      if (res.ok) { toast(to === '已開單' ? '✓ 已開單給藥局' : '✓ 領藥完成，已結案'); S._medCache = null; loadCMeds(); }
+      else { el.disabled = false; toast('失敗：' + (res.error || ''), 'var(--red)'); }
       break; }
     case 'roster-print': rosterPrint(el); break;
     case 'cn-mark': {
