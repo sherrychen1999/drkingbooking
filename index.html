@@ -347,7 +347,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v28';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v28.1';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -695,6 +695,9 @@ async function boot() {
   if (IS_STAFF) {
     document.querySelectorAll('.staff-only').forEach(b => b.style.display = '');
     document.querySelector('[data-act="portal"][data-p="counter"]')?.click();
+    if (window.matchMedia('(min-width:1100px)').matches) {
+      const mo = document.getElementById('modals'); if (mo) mo.style.zoom = '1.15';   // 彈窗與主畫面同倍率
+    }
   } else {
     // 前台：鎖院區（LINE 試營運，例：?c=三樹）
     const lock = matchClinic(LOCK_CLINIC_RAW);
@@ -2942,7 +2945,7 @@ function htmlATimeCfg() {
         ${ov ? `<button class="btn btn-o btn-sm" data-act="tc-reset" data-d="${esc(d.shortName)}">回公版</button>` : ''}
         ${d.clinics.length > 1 ? `<button class="btn btn-o btn-sm" data-act="tc-cli-toggle" data-d="${esc(d.shortName)}" style="font-size:13px" title="不同院區用不同時長">🏥 院區別</button>` : ''}
       </td></tr>
-      ${d.clinics.length < 2 ? '' : `<tr data-d="${esc(d.shortName)}" class="tcc-row" style="${d.clinics.some(cl => (S.timeCfg.clinicOv||{})[d.shortName+'|'+cl]) ? '' : 'display:none'}"><td colspan="5" style="background:#f8fafc;padding:7px 12px">
+      ${(d.clinics.length < 2 && !d.clinics.some(cl => (S.timeCfg.clinicOv||{})[d.shortName+'|'+cl])) ? '' : `<tr data-d="${esc(d.shortName)}" class="tcc-row" style="${d.clinics.some(cl => (S.timeCfg.clinicOv||{})[d.shortName+'|'+cl]) ? '' : 'display:none'}"><td colspan="5" style="background:#f8fafc;padding:7px 12px">
         <span style="font-size:13px;color:#64748b;margin-right:6px">🏥 院區別（優先於上列設定）：</span>
         ${d.clinics.map(cl => { const k = d.shortName + '|' + cl; const co = (S.timeCfg.clinicOv||{})[k];
           return co ? `<span class="tag tag-b" style="margin-right:6px">${esc(cl)} ${co.initMin}/${co.followMin} <a data-act="tc-del-cli" data-d="${esc(d.shortName)}" data-c="${esc(cl)}" style="cursor:pointer;color:#b91c1c;font-weight:800;margin-left:2px">✕</a></span>` : ''; }).join('')}
