@@ -143,11 +143,12 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 /* counter grid */
 .dnav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .grid-tbl{width:100%;border-collapse:collapse;font-size:14px}
-.grid-tbl th{background:#f8fafc;border:1px solid var(--line);padding:8px 6px;position:sticky;top:52px}
+.grid-tbl th{background:#f8fafc;border:1px solid var(--line);padding:9px 7px;position:sticky;top:0;z-index:6;box-shadow:0 1px 0 var(--line)}
+.grid-tbl th.tm{left:0;z-index:7}
 .grid-tbl th .gd{font-weight:700;font-size:15px}.grid-tbl th .gs{font-weight:400;color:var(--txt3);font-size:12.5px}
 .grid-tbl td{border:1px solid var(--line);padding:2px;vertical-align:top;height:34px}
 .grid-tbl td.off{background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 6px,#f1f5f9 6px,#f1f5f9 12px)}
-.grid-tbl .tm{width:52px;text-align:center;color:var(--txt3);font-size:12.5px;background:#f8fafc}
+.grid-tbl .tm{width:52px;text-align:center;color:var(--txt3);position:sticky;left:0;z-index:4;font-size:12.5px;background:#f8fafc}
 .bkb{background:#eff6ff;border:2px solid #93c5fd;border-radius:12px;padding:12px 14px;margin-bottom:12px}
 .bkb .bkb-r1,.bkb .bkb-r2{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .bkb .bkb-r2{margin-top:9px}
@@ -1346,7 +1347,7 @@ async function loadCDayGrid() {
   });
   const docRanges = {};
   docs.forEach(dn => { docRanges[dn] = dayScheds.filter(s => s.doctor === dn).map(s => [t2m(s.start), t2m(s.end)]); });
-  let h = `<div style="overflow:auto"><table class="grid-tbl"><thead><tr><th class="tm">時間</th>`;
+  let h = `<div style="overflow:auto;max-height:calc(100vh - 300px);min-height:320px"><table class="grid-tbl"><thead><tr><th class="tm">時間</th>`;
   docs.forEach(dn => {
     const rs = dayScheds.filter(s => s.doctor === dn).map(s => `${s.start}–${s.end}`).join('、');
     h += `<th><div class="gd">${esc(dn)} 醫師</div><div class="gs">${esc(rs)}</div></th>`;
