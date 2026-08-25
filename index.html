@@ -311,6 +311,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
       <div class="mi" data-act="a-menu" data-v="timecfg">⏱ 預約時間設定</div>
       <div class="mi" data-act="a-menu" data-v="order">↕ 前台醫師排序</div>
       <div class="mi" data-act="a-menu" data-v="profile">📝 醫師介紹編輯</div>
+      <div class="mi" data-act="a-menu" data-v="sms">✉️ 簡訊內容</div>
       <div class="mi" data-act="a-menu" data-v="emp">👥 使用者權限</div>
       <div class="mi" data-act="a-menu" data-v="report">📊 區間報表</div>
     </div>
@@ -1554,7 +1555,7 @@ async function loadCDayGrid() {
     h += `</tr>`;
   }
   h += `</tbody></table></div>
-    <div class="muted" style="margin-top:8px">■ 複診 <span style="color:#7c3aed">■ 初診</span> <span style="color:var(--green)">■ 已報到</span> <span style="color:var(--amber)">■ 已改約</span> · 共 ${appts.length} 筆預約</div>`;
+    <div class="muted" style="margin-top:8px">■ 複診 <span style="color:#7c3aed">■ 初診</span> <span style="color:var(--green)">■ 已報到</span> · 共 ${appts.length} 筆預約</div>`;
   box.innerHTML = h;
   window.__cdApptIndex = byDocT;
   // 未補齊提醒（日檢視）
@@ -2443,8 +2444,32 @@ function renderAdmin() {
   else if (S.aView === 'timecfg') c.innerHTML = htmlATimeCfg();
   else if (S.aView === 'order') { c.innerHTML = htmlAOrder(); bindOrderDrag(); }
   else if (S.aView === 'profile') c.innerHTML = htmlAProfile();
+  else if (S.aView === 'sms') { c.innerHTML = `<div class="card"><h3>✉️ 簡訊內容設定</h3><div id="as-box" class="muted" style="padding:14px">載入中…</div></div>`; loadASms(); }
   else if (S.aView === 'emp') { c.innerHTML = `<div class="card"><h3>👥 使用者權限</h3><div id="ae-box" class="muted" style="padding:14px">載入中…</div></div>`; loadAEmp(); }
   else if (S.aView === 'report') c.innerHTML = htmlAReport();
+}
+/* ── ✉️ 簡訊內容設定 ── */
+async function loadASms() {
+  const box = $('#as-box'); if (!box) return;
+  const res = await api.post('getSmsTemplates', {}, true);
+  if (!document.querySelector('#as-box')) return;
+  if (!res.ok) { box.textContent = '載入失敗：' + (res.error || '請確認後端已更新 v12.1'); return; }
+  const list = res.data || [];
+  box.classList.remove('muted'); box.style.padding = '0';
+  box.innerHTML = `<div class="muted" style="font-size:13px;margin:4px 0 12px">大括號 {變數} 發送時會自動代入實際內容，改文案時請保留需要的變數。儲存後立即生效。</div>` +
+    list.map(t => `
+    <div style="border:1.5px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <b style="font-size:15px">${esc(t.name)}</b>
+        ${t.isDefault ? '<span class="muted" style="font-size:12px">（預設）</span>' : '<span style="font-size:12px;color:#b45309;font-weight:700">已自訂</span>'}
+      </div>
+      <textarea id="as-t-${esc(t.key)}" rows="3" style="width:100%;font-size:14px;line-height:1.6;padding:8px 10px;box-sizing:border-box;border:1.5px solid #cbd5e1;border-radius:8px">${esc(t.content)}</textarea>
+      <div style="font-size:12px;color:#64748b;margin:6px 0">可用變數：${(t.vars||[]).map(v => `<code style="background:#f1f5f9;padding:1px 5px;border-radius:4px">{${esc(v)}}</code>`).join(' ')}</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-p btn-sm" data-act="as-tpl-save" data-k="${esc(t.key)}">💾 儲存</button>
+        <button class="btn btn-o btn-sm" data-act="as-tpl-reset" data-k="${esc(t.key)}">↩ 回復預設</button>
+      </div>
+    </div>`).join('');
 }
 async function loadADash() {
   const res = await api.post('getDashboardStats', { date: fmtD(new Date()) }, true);
@@ -2762,6 +2787,16 @@ document.addEventListener('click', async e => {
       const go = m.querySelector('[data-act="resch-go-init"]'); if (go) { go.disabled = false; go.style.opacity = '1'; }
       break; }
     case 'resch-go-init': reschGoInit(m, el); break;
+    case 'as-tpl-save': case 'as-tpl-reset': {
+      const k = el.dataset.k;
+      const content = act === 'as-tpl-reset' ? '' : (document.querySelector('#as-t-' + k)?.value || '').trim();
+      if (act === 'as-tpl-save' && !content) { toast('內容不可為空；要用預設請按「回復預設」', 'var(--amber)'); break; }
+      el.disabled = true;
+      const res = await api.post('saveSmsTemplate', { key: k, content, operator: (S.aUser && S.aUser.name) || (S.cUser && S.cUser.name) || 'admin' }, true);
+      el.disabled = false;
+      if (res.ok) { toast(act === 'as-tpl-reset' ? '✓ 已回復預設' : '✓ 已儲存，立即生效'); loadASms(); }
+      else toast('失敗：' + (res.error || ''), 'var(--red)');
+      break; }
     case 'resch-go': reschGo(m, el); break;
     case 'cx-meds': {
       m.dataset.meds = el.dataset.v;
