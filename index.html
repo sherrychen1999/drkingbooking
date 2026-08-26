@@ -69,9 +69,12 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .sline{width:34px;height:3px;background:#e2e8f0;border-radius:2px}.sline.done{background:var(--green)}
 /* ===== doctor / clinic grid ===== */
 .dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px;margin-top:14px}
-.dcard{background:#fff;border:2px solid var(--line);border-radius:14px;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s;display:flex;flex-direction:column}
+.dcard{background:#fff;border:1.5px solid #e2e8f0;border-radius:16px;overflow:hidden;cursor:pointer;transition:border-color .15s,transform .15s,box-shadow .15s;display:flex;flex-direction:column;box-shadow:0 2px 10px rgba(15,23,42,.06)}
 .dcard .ph{flex-shrink:0}
 .dcard .inf{flex:1}
+.dcard .mtag{position:absolute;top:10px;left:10px;z-index:2;background:#fff5f5;border:1.5px solid #f87171;color:#dc2626;border-radius:8px;padding:3px 10px;font-size:13px;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+.dcard .sub{font-size:13.5px;color:#64748b;margin-top:3px}
+.dcard .spec{display:inline-block;background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;border-radius:7px;padding:2px 9px;font-size:13px;margin-top:6px}
 .dcard:hover{border-color:var(--purple);transform:translateY(-3px);box-shadow:0 10px 24px rgba(109,40,217,.16)}
 .dcard.sel{border-color:var(--purple);background:#f5f3ff}
 .dcard .ph{width:100%;aspect-ratio:3/4;background:linear-gradient(135deg,#a78bfa,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:60px;font-weight:700;color:#fff;position:relative;overflow:hidden}
@@ -80,7 +83,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .poster-wrap img{position:absolute;left:0;top:-6.5%;width:100%;height:106.5%;object-fit:cover}
 .dcard .inf{padding:11px 13px}
 .dcard .nm{font-weight:700;font-size:18px}.dcard .cl{font-size:13px;color:var(--txt3);margin-top:4px;line-height:1.55}
-.dcard .dcta{background:var(--blue,#2563eb);color:#fff;text-align:center;font-weight:800;font-size:15.5px;padding:12px 8px;border-radius:0 0 12px 12px;letter-spacing:.5px}
+.dcard .dcta{background:#2563eb;color:#fff;text-align:center;font-weight:800;font-size:15.5px;padding:12px 8px;border-radius:10px;margin:10px 12px 14px;letter-spacing:.5px;box-shadow:0 3px 8px rgba(37,99,235,.3)}
 .dcard .dcta:active{filter:brightness(.92)}
 .cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px;margin-top:14px}
 .ccard{background:#fff;border:2px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;transition:border-color .15s}
@@ -236,6 +239,39 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .cwa.done{border-left-color:var(--green);background:#f0fdf4}
 .cwa.re{border-left-color:var(--amber);background:#fffbeb}
 .cwa small{color:var(--txt3)}
+
+/* ════ ✨ v30 清新綠白主題 ＋ 全站大字體（依設計稿） ════ */
+:root{--g1:#059669;--g2:#10b981;--mint:#ecfdf5;--mintb:#a7f3d0}
+body{font-size:19px}
+input,select,textarea{font-size:17.5px;padding:11px 13px}
+.btn{font-size:17px}
+.btn-sm{font-size:15px}
+.tbl{font-size:16.5px}
+.tbl th{font-size:15.5px}
+.muted{font-size:15px}
+#page-patient .hero{background:linear-gradient(135deg,#d1fae5,#e6fbf2);color:#065f46;text-shadow:none;border:1.5px solid var(--mintb)}
+#page-patient .hero h1{font-size:30px}
+.hub-card{border-radius:18px}
+.hub-new{background:#fff;border:2px solid var(--mintb);color:#0f172a;text-shadow:none;box-shadow:0 4px 14px rgba(5,150,105,.1)}
+.hub-find{background:#fff;border:2px solid #bfdbfe;color:#0f172a;text-shadow:none;box-shadow:0 4px 14px rgba(37,99,235,.08)}
+.hub-card h3{font-size:24px}
+.hub-card p{font-size:16.5px;color:#475569}
+.hub-new .ic{background:var(--mint);border-radius:16px;padding:10px 16px}
+.hub-find .ic{background:#eff6ff;border-radius:16px;padding:10px 16px}
+#page-patient .btn-p{background:var(--g1);border-color:var(--g1)}
+#page-patient .btn-g{background:var(--g1)}
+#page-patient .step.on,#page-patient .step.done{background:var(--g1)}
+#page-patient h2{font-size:24px}
+#page-patient .frow label{font-size:17px}
+.ccard h4{font-size:19px}
+.ts{font-size:16.5px}
+.dcard .nm{font-size:21px!important}
+.dcard .sub{font-size:15px}
+.dcard .spec{font-size:14.5px}
+.dcard .dcta{font-size:17px}
+#page-counter .side .mi,#page-admin .side .mi{font-size:18.5px}
+#page-counter .side .mi.on,#page-admin .side .mi.on{background:var(--mint);color:#065f46}
+#page-counter .card h3,#page-admin .card h3{font-size:22px}
 </style>
 </head>
 <body>
@@ -351,7 +387,7 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v29.7';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.1';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -420,6 +456,7 @@ const S = {
   loadedAt: 0,
   doctors: [],            // 由班表推導 + getDoctors 補充
   photos: {},             // shortName → dataURL
+  photoCut: {},           // ✨ shortName → true（去背照，改用淺底 contain 呈現）
   apptCache: new Map(),   // 'clinic|date' → appointments[]
   dayStatus: new Map(),   // 'clinic|date|doctor' → 滿診/停診
   phones: {},             // 院區 → 電話
@@ -427,6 +464,7 @@ const S = {
   docOrder: [],           // 前台醫師顯示順序（後端儲存）
   docTitles: {},          // 醫師職稱（後端儲存，可後台編輯）
   docTags: {},            // ✨ 行銷標籤（熱門/明星…，後台自訂）
+  docSpecs: {},           // ✨ 專長（後台自訂，卡片顯示）
   ordDraft: null,         // 排序編輯草稿
   ordTitlesDraft: null,   // 職稱編輯草稿
   // 預約流程狀態
@@ -481,7 +519,7 @@ function modal(html) {
 function closeModals() { $('#modals').innerHTML = ''; }
 
 /* ───── 照片解析度：依場景取適當大小（卡片 1000 / modal 2000 / 原圖 2400）───── */
-const thumb = (u, w) => String(u || '').replace(/sz=w\d+/, 'sz=w' + w);
+const thumb = (u, w) => { u = String(u || ''); return u.indexOf('data:') === 0 ? u : u.replace(/sz=w\d+/, 'sz=w' + w); };
 
 /* ───── 預約時長規則 ───── */
 function cfgFor(doc, cli) {
@@ -507,6 +545,7 @@ async function loadDocOrder() {
   if (res.ok && Array.isArray(res.order)) S.docOrder = res.order;
   if (res.ok && res.titles) S.docTitles = res.titles;
   if (res.ok && res.tags) S.docTags = res.tags;
+  if (res.ok && res.specs) S.docSpecs = res.specs;
 }
 /* 預設排序：三位總院長優先 → 其餘依院區順序分組 */
 const CLINIC_ORDER = ['鶯歌院區','三樹院區','樹林院區','桃園院區','土城院區','八德院區','龍潭院區','大溪院區','大竹院區','大湳院區','平鎮院區','埔心院區','觀音院區','龍岡院區','虎尾幼安'];
@@ -664,6 +703,7 @@ function loadPhotosInBg() {
         const k = normDoc(p['醫師姓名'] || p.doctor || '');
         const u = p['照片資料URL'] || p.url || '';
         if (k && u) S.photos[k] = u;
+        if (k && /\[去背\]|去背|nobg|cutout/i.test(String(p['備註'] || ''))) S.photoCut[k] = true;
       });
       if (S.bk.step === 1 && $('#page-patient').classList.contains('on')) renderStep();
     }
@@ -717,7 +757,7 @@ async function boot() {
   if (IS_STAFF) {
     document.querySelectorAll('.staff-only').forEach(b => b.style.display = '');
     document.querySelector('[data-act="portal"][data-p="counter"]')?.click();
-    if (window.matchMedia('(min-width:1100px)').matches) {
+    if (window.matchMedia && window.matchMedia('(min-width:1100px)').matches) {
       const mo = document.getElementById('modals'); if (mo) mo.style.zoom = '1.15';   // 彈窗與主畫面同倍率
     }
   } else {
@@ -807,10 +847,20 @@ function htmlStep1() {
       const ph = S.photos[d.shortName];
       const av = ph ? `style="background-image:url('${esc(thumb(ph, 1000))}')"` : '';
       const sel = S.bk.doctor === d.shortName ? ' sel' : '';
+      const mt = (S.docTags || {})[normDoc(d.shortName)] || '';
+      const tt = effTitle(d.shortName);
+      const isCut = !!S.photoCut[normDoc(d.shortName)];
+      const cutStyle = isCut ? `style="background-image:url('${esc(thumb(ph, 1000))}');background-size:contain;background-repeat:no-repeat;background-position:center bottom;top:0;height:100%"` : av;
       return `<div class="dcard${sel}" data-act="pick-doc" data-d="${esc(d.shortName)}">
-        <div class="ph">${ph ? `<div class="pimg" ${av}></div>` : esc(d.shortName.charAt(0))}</div>
-        <div class="inf"><div class="nm">${esc(d.shortName)} 醫師${titleTag(d.shortName, 12)}${markTag(d.shortName, 12)}</div><div class="cl">${d.clinics.map(esc).join('・')}</div></div>
-        <div class="dcta" data-act="book-doc" data-d="${esc(d.shortName)}">📅 預約 ${esc(d.shortName)} 醫師</div></div>`;
+        <div class="ph" style="position:relative${isCut ? ';background:linear-gradient(160deg,#f1f5f9,#e2e8f0)' : ''}">${mt ? `<span class="mtag">${esc(mt)}</span>` : ''}${ph ? `<div class="pimg" ${isCut ? cutStyle : av}></div>` : esc(d.shortName.charAt(0))}</div>
+        <div class="inf">
+          <div class="nm" style="font-size:20px">${esc(d.shortName)} 醫師</div>
+          <div class="sub">${esc(tt || '減重專科醫師')}</div>
+          ${(S.docSpecs || {})[normDoc(d.shortName)]
+            ? `<span class="spec">專長：${esc(S.docSpecs[normDoc(d.shortName)])}</span><div class="muted" style="font-size:13.5px;margin-top:5px">${d.clinics.map(esc).join('・')}</div>`
+            : `<span class="spec">${d.clinics.map(esc).join('・')}</span>`}
+        </div>
+        <div class="dcta" data-act="book-doc" data-d="${esc(d.shortName)}">📅 預約 ${esc(d.shortName)} 醫師 看診</div></div>`;
     }).join('') + `</div>`;
   } else if (S.bk.clinic && !S.bk.doctor) {
     // 院區已選 → 顯示該院區門診表
@@ -2882,6 +2932,77 @@ function renderAdmin() {
   else if (S.aView === 'emp') { c.innerHTML = `<div class="card"><h3>👥 使用者權限</h3><div id="ae-box" class="muted" style="padding:14px">載入中…</div></div>`; loadAEmp(); }
   else if (S.aView === 'report') c.innerHTML = htmlAReport();
 }
+/* ── 🪄 醫師照片一鍵去背（管理端瀏覽器跑 AI；成果存回後端，前台全體受益）── */
+let _mpSeg = null;
+async function ensureSeg() {
+  if (_mpSeg) return _mpSeg;
+  await new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
+    s.onload = res; s.onerror = () => rej(new Error('AI 模型載入失敗'));
+    document.head.appendChild(s);
+  });
+  _mpSeg = new SelfieSegmentation({ locateFile: f => 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f });
+  _mpSeg.setOptions({ modelSelection: 1 });
+  return _mpSeg;
+}
+function segOnce(seg, img) {
+  return new Promise((res, rej) => {
+    const t = setTimeout(() => rej(new Error('分割逾時')), 20000);
+    seg.onResults(r => { clearTimeout(t); res(r); });
+    seg.send({ image: img });
+  });
+}
+async function runCutoutAll(btn) {
+  const targets = S.doctors.filter(d => S.photos[normDoc(d.shortName)] && !S.photoCut[normDoc(d.shortName)]);
+  if (!targets.length) { toast('目前沒有需要去背的照片（全部已完成或尚無照片）'); return; }
+  if (!confirm(`將為 ${targets.length} 位醫師的照片進行 AI 去背並存回系統，前台立即生效。開始？`)) return;
+  btn.disabled = true;
+  const report = [];
+  let seg;
+  try { seg = await ensureSeg(); }
+  catch (e) { toast('AI 模型載入失敗，請確認網路後再試', 'var(--red)'); btn.disabled = false; return; }
+  for (let i = 0; i < targets.length; i++) {
+    const d = targets[i], key = normDoc(d.shortName);
+    btn.textContent = `🪄 去背中 ${i + 1}/${targets.length}（${d.shortName}）…`;
+    try {
+      const r0 = await api.post('getPhotoBase64', { doctor: d.shortName }, true);
+      if (!r0.ok) { report.push({ n: d.shortName, ok: false, why: r0.error || '照片下載失敗' }); continue; }
+      const img = new Image();
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('圖片解析失敗')); img.src = r0.data.dataUrl; });
+      const rr = await segOnce(seg, img);
+      const W = 560, H = Math.round(img.height * (W / img.width));
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const cx = cv.getContext('2d');
+      cx.drawImage(rr.segmentationMask, 0, 0, W, H);
+      cx.globalCompositeOperation = 'source-in';
+      cx.drawImage(img, 0, 0, W, H);
+      let out = cv.toDataURL('image/webp', 0.82);
+      if (out.length > 49000) out = cv.toDataURL('image/webp', 0.6);
+      if (out.length > 49000) {
+        const cv2 = document.createElement('canvas'); cv2.width = 420; cv2.height = Math.round(H * 420 / W);
+        cv2.getContext('2d').drawImage(cv, 0, 0, cv2.width, cv2.height);
+        out = cv2.toDataURL('image/webp', 0.7);
+      }
+      if (out.length > 49000) { report.push({ n: d.shortName, ok: false, why: '壓縮後仍超過容量上限' }); continue; }
+      const sv = await api.post('saveDoctorPhoto', { '醫師姓名': d.shortName, '照片資料URL': out,
+        '上傳者': (S.aUser && S.aUser.name) || 'admin', '備註': '[去背] AI前端 ' + fmtD(new Date()) }, true);
+      if (sv.ok) { S.photos[key] = out; S.photoCut[key] = true; report.push({ n: d.shortName, ok: true }); }
+      else report.push({ n: d.shortName, ok: false, why: sv.error || '儲存失敗' });
+    } catch (e) { report.push({ n: d.shortName, ok: false, why: String(e.message || e).slice(0, 50) }); }
+  }
+  btn.disabled = false; btn.textContent = '🪄 醫師照片一鍵去背';
+  const okN = report.filter(x => x.ok).length;
+  modal(`<div class="mh">🪄 去背結果 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb">
+      <div style="font-size:18px;font-weight:800;margin-bottom:10px">${okN === report.length ? '✅' : '⚠️'} 成功 ${okN}/${report.length} 位，前台已即時換上去背卡片</div>
+      <table class="tbl"><thead><tr><th>醫師</th><th>結果</th></tr></thead><tbody>
+      ${report.map(x => `<tr style="${x.ok ? '' : 'background:#fef2f2'}"><td><b>${esc(x.n)}</b></td>
+        <td>${x.ok ? '<span style="color:var(--green);font-weight:700">✓ 完成</span>' : `<span style="color:var(--red);font-weight:700">✗ ${esc(x.why)}</span>`}</td></tr>`).join('')}</tbody></table>
+      <p class="muted" style="margin-top:8px">失敗的可重按一次重試；效果不滿意的醫師，把去背 PNG 放進 Drive「去背」資料夾可手動覆蓋（優先權更高）。</p>
+    </div>
+    <div class="mf"><button class="btn btn-p" style="width:100%" data-act="close-modal">完成</button></div>`);
+}
 /* ── ✉️ 簡訊內容設定 ── */
 async function loadASms() {
   const box = $('#as-box'); if (!box) return;
@@ -2975,6 +3096,7 @@ function htmlAOrder() {
     S.doctors.forEach(d => S.ordTitlesDraft[d.shortName] = effTitle(d.shortName));
   }
   if (!S.ordTagsDraft) S.ordTagsDraft = { ...(S.docTags || {}) };
+  if (!S.ordSpecsDraft) S.ordSpecsDraft = { ...(S.docSpecs || {}) };
   const byName = {}; S.doctors.forEach(d => byName[d.shortName] = d);
   const rows = S.ordDraft.filter(n => byName[n]).map((n, i) => {
     const d = byName[n];
@@ -2989,12 +3111,14 @@ function htmlAOrder() {
         <small>${d.clinics.map(esc).join('・')}</small></div>
       <select class="ord-title" data-n="${esc(n)}" style="padding:5px 8px;font-size:13px">${opts}</select>
       <input class="ord-tag" data-n="${esc(n)}" list="tag-presets" value="${esc((S.ordTagsDraft || {})[n] || '')}" placeholder="標籤" style="width:96px;padding:5px 8px;font-size:13px" title="行銷標籤（如：🔥熱門、⭐明星），留空＝不顯示">
+      <input class="ord-spec" data-n="${esc(n)}" value="${esc((S.ordSpecsDraft || {})[n] || '')}" placeholder="專長（如：減重治療・代謝調理）" style="width:210px;padding:5px 8px;font-size:13px" title="顯示在前台醫師卡，留空＝顯示院區">
       <div class="ob">
         <button data-act="ord-move" data-i="${i}" data-d="-1" title="上移">▲</button>
         <button data-act="ord-move" data-i="${i}" data-d="1" title="下移">▼</button>
       </div></div>`;
   }).join('');
-  return `<div class="card"><h3>↕ 前台醫師排序</h3>
+  return `<div class="card"><h3>↕ 前台醫師排序
+    <button class="btn btn-o btn-sm" data-act="cutout-run" style="margin-left:10px" title="用 AI 把醫師照片去背，前台立即換上設計版卡片">🪄 醫師照片一鍵去背</button></h3>
     <p class="muted" style="margin:8px 0 4px">用滑鼠<b>按住醫師卡上下拖曳</b>（或按 ▲▼）調整前台「指定預約醫師」的顯示順序。</p>
     <p class="muted" style="margin-bottom:12px">預設四層：<b>醫學會理事長</b>（蕭捷健）→ <b>總院長</b>（蕭捷存→黃錦崧）→ <b>各院區院長</b>（依院區序）→ <b>其餘醫師</b>（依院區序）。每位醫師的職稱可用右側下拉直接改，改完按「儲存排序」一起存。</p>
     <div style="display:flex;gap:10px;margin-bottom:14px">
@@ -3574,8 +3698,8 @@ document.addEventListener('click', async e => {
       renderAdmin(); break; }
     case 'ord-save': {
       el.disabled = true;
-      const res = await api.post('saveDoctorOrder', { order: S.ordDraft, titles: S.ordTitlesDraft || {}, tags: S.ordTagsDraft || {}, by: S.aUser.name }, true);
-      if (res.ok) { S.docOrder = [...S.ordDraft]; S.docTitles = { ...(S.ordTitlesDraft || {}) }; S.docTags = { ...(S.ordTagsDraft || {}) }; applyDoctorOrder(); toast('✓ 排序、職稱與標籤已儲存，前台立即生效'); renderAdmin(); }
+      const res = await api.post('saveDoctorOrder', { order: S.ordDraft, titles: S.ordTitlesDraft || {}, tags: S.ordTagsDraft || {}, specs: S.ordSpecsDraft || {}, by: S.aUser.name }, true);
+      if (res.ok) { S.docOrder = [...S.ordDraft]; S.docTitles = { ...(S.ordTitlesDraft || {}) }; S.docTags = { ...(S.ordTagsDraft || {}) }; S.docSpecs = { ...(S.ordSpecsDraft || {}) }; applyDoctorOrder(); toast('✓ 排序、職稱、標籤與專長已儲存，前台立即生效'); renderAdmin(); }
       else toast('儲存失敗：' + (res.error || '後端未部署 saveDoctorOrder'), 'var(--red)');
       el.disabled = false; break; }
     case 'ord-reset': {
@@ -3589,6 +3713,7 @@ document.addEventListener('click', async e => {
       tr.querySelector('.tc-i').value = tr.querySelector('.tc-f').value;
       toast('已把初診設為與複診相同，記得按「儲存」', 'var(--blue)');
       break; }
+    case 'cutout-run': runCutoutAll(el); break;
     case 'tc-cli-toggle': {
       const sub = el.closest('tr').nextElementSibling;
       if (sub && sub.classList.contains('tcc-row')) sub.style.display = sub.style.display === 'none' ? '' : 'none';
@@ -3652,6 +3777,10 @@ document.addEventListener('change', e => {
   if (e.target.classList && e.target.classList.contains('ord-tag')) {
     if (!S.ordTagsDraft) S.ordTagsDraft = {};
     S.ordTagsDraft[e.target.dataset.n] = e.target.value.trim();
+  }
+  if (e.target.classList && e.target.classList.contains('ord-spec')) {
+    if (!S.ordSpecsDraft) S.ordSpecsDraft = {};
+    S.ordSpecsDraft[e.target.dataset.n] = e.target.value.trim();
   }
   if (e.target.id === 'qk-doc') refreshQkTimes(e.target.closest('.mask'));
   if (e.target.id === 'bkb-doc') bkbRefresh();
