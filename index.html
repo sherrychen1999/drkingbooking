@@ -215,7 +215,11 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .syncbar{background:#eff6ff;border:2px solid #93c5fd;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 /* 醫師排序拖曳列表 */
 .ord-list{max-width:560px}
-.ord-item{display:flex;align-items:center;gap:10px;background:#fff;border:2px solid var(--line);border-radius:10px;padding:9px 14px;margin-bottom:7px;transition:border-color .12s,box-shadow .12s}
+.ord-item{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:2px solid var(--line);border-radius:10px;padding:9px 14px;margin-bottom:7px;transition:border-color .12s,box-shadow .12s}
+.ord-item .on2{min-width:160px;white-space:nowrap}
+.ord-item .on2 small{white-space:normal}
+.ord-item .octl{display:flex;align-items:center;gap:8px;flex:1 1 100%;padding-left:44px}
+.ord-item .octl .ord-spec{flex:1;min-width:150px}
 .ord-item .oh{width:34px;height:34px;border-radius:8px;background:#f1f5f9;color:#64748b;display:flex;align-items:center;justify-content:center;font-size:18px;cursor:grab;flex-shrink:0;user-select:none}
 .ord-item .oh:active{cursor:grabbing;background:#e2e8f0}
 .ord-item.dragging{opacity:.45;border-style:dashed}
@@ -391,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.3';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.4';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -3170,16 +3174,18 @@ function htmlAOrder() {
       <div class="oi">${i + 1}</div>
       <div class="on2">${esc(n)} 醫師${tagH}
         <small>${d.clinics.map(esc).join('・')}</small></div>
-      <select class="ord-title" data-n="${esc(n)}" style="padding:5px 8px;font-size:13px">${opts}</select>
-      <input class="ord-tag" data-n="${esc(n)}" list="tag-presets" value="${esc((S.ordTagsDraft || {})[n] || '')}" placeholder="標籤" style="width:96px;padding:5px 8px;font-size:13px" title="行銷標籤（如：🔥熱門、⭐明星），留空＝不顯示">
-      <input class="ord-spec" data-n="${esc(n)}" value="${esc((S.ordSpecsDraft || {})[n] || '')}" placeholder="專長（如：減重治療・代謝調理）" style="width:210px;padding:5px 8px;font-size:13px" title="顯示在前台醫師卡，留空＝顯示院區">
-      <div class="ob">
+      <div class="ob" style="margin-left:auto">
         <button data-act="ord-move" data-i="${i}" data-d="-1" title="上移">▲</button>
         <button data-act="ord-move" data-i="${i}" data-d="1" title="下移">▼</button>
+      </div>
+      <div class="octl">
+        <select class="ord-title" data-n="${esc(n)}" style="padding:5px 8px;font-size:13px">${opts}</select>
+        <input class="ord-tag" data-n="${esc(n)}" list="tag-presets" value="${esc((S.ordTagsDraft || {})[n] || '')}" placeholder="標籤" style="width:96px;padding:5px 8px;font-size:13px" title="行銷標籤（如：🔥熱門、⭐明星），留空＝不顯示">
+        <input class="ord-spec" data-n="${esc(n)}" value="${esc((S.ordSpecsDraft || {})[n] || '')}" placeholder="專長（如：減重治療・代謝調理）" style="padding:5px 8px;font-size:13px" title="顯示在前台醫師卡，留空＝顯示院區">
       </div></div>`;
   }).join('');
   return `<div class="card"><h3>↕ 前台醫師排序
-    <button class="btn btn-o btn-sm" data-act="cutout-run" style="margin-left:10px" title="用 AI 把醫師照片去背，前台立即換上設計版卡片">🪄 醫師照片一鍵去背</button><button class="btn btn-o btn-sm" data-act="cutout-restore" style="margin-left:6px" title="去背效果不滿意？一鍵換回 Drive 原始照片">↩ 還原原始照片</button></h3>
+    <button class="btn btn-o btn-sm" data-act="cutout-run" style="margin-left:10px" title="用 AI 把醫師照片去背，前台立即換上設計版卡片">🪄 醫師照片一鍵去背</button><button class="btn btn-o btn-sm" data-act="cutout-restore" style="margin-left:6px" title="去背效果不滿意？一鍵換回 Drive 原始照片">↩ 還原原始照片</button><button class="btn btn-o btn-sm" data-act="photo-sync" style="margin-left:6px" title="立刻重新從 Drive 挑選照片（不用等每日自動同步）">🔄 重新同步照片</button></h3>
     <p class="muted" style="margin:8px 0 4px">用滑鼠<b>按住醫師卡上下拖曳</b>（或按 ▲▼）調整前台「指定預約醫師」的顯示順序。</p>
     <p class="muted" style="margin-bottom:12px">預設四層：<b>醫學會理事長</b>（蕭捷健）→ <b>總院長</b>（蕭捷存→黃錦崧）→ <b>各院區院長</b>（依院區序）→ <b>其餘醫師</b>（依院區序）。每位醫師的職稱可用右側下拉直接改，改完按「儲存排序」一起存。</p>
     <div style="display:flex;gap:10px;margin-bottom:14px">
@@ -3776,6 +3782,14 @@ document.addEventListener('click', async e => {
       break; }
     case 'cutout-run': runCutoutAll(el); break;
     case 'cutout-restore': restoreCutout(el); break;
+    case 'photo-sync': (async () => {
+      if (!confirm('立刻重新從 Drive 挑選各醫師照片？（約 1 分鐘）')) return;
+      el.disabled = true; el.textContent = '🔄 同步中…';
+      const r = await api.post('syncDoctorPhotos', {}, true);
+      el.disabled = false; el.textContent = '🔄 重新同步照片';
+      if (r.ok) { toast('✓ 照片已重新同步，重新整理後生效'); setTimeout(() => location.reload(), 1200); }
+      else toast('同步失敗：' + (r.error || ''), 'var(--red)');
+    })(); break;
     case 'tc-cli-toggle': {
       const sub = el.closest('tr').nextElementSibling;
       if (sub && sub.classList.contains('tcc-row')) sub.style.display = sub.style.display === 'none' ? '' : 'none';
