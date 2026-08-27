@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.4';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.5';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -2999,14 +2999,94 @@ function refineMask(maskSrc, W, H) {  // 備援精修：半透明硬化＋輕羽
   return mc;
 }
 async function restoreCutout(btn) {
-  const cuts = Object.keys(S.photoCut || {}).filter(k => S.photoCut[k]);
-  if (!cuts.length) { toast('目前沒有去背照可還原'); return; }
-  if (!confirm(`將把 ${cuts.length} 位醫師換回 Drive 原始照片（去背版會移除）。確定？`)) return;
+  const cuts = S.doctors.filter(d => {
+    const u = String(S.photos[normDoc(d.shortName)] || '');
+    return u.indexOf('data:') === 0;
+  });
+  if (!cuts.length) { toast('目前沒有 AI 處理過的照片可還原'); return; }
+  if (!confirm(`將把 ${cuts.length} 位醫師換回 Drive 原始照片（AI 處理版會移除）。確定？`)) return;
   btn.disabled = true; btn.textContent = '↩ 還原中…（約 1 分鐘）';
   const r = await api.post('restoreDoctorPhotos', { names: null }, true);
   btn.disabled = false; btn.textContent = '↩ 還原原始照片';
   if (r.ok) { toast(`✓ 已還原 ${r.restored} 位，重新整理後生效`); setTimeout(() => location.reload(), 1200); }
   else toast('還原失敗：' + (r.error || ''), 'var(--red)');
+}
+/* 🎨 統一照片背景：全部醫師照 → AI 切出人物 → 貼上基準醫師的背景色 → 人物比例統一（3:4 直式） */
+const UNIFY_REF_DOC = '蕭捷存';   // 基準底色取自這位醫師的照片
+async function unifyBgAll(btn) {
+  const targets = S.doctors.filter(d => S.photos[normDoc(d.shortName)]);
+  if (!targets.length) { toast('目前沒有照片可處理'); return; }
+  if (!confirm(`將把 ${targets.length} 位醫師照片統一為「${UNIFY_REF_DOC}」照片的背景色，並統一人物比例。\n首次執行需下載 AI 模型（約 30-60 秒）。開始？`)) return;
+  btn.disabled = true; btn.textContent = '🎨 取基準底色…';
+  // 1) 取基準底色（照片左上/右上角平均）
+  let bg = '#eceef0';
+  try {
+    const r0 = await api.post('getPhotoBase64', { doctor: UNIFY_REF_DOC }, true);
+    if (r0.ok) {
+      const im = new Image();
+      await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = r0.data.dataUrl; });
+      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      const x = c.getContext('2d'); x.drawImage(im, 0, 0);
+      const p1 = x.getImageData(8, 8, 6, 6).data, p2 = x.getImageData(im.width - 14, 8, 6, 6).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      [p1, p2].forEach(px => { for (let i = 0; i < px.length; i += 4) { r += px[i]; g += px[i+1]; b += px[i+2]; n++; } });
+      bg = 'rgb(' + Math.round(r/n) + ',' + Math.round(g/n) + ',' + Math.round(b/n) + ')';
+    }
+  } catch (e) {}
+  const report = [];
+  for (let i = 0; i < targets.length; i++) {
+    const d = targets[i], key = normDoc(d.shortName);
+    btn.textContent = `🎨 處理中 ${i + 1}/${targets.length}（${d.shortName}）…`;
+    try {
+      const r0 = await api.post('getPhotoBase64', { doctor: d.shortName }, true);
+      if (!r0.ok) { report.push({ n: d.shortName, ok: false, why: r0.error || '照片下載失敗' }); continue; }
+      const img = new Image();
+      await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('圖片解析失敗')); img.src = r0.data.dataUrl; });
+      if (i === 0) btn.textContent = '🎨 首次載入 AI 模型（約 30-60 秒）…';
+      const cut = await cutHQ(img);                    // 透明背景人物
+      // 2) 找人物範圍（alpha bounding box）
+      const tc = document.createElement('canvas'); tc.width = cut.width; tc.height = cut.height;
+      const tx = tc.getContext('2d'); tx.drawImage(cut, 0, 0);
+      const da = tx.getImageData(0, 0, tc.width, tc.height).data;
+      let minX = tc.width, maxX = 0, minY = tc.height, maxY = 0;
+      for (let y = 0; y < tc.height; y += 2) for (let x2 = 0; x2 < tc.width; x2 += 2) {
+        if (da[(y * tc.width + x2) * 4 + 3] > 40) {
+          if (x2 < minX) minX = x2; if (x2 > maxX) maxX = x2;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+      if (maxX <= minX || maxY <= minY) { report.push({ n: d.shortName, ok: false, why: '偵測不到人物' }); continue; }
+      const bw = maxX - minX, bh = maxY - minY;
+      // 3) 貼到統一底色 3:4 畫布，人物高度統一 88%、貼底置中
+      const W = 560, H = 746;
+      const scale = Math.min((H * 0.88) / bh, (W * 0.96) / bw, 1.6);   // 1.6 倍放大上限：低解析照片不硬拉，避免模糊
+      const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      const cx = cv.getContext('2d');
+      cx.fillStyle = bg; cx.fillRect(0, 0, W, H);
+      const dw = bw * scale, dh = bh * scale;
+      cx.drawImage(tc, minX, minY, bw, bh, (W - dw) / 2, H - dh, dw, dh);
+      let out = cv.toDataURL('image/webp', 0.82);
+      if (out.length > 49000) out = cv.toDataURL('image/webp', 0.6);
+      if (out.length > 49000) {
+        const cv2 = document.createElement('canvas'); cv2.width = 420; cv2.height = 560;
+        cv2.getContext('2d').drawImage(cv, 0, 0, 420, 560);
+        out = cv2.toDataURL('image/webp', 0.7);
+      }
+      if (out.length > 49000) { report.push({ n: d.shortName, ok: false, why: '壓縮後仍超過容量上限' }); continue; }
+      const sv = await api.post('saveDoctorPhoto', { '醫師姓名': d.shortName, '照片資料URL': out,
+        '上傳者': (S.aUser && S.aUser.name) || 'admin', '備註': '[統一底] ISNet ' + fmtD(new Date()) }, true);
+      if (sv.ok) { S.photos[key] = out; delete S.photoCut[key]; report.push({ n: d.shortName, ok: true }); }
+      else report.push({ n: d.shortName, ok: false, why: sv.error || '儲存失敗' });
+    } catch (e) { report.push({ n: d.shortName, ok: false, why: String(e.message || e).slice(0, 50) }); }
+  }
+  btn.disabled = false; btn.textContent = '🎨 統一照片背景';
+  const okN = report.filter(x => x.ok).length;
+  modal(`<div class="mh">🎨 統一背景結果 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb">
+      <div style="font-size:18px;font-weight:800;margin-bottom:10px">${okN === report.length ? '✅' : '⚠️'} 成功 ${okN}/${report.length} 位（不滿意可按「↩ 還原原始照片」全部復原）</div>
+      <table class="tbl"><thead><tr><th>醫師</th><th>結果</th></tr></thead><tbody>
+      ${report.map(x => `<tr style="${x.ok ? '' : 'background:#fef2f2'}"><td><b>${esc(x.n)}</b></td><td>${x.ok ? '✓ 完成' : '✗ ' + esc(x.why || '')}</td></tr>`).join('')}
+      </tbody></table></div>`);
 }
 async function runCutoutAll(btn) {
   const targets = S.doctors.filter(d => S.photos[normDoc(d.shortName)] && !S.photoCut[normDoc(d.shortName)]);
@@ -3185,7 +3265,7 @@ function htmlAOrder() {
       </div></div>`;
   }).join('');
   return `<div class="card"><h3>↕ 前台醫師排序
-    <button class="btn btn-o btn-sm" data-act="cutout-run" style="margin-left:10px" title="用 AI 把醫師照片去背，前台立即換上設計版卡片">🪄 醫師照片一鍵去背</button><button class="btn btn-o btn-sm" data-act="cutout-restore" style="margin-left:6px" title="去背效果不滿意？一鍵換回 Drive 原始照片">↩ 還原原始照片</button><button class="btn btn-o btn-sm" data-act="photo-sync" style="margin-left:6px" title="立刻重新從 Drive 挑選照片（不用等每日自動同步）">🔄 重新同步照片</button></h3>
+    <button class="btn btn-o btn-sm" data-act="cutout-run" style="margin-left:10px" title="用 AI 把醫師照片去背，前台立即換上設計版卡片">🪄 醫師照片一鍵去背</button><button class="btn btn-o btn-sm" data-act="cutout-restore" style="margin-left:6px" title="去背效果不滿意？一鍵換回 Drive 原始照片">↩ 還原原始照片</button><button class="btn btn-o btn-sm" data-act="photo-sync" style="margin-left:6px" title="立刻重新從 Drive 挑選照片（不用等每日自動同步）">🔄 重新同步照片</button><button class="btn btn-o btn-sm" data-act="unify-bg" style="margin-left:6px" title="AI 把每張醫師照換成統一背景色（取自基準醫師照片）並統一人物比例">🎨 統一照片背景</button></h3>
     <p class="muted" style="margin:8px 0 4px">用滑鼠<b>按住醫師卡上下拖曳</b>（或按 ▲▼）調整前台「指定預約醫師」的顯示順序。</p>
     <p class="muted" style="margin-bottom:12px">預設四層：<b>醫學會理事長</b>（蕭捷健）→ <b>總院長</b>（蕭捷存→黃錦崧）→ <b>各院區院長</b>（依院區序）→ <b>其餘醫師</b>（依院區序）。每位醫師的職稱可用右側下拉直接改，改完按「儲存排序」一起存。</p>
     <div style="display:flex;gap:10px;margin-bottom:14px">
@@ -3782,6 +3862,7 @@ document.addEventListener('click', async e => {
       break; }
     case 'cutout-run': runCutoutAll(el); break;
     case 'cutout-restore': restoreCutout(el); break;
+    case 'unify-bg': unifyBgAll(el); break;
     case 'photo-sync': (async () => {
       if (!confirm('立刻重新從 Drive 挑選各醫師照片？（約 1 分鐘）')) return;
       el.disabled = true; el.textContent = '🔄 同步中…';
