@@ -79,6 +79,10 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .dcard.sel{border-color:var(--purple);background:#f5f3ff}
 .dcard .ph{width:100%;aspect-ratio:3/4;background:linear-gradient(135deg,#a78bfa,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:60px;font-weight:700;color:#fff;position:relative;overflow:hidden}
 .dcard .ph .pimg{position:absolute;left:0;right:0;top:-6.5%;height:106.5%;background-size:cover;background-position:center top}
+.dcard .ph.phcut{background:linear-gradient(175deg,#fbfcfd 0%,#f1f4f8 60%,#e7ecf2 100%)}
+.dcard .ph.phcut .halo{position:absolute;left:50%;top:44%;width:88%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.95) 0%,rgba(255,255,255,.55) 45%,rgba(255,255,255,0) 72%);pointer-events:none}
+.dcard .ph.phcut .cutimg{position:absolute;left:0;bottom:0;width:100%;height:97%;object-fit:contain;object-position:center bottom;filter:drop-shadow(6px 14px 12px rgba(30,41,59,.22)) drop-shadow(-3px 4px 6px rgba(30,41,59,.10));pointer-events:none}
+.dcard .ph.phcut .floorsh{position:absolute;left:50%;bottom:2px;width:72%;height:14px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(ellipse,rgba(30,41,59,.20) 0%,rgba(30,41,59,0) 70%);pointer-events:none}
 .poster-wrap{position:relative;overflow:hidden;max-height:66vh;aspect-ratio:59/84;margin:0 auto;background:#f8fafc;cursor:zoom-in;width:100%}
 .poster-wrap img{position:absolute;left:0;top:-6.5%;width:100%;height:106.5%;object-fit:cover}
 .dcard .inf{padding:11px 13px}
@@ -387,7 +391,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.1';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.3';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -850,9 +854,8 @@ function htmlStep1() {
       const mt = (S.docTags || {})[normDoc(d.shortName)] || '';
       const tt = effTitle(d.shortName);
       const isCut = !!S.photoCut[normDoc(d.shortName)];
-      const cutStyle = isCut ? `style="background-image:url('${esc(thumb(ph, 1000))}');background-size:contain;background-repeat:no-repeat;background-position:center bottom;top:0;height:100%"` : av;
       return `<div class="dcard${sel}" data-act="pick-doc" data-d="${esc(d.shortName)}">
-        <div class="ph" style="position:relative${isCut ? ';background:linear-gradient(160deg,#f1f5f9,#e2e8f0)' : ''}">${mt ? `<span class="mtag">${esc(mt)}</span>` : ''}${ph ? `<div class="pimg" ${isCut ? cutStyle : av}></div>` : esc(d.shortName.charAt(0))}</div>
+        <div class="ph${isCut ? ' phcut' : ''}" style="position:relative">${mt ? `<span class="mtag">${esc(mt)}</span>` : ''}${ph ? (isCut ? `<span class="halo"></span><img class="cutimg" src="${esc(thumb(ph, 1000))}" alt=""><span class="floorsh"></span>` : `<div class="pimg" ${av}></div>`) : esc(d.shortName.charAt(0))}</div>
         <div class="inf">
           <div class="nm" style="font-size:20px">${esc(d.shortName)} 醫師</div>
           <div class="sub">${esc(tt || '減重專科醫師')}</div>
@@ -2932,8 +2935,30 @@ function renderAdmin() {
   else if (S.aView === 'emp') { c.innerHTML = `<div class="card"><h3>👥 使用者權限</h3><div id="ae-box" class="muted" style="padding:14px">載入中…</div></div>`; loadAEmp(); }
   else if (S.aView === 'report') c.innerHTML = htmlAReport();
 }
-/* ── 🪄 醫師照片一鍵去背（管理端瀏覽器跑 AI；成果存回後端，前台全體受益）── */
-let _mpSeg = null;
+/* ── 🪄 醫師照片一鍵去背 v2（管理端瀏覽器跑 AI；成果存回後端，前台全體受益）
+   主引擎：ISNet 專業去背模型（@imgly/background-removal，髮絲級邊緣）
+   備援：MediaPipe＋邊緣精修（硬化半透明、羽化 1px、去光暈）── */
+let _imglyRB = null, _mpSeg = null;
+async function ensureImgly() {
+  if (_imglyRB) return _imglyRB;
+  const mod = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.4.5/+esm');
+  _imglyRB = (blob) => mod.removeBackground(blob, {
+    publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal-data@1.4.5/dist/',
+    model: 'medium'
+  });
+  return _imglyRB;
+}
+async function cutHQ(img) {  // 主引擎：整圖丟給 ISNet，回傳去背後 Image
+  const c0 = document.createElement('canvas'); c0.width = img.width; c0.height = img.height;
+  c0.getContext('2d').drawImage(img, 0, 0);
+  const blob = await new Promise(res => c0.toBlob(res, 'image/png'));
+  const rb = await ensureImgly();
+  const outBlob = await rb(blob);
+  const url = URL.createObjectURL(outBlob);
+  const im2 = new Image();
+  await new Promise((res, rej) => { im2.onload = res; im2.onerror = () => rej(new Error('去背結果解析失敗')); im2.src = url; });
+  return im2;
+}
 async function ensureSeg() {
   if (_mpSeg) return _mpSeg;
   await new Promise((res, rej) => {
@@ -2953,15 +2978,39 @@ function segOnce(seg, img) {
     seg.send({ image: img });
   });
 }
+function refineMask(maskSrc, W, H) {  // 備援精修：半透明硬化＋輕羽化，去掉毛邊與光暈
+  const mc = document.createElement('canvas'); mc.width = W; mc.height = H;
+  const mx = mc.getContext('2d');
+  mx.filter = 'blur(1.2px)';                       // 先柔化鋸齒
+  mx.drawImage(maskSrc, 0, 0, W, H);
+  mx.filter = 'none';
+  const d = mx.getImageData(0, 0, W, H), px = d.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const a = px[i + 3] / 255;
+    // smoothstep：0.35 以下全透明、0.75 以上全實心，中間平滑過渡（收邊 → 不吃到背景光暈）
+    let v = (a - 0.35) / 0.4; v = v < 0 ? 0 : v > 1 ? 1 : v; v = v * v * (3 - 2 * v);
+    px[i + 3] = Math.round(v * 255);
+  }
+  mx.putImageData(d, 0, 0);
+  return mc;
+}
+async function restoreCutout(btn) {
+  const cuts = Object.keys(S.photoCut || {}).filter(k => S.photoCut[k]);
+  if (!cuts.length) { toast('目前沒有去背照可還原'); return; }
+  if (!confirm(`將把 ${cuts.length} 位醫師換回 Drive 原始照片（去背版會移除）。確定？`)) return;
+  btn.disabled = true; btn.textContent = '↩ 還原中…（約 1 分鐘）';
+  const r = await api.post('restoreDoctorPhotos', { names: null }, true);
+  btn.disabled = false; btn.textContent = '↩ 還原原始照片';
+  if (r.ok) { toast(`✓ 已還原 ${r.restored} 位，重新整理後生效`); setTimeout(() => location.reload(), 1200); }
+  else toast('還原失敗：' + (r.error || ''), 'var(--red)');
+}
 async function runCutoutAll(btn) {
   const targets = S.doctors.filter(d => S.photos[normDoc(d.shortName)] && !S.photoCut[normDoc(d.shortName)]);
   if (!targets.length) { toast('目前沒有需要去背的照片（全部已完成或尚無照片）'); return; }
   if (!confirm(`將為 ${targets.length} 位醫師的照片進行 AI 去背並存回系統，前台立即生效。開始？`)) return;
   btn.disabled = true;
   const report = [];
-  let seg;
-  try { seg = await ensureSeg(); }
-  catch (e) { toast('AI 模型載入失敗，請確認網路後再試', 'var(--red)'); btn.disabled = false; return; }
+  let hqOK = true;   // 主引擎（ISNet 專業模型）是否可用；首張載入約 30-60 秒（下載模型，只需一次）
   for (let i = 0; i < targets.length; i++) {
     const d = targets[i], key = normDoc(d.shortName);
     btn.textContent = `🪄 去背中 ${i + 1}/${targets.length}（${d.shortName}）…`;
@@ -2970,13 +3019,25 @@ async function runCutoutAll(btn) {
       if (!r0.ok) { report.push({ n: d.shortName, ok: false, why: r0.error || '照片下載失敗' }); continue; }
       const img = new Image();
       await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('圖片解析失敗')); img.src = r0.data.dataUrl; });
-      const rr = await segOnce(seg, img);
       const W = 560, H = Math.round(img.height * (W / img.width));
       const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
       const cx = cv.getContext('2d');
-      cx.drawImage(rr.segmentationMask, 0, 0, W, H);
-      cx.globalCompositeOperation = 'source-in';
-      cx.drawImage(img, 0, 0, W, H);
+      let done = false;
+      if (hqOK) {
+        try {
+          if (i === 0) btn.textContent = `🪄 首次載入專業去背模型（約 30-60 秒）…`;
+          const cutImg = await cutHQ(img);
+          cx.drawImage(cutImg, 0, 0, W, H);
+          done = true;
+        } catch (e) { hqOK = false; console.warn('ISNet 不可用，退用備援引擎', e); }
+      }
+      if (!done) {   // 備援：MediaPipe＋邊緣精修
+        const seg = await ensureSeg();
+        const rr = await segOnce(seg, img);
+        cx.drawImage(refineMask(rr.segmentationMask, W, H), 0, 0);
+        cx.globalCompositeOperation = 'source-in';
+        cx.drawImage(img, 0, 0, W, H);
+      }
       let out = cv.toDataURL('image/webp', 0.82);
       if (out.length > 49000) out = cv.toDataURL('image/webp', 0.6);
       if (out.length > 49000) {
@@ -2986,7 +3047,7 @@ async function runCutoutAll(btn) {
       }
       if (out.length > 49000) { report.push({ n: d.shortName, ok: false, why: '壓縮後仍超過容量上限' }); continue; }
       const sv = await api.post('saveDoctorPhoto', { '醫師姓名': d.shortName, '照片資料URL': out,
-        '上傳者': (S.aUser && S.aUser.name) || 'admin', '備註': '[去背] AI前端 ' + fmtD(new Date()) }, true);
+        '上傳者': (S.aUser && S.aUser.name) || 'admin', '備註': '[去背] ' + (hqOK ? 'ISNet' : 'AI前端') + ' ' + fmtD(new Date()) }, true);
       if (sv.ok) { S.photos[key] = out; S.photoCut[key] = true; report.push({ n: d.shortName, ok: true }); }
       else report.push({ n: d.shortName, ok: false, why: sv.error || '儲存失敗' });
     } catch (e) { report.push({ n: d.shortName, ok: false, why: String(e.message || e).slice(0, 50) }); }
@@ -3118,7 +3179,7 @@ function htmlAOrder() {
       </div></div>`;
   }).join('');
   return `<div class="card"><h3>↕ 前台醫師排序
-    <button class="btn btn-o btn-sm" data-act="cutout-run" style="margin-left:10px" title="用 AI 把醫師照片去背，前台立即換上設計版卡片">🪄 醫師照片一鍵去背</button></h3>
+    <button class="btn btn-o btn-sm" data-act="cutout-run" style="margin-left:10px" title="用 AI 把醫師照片去背，前台立即換上設計版卡片">🪄 醫師照片一鍵去背</button><button class="btn btn-o btn-sm" data-act="cutout-restore" style="margin-left:6px" title="去背效果不滿意？一鍵換回 Drive 原始照片">↩ 還原原始照片</button></h3>
     <p class="muted" style="margin:8px 0 4px">用滑鼠<b>按住醫師卡上下拖曳</b>（或按 ▲▼）調整前台「指定預約醫師」的顯示順序。</p>
     <p class="muted" style="margin-bottom:12px">預設四層：<b>醫學會理事長</b>（蕭捷健）→ <b>總院長</b>（蕭捷存→黃錦崧）→ <b>各院區院長</b>（依院區序）→ <b>其餘醫師</b>（依院區序）。每位醫師的職稱可用右側下拉直接改，改完按「儲存排序」一起存。</p>
     <div style="display:flex;gap:10px;margin-bottom:14px">
@@ -3714,6 +3775,7 @@ document.addEventListener('click', async e => {
       toast('已把初診設為與複診相同，記得按「儲存」', 'var(--blue)');
       break; }
     case 'cutout-run': runCutoutAll(el); break;
+    case 'cutout-restore': restoreCutout(el); break;
     case 'tc-cli-toggle': {
       const sub = el.closest('tr').nextElementSibling;
       if (sub && sub.classList.contains('tcc-row')) sub.style.display = sub.style.display === 'none' ? '' : 'none';
