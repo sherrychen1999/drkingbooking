@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.7';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.7.1';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -1074,7 +1074,7 @@ function htmlStep3() {
     </div></div>
     <div class="calwrap">
       <div class="cal">${calHtml()}</div>
-      <p class="muted" style="font-size:13px;margin-top:6px">📅 網路預約開放 <b>${OPEN_DAYS} 天內</b>的日期；標示「未開放」的日期尚未開放預約，將依門診表陸續開放。24 小時內的時段請來電預約。</p>
+      <p class="muted" style="font-size:13px;margin-top:6px">📅 網路預約開放 <b>${OPEN_DAYS} 天內</b>的日期；標示「未開放」的日期尚未開放預約，將依門診表陸續開放。24 小時內的時段不開放網路預約，請加 LINE <b>@selectgoodfood</b> 或電聯院所。</p>
       <div><div style="font-weight:700;margin-bottom:4px">可預約時段</div>
       <p class="muted" style="margin-bottom:8px">每 10 分鐘 1 個時段，灰色=已被預約</p>
       <div id="ts-box"><p class="muted" style="padding:20px;text-align:center">請先點選日期</p></div></div>
@@ -1194,7 +1194,7 @@ async function loadStep3Slots() {
     h += `</div></div>`;
   });
   const soonNote = hadSoon ? `<div style="background:#fff7ed;border:1.5px solid #fdba74;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:14px;color:#9a3412">
-    ⏰ 24 小時內的時段不開放網路預約，請來電 <b>${esc(b.clinic)} ${esc(cliPhone(b.clinic) || '')}</b></div>` : '';
+    ⏰ 24 小時內的時段不開放網路預約<br>請加 LINE <b style="user-select:all">@selectgoodfood</b> 或來電 <b>${esc(b.clinic)} ${esc(cliPhone(b.clinic) || '')}</b> 由櫃檯為您安排</div>` : '';
   box.innerHTML = blockedNote + soonNote + (h || `<p class="muted">本日無可約時段</p>`);
 }
 
@@ -1333,7 +1333,7 @@ async function confirmBooking() {
   } else {
     btn.disabled = false; btn.textContent = '✓ 確認預約';
     const ph = res.clinicPhone || cliPhone(b.clinic);
-    const M = { blacklisted: `此手機號碼需來電預約，請撥 ${ph}`, within_24h: `24 小時內請來電預約：${ph}`,
+    const M = { blacklisted: `此手機號碼需來電預約，請撥 ${ph}`, within_24h: `24 小時內不開放網路預約，請加 LINE @selectgoodfood 或來電 ${ph}`,
       closed_day: '該日停診，請重新選擇日期', full_day: `該日已額滿，請改選其他日期${ph ? `或來電 ${ph}` : ''}`,
       too_far: `僅開放 ${OPEN_DAYS} 天內的網路預約` };
     toast('預約失敗：' + (M[res.error] || res.error || '請稍後再試'), 'var(--red)');
@@ -1410,7 +1410,7 @@ async function doLookup() {
       <div style="display:flex;gap:8px">
         <button class="btn btn-a btn-sm" data-act="resch" data-i="${i}">↔ 改約</button>
         <button class="btn btn-r btn-sm" data-act="cancel" data-i="${i}">✕ 取消</button></div></div>`;
-  }).join('') + `<p class="muted" style="margin-top:12px;font-size:13.5px">⚠️ 24 小時內的預約請聯絡院區櫃台處理</p>`;
+  }).join('') + `<p class="muted" style="margin-top:12px;font-size:13.5px">⚠️ 24 小時內的預約異動請加 LINE <b>@selectgoodfood</b> 或電聯院區櫃台處理</p>`;
 }
 function within24h(a) { return new Date(`${a.date}T${a._t||'00:00'}`) - new Date() < 24*3600*1000; }
 
@@ -3654,8 +3654,8 @@ document.addEventListener('click', async e => {
     case 'back': S.bk.step = +el.dataset.s; renderStep(); break;
     /* lookup */
     case 'lk-go': doLookup(); break;
-    case 'resch': { const a = S.lookupResults[+el.dataset.i]; if (within24h(a)) { toast('⚠️ 24 小時內請聯絡櫃台', 'var(--amber)'); break; } openResch(a); break; }
-    case 'cancel': { const a = S.lookupResults[+el.dataset.i]; if (within24h(a)) { toast('⚠️ 24 小時內請聯絡櫃台', 'var(--amber)'); break; } openCancel(a); break; }
+    case 'resch': { const a = S.lookupResults[+el.dataset.i]; if (within24h(a)) { toast('⚠️ 24 小時內的異動請加 LINE @selectgoodfood 或電聯 ' + (cliPhone(a.clinic) || '院區櫃台'), 'var(--amber)'); break; } openResch(a); break; }
+    case 'cancel': { const a = S.lookupResults[+el.dataset.i]; if (within24h(a)) { toast('⚠️ 24 小時內的異動請加 LINE @selectgoodfood 或電聯 ' + (cliPhone(a.clinic) || '院區櫃台'), 'var(--amber)'); break; } openCancel(a); break; }
     case 'rs-mode': {
       m.dataset.mode = el.dataset.v;
       m.querySelectorAll('[data-act="rs-mode"]').forEach(b => b.classList.toggle('on', b === el));
