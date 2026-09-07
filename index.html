@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.7.1';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.7.2';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -873,11 +873,15 @@ function renderStep() {
   if (S.bk.step === 1) b.innerHTML = htmlStep1();
   else if (S.bk.step === 2) b.innerHTML = htmlStep2();
   else if (S.bk.step === 3) {
-    b.innerHTML = htmlStep3(); loadStep3Slots();
-    if (Date.now() - (S._cfgAt || 0) > 60e3) {   // ✨ v31.6 月曆也要吃到最新滿診/停診
-      loadPublicCfg().then(() => { if (S.bk.step === 3) { const c2 = $('#stepbox'); if (c2) { c2.innerHTML = htmlStep3(); loadStep3Slots(); } } });
-    }
-    loadSoonest();
+    // ✨ v31.7.2 資料過期就先抓再畫（不先閃舊畫面）
+    if (Date.now() - (S._cfgAt || 0) > 60e3) {
+      b.innerHTML = `<div class="muted" style="padding:48px 20px;text-align:center;font-size:16.5px;font-weight:600">🔄 正在確認最新可約狀態…</div>`;
+      loadPublicCfg().then(() => {
+        if (S.bk.step !== 3) return;
+        const c2 = $('#stepbox'); if (!c2) return;
+        c2.innerHTML = htmlStep3(); loadStep3Slots(); loadSoonest();
+      });
+    } else { b.innerHTML = htmlStep3(); loadStep3Slots(); loadSoonest(); }
   }
   else if (S.bk.step === 4) b.innerHTML = htmlStep4();
   else if (S.bk.step === 5) b.innerHTML = htmlStep5();
