@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.5.2';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.7';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -473,6 +473,9 @@ const S = {
   docTitles: {},          // 醫師職稱（後端儲存，可後台編輯）
   docTags: {},            // ✨ 行銷標籤（熱門/明星…，後台自訂）
   docSpecs: {},           // ✨ 專長（後台自訂，卡片顯示）
+  docDiverts: {},         // ✨ v31.6 高人氣分流醫師（卡片改推同院區其他醫師）
+  soonest: {},            // ✨ v31.6 '醫師|院區' → 最早可約日期 yyyy-mm-dd
+  _soonAt: 0,
   ordDraft: null,         // 排序編輯草稿
   ordTitlesDraft: null,   // 職稱編輯草稿
   // 預約流程狀態
@@ -488,6 +491,7 @@ function resetBk() {
            date:null, weekday:null, slot:null, slotDoctor:null,
            calY:null, calM:null, type:'followup',
            name:'', phone:'', notify:'sms', items:[], remember:false,
+           course:null,   // ✨ v31.7 針劑療程 {name, weeks}
            blood:{ mode:'date', date:null } };
 }
 resetBk();
@@ -501,6 +505,33 @@ const tomorrowMD = () => { const d = new Date(Date.now()+864e5); return (d.getMo
 /* ✨ v25 滿診/停診・24h・開放區間 */
 const OPEN_DAYS = 30;
 const dayStat = (cli, ds, doc) => S.dayStatus.get(cli + '|' + ds + '|' + normDoc(doc)) || '';
+/* ✨ v31.6 最早可約日期 */
+async function loadSoonest(force) {
+  if (!force && Date.now() - S._soonAt < 300e3 && Object.keys(S.soonest).length) return;
+  try {
+    const res = await api.get('getEarliestAvail', {});
+    if (res.ok && res.data) { S.soonest = res.data; S._soonAt = Date.now();
+      if (S.bk.step === 1 && $('#page-patient') && $('#page-patient').classList.contains('on')) renderStep(); }
+  } catch (e) {}
+}
+function soonestFor(doc, clinics) {   // 該醫師（多院區取最早）
+  let best = null;
+  (clinics || []).forEach(c => {
+    const d = S.soonest[normDoc(doc) + '|' + c];
+    if (d && (!best || d < best.date)) best = { date: d, clinic: c };
+  });
+  return best;
+}
+function othersSoonest(clinic, exceptDoc) {   // 該院區其他醫師最早
+  let best = null;
+  const ex = normDoc(exceptDoc || '');
+  Object.entries(S.soonest).forEach(([k, d]) => {
+    const [doc, cli] = k.split('|');
+    if (cli !== clinic || normDoc(doc) === ex) return;
+    if (!best || d < best.date) best = { date: d, doctor: doc };
+  });
+  return best;
+}
 const cliPhone = c => S.phones[c] || '';
 const slotSoon = (ds, t) => new Date(ds + 'T' + t + ':00').getTime() - Date.now() < 24 * 3600e3;
 const dsTooFar = ds => { const td = new Date(); td.setHours(0,0,0,0); return (new Date(ds + 'T00:00') - td) > OPEN_DAYS * 864e5; };
@@ -554,6 +585,7 @@ async function loadDocOrder() {
   if (res.ok && res.titles) S.docTitles = res.titles;
   if (res.ok && res.tags) S.docTags = res.tags;
   if (res.ok && res.specs) S.docSpecs = res.specs;
+  if (res.ok && res.diverts) S.docDiverts = res.diverts;
 }
 /* 預設排序：三位總院長優先 → 其餘依院區順序分組 */
 const CLINIC_ORDER = ['鶯歌院區','三樹院區','樹林院區','桃園院區','土城院區','八德院區','龍潭院區','大溪院區','大竹院區','大湳院區','平鎮院區','埔心院區','觀音院區','龍岡院區','虎尾幼安'];
@@ -582,7 +614,8 @@ function markTag(n, size) {
   if (!t) return '';
   return ` <span style="background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;border-radius:6px;padding:2px 8px;font-size:${size || 12}px;font-weight:800">${esc(t)}</span>`;
 }
-const TAG_PRESET_HTML = `<datalist id="tag-presets"><option value="🔥 熱門"><option value="⭐ 明星醫師"><option value="🆕 新進"><option value="👍 院長推薦"></datalist>`;
+const TAG_PRESET_HTML = `<datalist id="spec-presets"><option value="停滯突破"><option value="女性減重"><option value="三高慢性"><option value="停滯突破、女性減重"><option value="停滯突破、三高慢性"><option value="女性減重、三高慢性"><option value="停滯突破、女性減重、三高慢性"></datalist>
+<datalist id="tag-presets"><option value="🔥 熱門"><option value="⭐ 明星醫師"><option value="🆕 新進"><option value="👍 院長推薦"></datalist>`;
 function defaultDoctorOrder() {
   const names = S.doctors.map(d => d.shortName);
   const pos = n => {
@@ -755,6 +788,7 @@ async function boot() {
   $('#splash-msg').textContent = ok ? `已載入 ${S.schedules.length} 筆班表` : '⚠️ 後端無班表資料';
   if (!ok) toast('⚠️ 無法載入班表，請稍後重試或聯絡管理員', 'var(--red)');
   loadPhotosInBg();
+  loadSoonest();   // ✨ v31.6 背景載入最早可約日
   renderPatient();
   if (!IS_STAFF && _Q.get('go') === 'find') showLookup();   // ✨ v29.6 簡訊連結直達「查詢變更」
   const _v1 = $('#c-ver'), _v2 = $('#a-ver');
@@ -838,7 +872,13 @@ function renderStep() {
   const b = $('#stepbox');
   if (S.bk.step === 1) b.innerHTML = htmlStep1();
   else if (S.bk.step === 2) b.innerHTML = htmlStep2();
-  else if (S.bk.step === 3) { b.innerHTML = htmlStep3(); loadStep3Slots(); }
+  else if (S.bk.step === 3) {
+    b.innerHTML = htmlStep3(); loadStep3Slots();
+    if (Date.now() - (S._cfgAt || 0) > 60e3) {   // ✨ v31.6 月曆也要吃到最新滿診/停診
+      loadPublicCfg().then(() => { if (S.bk.step === 3) { const c2 = $('#stepbox'); if (c2) { c2.innerHTML = htmlStep3(); loadStep3Slots(); } } });
+    }
+    loadSoonest();
+  }
   else if (S.bk.step === 4) b.innerHTML = htmlStep4();
   else if (S.bk.step === 5) b.innerHTML = htmlStep5();
 }
@@ -863,9 +903,23 @@ function htmlStep1() {
         <div class="inf">
           <div class="nm" style="font-size:20px">${esc(d.shortName)} 醫師</div>
           <div class="sub">${esc(tt || '減重專科醫師')}</div>
-          ${(S.docSpecs || {})[normDoc(d.shortName)]
-            ? `<span class="spec">專長：${esc(S.docSpecs[normDoc(d.shortName)])}</span><div class="muted" style="font-size:13.5px;margin-top:5px">${d.clinics.map(esc).join('・')}</div>`
-            : `<span class="spec">${d.clinics.map(esc).join('・')}</span>`}
+          ${(() => {
+            const sp = (S.docSpecs || {})[normDoc(d.shortName)] || '';
+            const chips = sp.split(/[、,，/／\s]+/).filter(Boolean).map(t => `<span class="spec">${esc(t)}</span>`).join(' ');
+            return sp
+              ? `${chips}<div class="muted" style="font-size:13.5px;margin-top:5px">${d.clinics.map(esc).join('・')}</div>`
+              : `<span class="spec">${d.clinics.map(esc).join('・')}</span>`;
+          })()}
+          ${(() => {   /* ✨ v31.6 最早可約 / 高人氣分流 */
+            if (S.docDiverts[normDoc(d.shortName)]) {
+              const alts = d.clinics.map(c => ({ c, o: othersSoonest(c, d.shortName) })).filter(x => x.o);
+              alts.sort((a, b2) => a.o.date < b2.o.date ? -1 : 1);
+              const a0 = alts[0];
+              return `<div style="margin-top:7px;background:#fff7ed;border:1.5px solid #fdba74;border-radius:8px;padding:6px 10px;font-size:14px;color:#9a3412;font-weight:700">🔥 預約量大，等候較久<br><span style="font-weight:600">${a0 ? `${esc(a0.c)}其他醫師最快 <b>${mdTxt(a0.o.date)}</b> 可約` : '建議選擇其他醫師'}</span></div>`;
+            }
+            const so = soonestFor(d.shortName, d.clinics);
+            return so ? `<div style="margin-top:7px;font-size:14.5px;color:#047857;font-weight:700">⚡ 最快可約 ${mdTxt(so.date)}${d.clinics.length > 1 ? `<span style="color:#64748b;font-weight:500">・${esc(so.clinic)}</span>` : ''}</div>` : '';
+          })()}
         </div>
         <div class="dcta" data-act="book-doc" data-d="${esc(d.shortName)}">📅 預約 ${esc(d.shortName)} 醫師 看診</div></div>`;
     }).join('') + `</div>`;
@@ -1082,9 +1136,13 @@ async function loadStep3Slots() {
   });
   if (!rows.length) {
     const anyStop = rows0.some(r => dayStat(b.clinic, b.date, r.doctor) === '停診');
+    const alt = othersSoonest(b.clinic, b.doctor);   // ✨ v31.6 直接推同院區其他醫師
     box.innerHTML = `<div style="padding:22px;background:#fef2f2;border:2px solid #fecaca;border-radius:10px;text-align:center;color:var(--red)">
       <div style="font-size:20px;font-weight:800">${anyStop ? '⛔ 本日停診' : '🈵 本日滿診'}</div>
-      <div style="font-weight:600;margin-top:4px">請另選其他日期${cliPhone(b.clinic) ? `，或來電 ${esc(b.clinic)} ${esc(cliPhone(b.clinic))}` : ''}</div></div>`;
+      <div style="font-weight:600;margin-top:4px">請另選其他日期${cliPhone(b.clinic) ? `，或來電 ${esc(b.clinic)} ${esc(cliPhone(b.clinic))}` : ''}</div></div>` +
+      (alt ? `<div style="margin-top:10px;padding:14px;background:#ecfdf5;border:2px solid #6ee7b7;border-radius:10px;text-align:center">
+        <div style="font-size:16.5px;font-weight:800;color:#065f46">💡 ${esc(b.clinic)}其他醫師最快 ${mdTxt(alt.date)} 可看診</div>
+        <button class="btn btn-p" data-act="go-anydoc" data-ds="${alt.date}" style="margin-top:8px">看 ${mdTxt(alt.date)} 其他醫師時段 →</button></div>` : '');
     return;
   }
   // 部分醫師滿診/停診（不指定醫師模式）→ 紅字標出
@@ -1189,7 +1247,15 @@ function htmlStep4() {
         <button class="${b.notify==='none'?'on':''}" data-act="nt" data-v="none">不通知</button>
       </div></div>
       <label class="chk"><input type="checkbox" id="f-rem" ${b.remember?'checked':''}> 記住我的資訊（手機自動帶入姓名與電話）</label>
-      ${b.type === 'initial' ? htmlBloodSection() : ''}
+      ${b.type === 'initial'
+        ? `<div style="margin-top:12px;background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:10px;padding:10px 14px;font-size:15px;color:#065f46;font-weight:600">
+            🔁 完成預約後，系統會自動保留 <b>${mdTxt(fmtD(new Date(new Date(b.date+'T00:00').getTime()+14*864e5)))} ${esc(b.slot||'')}</b> 的首次複診（同醫師・同院區），屆時前一天會照常收到提醒。</div>` + htmlBloodSection()
+        : `<div class="frow" style="margin-top:12px"><label>💉 針劑療程（選了系統會自動連續預約每週同時段）</label><div class="vt" style="flex-wrap:wrap;max-width:560px">
+            <button class="${!b.course?'on':''}" data-act="f-course" data-n="" data-w="0">無</button>
+            <button class="${b.course&&b.course.name==='胰妥讚'&&b.course.weeks===4?'on':''}" data-act="f-course" data-n="胰妥讚" data-w="4">胰妥讚<br><small class="muted">4 週</small></button>
+            <button class="${b.course&&b.course.name==='胰妥讚'&&b.course.weeks===6?'on':''}" data-act="f-course" data-n="胰妥讚" data-w="6">胰妥讚<br><small class="muted">6 週</small></button>
+            <button class="${b.course&&b.course.name==='猛健樂'&&b.course.weeks===8?'on':''}" data-act="f-course" data-n="猛健樂" data-w="8">猛健樂<br><small class="muted">8 週</small></button>
+          </div></div>`}
     </div>
     </div>
     <div style="margin-top:14px;display:flex;justify-content:space-between">
@@ -1210,6 +1276,8 @@ function htmlStep5() {
     ${row('就診類型', (b.type==='initial'?'初診':'複診') + '（' + durFor(b.type, b.anyDoc ? b.slotDoctor : b.doctor, b.clinic) + ' 分鐘）')}
     ${row('看診時間', `${esc(b.date)}（週${wd}）${esc(b.slot)}`)}
     ${b.type==='initial' ? row('🩸 抽血安排', b.blood.mode==='external' ? '外院 14 天內報告（初診日攜帶）' : b.blood.date ? mdTxt(b.blood.date) + ' 到院抽血' : '初診當日提早 30 分鐘抽血') : ''}
+    ${b.type!=='initial' && b.course ? row('💉 針劑療程', `${esc(b.course.name)}・連續 <b>${b.course.weeks} 週</b>（每週${WDS[new Date(b.date+'T00:00').getDay()]} ${esc(b.slot)}・系統自動預約）`) : ''}
+    ${b.type==='initial' ? row('🔁 首次複診', `${mdTxt(fmtD(new Date(new Date(b.date+'T00:00').getTime()+14*864e5)))} ${esc(b.slot)}（自動保留・同醫師）`) : ''}
     ${row('通知方式', b.notify==='sms' ? '簡訊通知' : '不通知')}
     </div>
     <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:15px;color:#92400e">
@@ -1236,6 +1304,7 @@ async function confirmBooking() {
     type: b.type === 'initial' ? '初診' : '複診',
     consultItems: b.items.join('、'), notify: b.notify,
     note: bloodNote(b), lineUserId: S.lineUserId || '',
+    course: (b.type !== 'initial' && b.course) ? b.course : null,   // ✨ v31.7 針劑療程
     source: 'patient_app'
   }, false);
   if (res.ok) {
@@ -1246,6 +1315,16 @@ async function confirmBooking() {
     modal(`<div class="mh">🎉 預約完成</div>
       <div class="mb" style="text-align:center">
         <div style="font-size:19px;font-weight:800;margin:6px 0 12px">✓ ${esc(done.date.replace(/-/g,'/'))} ${esc(done.slot)}<br>${esc(done.doc)} 醫師（${esc(done.clinic)}）</div>
+        ${res.followup ? (res.followup.ok
+          ? `<div style="background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:10px;padding:10px 14px;font-size:15px;color:#065f46;font-weight:700;text-align:left;margin-bottom:10px">🔁 已同步保留首次複診：${mdTxt(res.followup.date)} ${esc(done.slot)}（同醫師）</div>`
+          : `<div style="background:#fff7ed;border:1.5px solid #fdba74;border-radius:10px;padding:10px 14px;font-size:15px;color:#9a3412;font-weight:700;text-align:left;margin-bottom:10px">🔁 兩週後（${mdTxt(res.followup.date)}）同時段無法保留首次複診（${esc(res.followup.why||'已滿')}），請聯絡櫃檯另約</div>`) : ''}
+        ${res.course ? (() => {
+          const okW = res.course.results.filter(x => x.ok).length;
+          const bad = res.course.results.filter(x => !x.ok);
+          return `<div style="background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:10px;padding:10px 14px;font-size:15px;color:#065f46;text-align:left;margin-bottom:10px">
+            <b>💊 ${esc(res.course.name)}：已連續預約 ${okW}/${res.course.weeks} 週</b>（每週同時段）
+            ${bad.length ? `<div style="color:#9a3412;font-weight:700;margin-top:4px">未成功的週次請洽櫃檯：${bad.map(x => esc(mdTxt(x.date)) + '（' + esc(x.why || '') + '）').join('、')}</div>` : ''}</div>`;
+        })() : ''}
         ${done.notify === 'sms' ? `<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:12px 14px;font-size:15px;line-height:1.8;text-align:left">
           📩 預約成功簡訊將於 <b>3–5 分鐘內</b>送達${S.lineUserId ? '（LINE 通知亦會同步發送）' : ''}。<br>
           若超過 5 分鐘未收到，請加 LINE <b style="user-select:all">@selectgoodfood</b> 詢問客服，確認預約狀態。</div>` : ''}
@@ -3248,6 +3327,7 @@ function htmlAOrder() {
   }
   if (!S.ordTagsDraft) S.ordTagsDraft = { ...(S.docTags || {}) };
   if (!S.ordSpecsDraft) S.ordSpecsDraft = { ...(S.docSpecs || {}) };
+  if (!S.ordDivDraft) S.ordDivDraft = { ...(S.docDiverts || {}) };
   const byName = {}; S.doctors.forEach(d => byName[d.shortName] = d);
   const rows = S.ordDraft.filter(n => byName[n]).map((n, i) => {
     const d = byName[n];
@@ -3267,7 +3347,9 @@ function htmlAOrder() {
       <div class="octl">
         <select class="ord-title" data-n="${esc(n)}" style="padding:5px 8px;font-size:13px">${opts}</select>
         <input class="ord-tag" data-n="${esc(n)}" list="tag-presets" value="${esc((S.ordTagsDraft || {})[n] || '')}" placeholder="標籤" style="width:96px;padding:5px 8px;font-size:13px" title="行銷標籤（如：🔥熱門、⭐明星），留空＝不顯示">
-        <input class="ord-spec" data-n="${esc(n)}" value="${esc((S.ordSpecsDraft || {})[n] || '')}" placeholder="專長（如：減重治療・代謝調理）" style="padding:5px 8px;font-size:13px" title="顯示在前台醫師卡，留空＝顯示院區">
+        <input class="ord-spec" data-n="${esc(n)}" list="spec-presets" value="${esc((S.ordSpecsDraft || {})[n] || '')}" placeholder="專長標籤（可多個，用、分隔）" style="padding:5px 8px;font-size:13px" title="顯示在前台醫師卡（如：停滯突破、女性減重），留空＝顯示院區">
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:700;color:#9a3412;white-space:nowrap;cursor:pointer" title="勾選後：前台不顯示此醫師的最快可約日，改推同院區其他醫師（適合預約爆量的網紅醫師）">
+          <input type="checkbox" class="ord-div" data-n="${esc(n)}" ${(S.ordDivDraft || {})[n] ? 'checked' : ''}> 🔥分流</label>
       </div></div>`;
   }).join('');
   return `<div class="card"><h3>↕ 前台醫師排序
@@ -3535,6 +3617,15 @@ document.addEventListener('click', async e => {
     case 'pick-date':
       S.bk.date = el.dataset.ds; S.bk.weekday = +el.dataset.w; S.bk.slot = null;
       renderStep(); break;
+    case 'f-course': {   // ✨ v31.7 針劑療程
+      const wN = +el.dataset.w;
+      S.bk.course = wN > 0 ? { name: el.dataset.n, weeks: wN } : null;
+      renderStep(); break; }
+    case 'go-anydoc': {   // ✨ v31.6 滿診推薦：切到不指定醫師模式看推薦日
+      const ds2 = el.dataset.ds;
+      S.bk.anyDoc = true; S.bk.date = ds2; S.bk.weekday = isoWd(ds2); S.bk.slot = null;
+      S.bk.calY = +ds2.slice(0, 4); S.bk.calM = +ds2.slice(5, 7);
+      renderStep(); break; }
     case 'pick-slot':
       S.bk.slot = el.dataset.t; S.bk.slotDoctor = el.dataset.d;
       document.querySelectorAll('.ts.sel').forEach(x => x.classList.remove('sel'));
@@ -3851,8 +3942,9 @@ document.addEventListener('click', async e => {
       renderAdmin(); break; }
     case 'ord-save': {
       el.disabled = true;
-      const res = await api.post('saveDoctorOrder', { order: S.ordDraft, titles: S.ordTitlesDraft || {}, tags: S.ordTagsDraft || {}, specs: S.ordSpecsDraft || {}, by: S.aUser.name }, true);
-      if (res.ok) { S.docOrder = [...S.ordDraft]; S.docTitles = { ...(S.ordTitlesDraft || {}) }; S.docTags = { ...(S.ordTagsDraft || {}) }; S.docSpecs = { ...(S.ordSpecsDraft || {}) }; applyDoctorOrder(); toast('✓ 排序、職稱、標籤與專長已儲存，前台立即生效'); renderAdmin(); }
+      const dv = {}; Object.entries(S.ordDivDraft || {}).forEach(([k, v]) => { if (v) dv[k] = true; });
+      const res = await api.post('saveDoctorOrder', { order: S.ordDraft, titles: S.ordTitlesDraft || {}, tags: S.ordTagsDraft || {}, specs: S.ordSpecsDraft || {}, diverts: dv, by: S.aUser.name }, true);
+      if (res.ok) { S.docOrder = [...S.ordDraft]; S.docTitles = { ...(S.ordTitlesDraft || {}) }; S.docTags = { ...(S.ordTagsDraft || {}) }; S.docSpecs = { ...(S.ordSpecsDraft || {}) }; S.docDiverts = dv; applyDoctorOrder(); toast('✓ 排序、職稱、標籤、專長與分流已儲存，前台立即生效'); renderAdmin(); }
       else toast('儲存失敗：' + (res.error || '後端未部署 saveDoctorOrder'), 'var(--red)');
       el.disabled = false; break; }
     case 'ord-reset': {
@@ -3944,6 +4036,10 @@ document.addEventListener('change', e => {
   if (e.target.classList && e.target.classList.contains('ord-spec')) {
     if (!S.ordSpecsDraft) S.ordSpecsDraft = {};
     S.ordSpecsDraft[e.target.dataset.n] = e.target.value.trim();
+  }
+  if (e.target.classList && e.target.classList.contains('ord-div')) {
+    if (!S.ordDivDraft) S.ordDivDraft = {};
+    S.ordDivDraft[e.target.dataset.n] = e.target.checked;
   }
   if (e.target.id === 'qk-doc') refreshQkTimes(e.target.closest('.mask'));
   if (e.target.id === 'bkb-doc') bkbRefresh();
