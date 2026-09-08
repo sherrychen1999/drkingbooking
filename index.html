@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.9';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.10';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -2883,6 +2883,7 @@ function htmlCNotify() {
       <button class="dpill" data-act="cd-pill">📅 ${S.cDate.replace(/-/g,'/')}（週${WDS[d.getDay()]}）<span class="pe">✏️</span></button>
       <span style="flex:1"></span>
       <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
+      <button class="btn btn-p btn-sm" data-act="audit-unsent" title="掃描所有未來預約，列出「預約成功簡訊沒真正送出」的名單並一鍵補發">🩹 勾稽補發</button>
     </div>
     <p class="muted" style="margin-bottom:10px">📨 上半：本日「看診」預約的通知狀態 ｜ 下半：本日「實際發出」的簡訊/LINE 紀錄（含幫未來預約發的）</p>
     <div id="cn-box" class="muted" style="padding:14px;text-align:center">載入中…</div>
@@ -3815,6 +3816,42 @@ document.addEventListener('click', async e => {
     case 'cd-nav': { const d = new Date(S.cDate+'T00:00'); d.setDate(d.getDate() + +el.dataset.d); S.cDate = fmtD(d); renderCounter(); break; }
     case 'cd-today': S.cDate = fmtD(new Date()); renderCounter(); break;
     case 'cd-sess': S.cSession = el.dataset.s; renderCounter(); break;
+    case 'audit-unsent': {   // ✨ v31.10 勾稽未發送＋補發
+      el.disabled = true; el.textContent = '🩹 掃描中…';
+      const r = await api.post('auditUnsentBookings', {}, true);
+      el.disabled = false; el.textContent = '🩹 勾稽補發';
+      if (!r.ok) { toast('掃描失敗：' + (r.error || ''), 'var(--red)'); break; }
+      const list = r.data || [];
+      if (!list.length) { toast('✅ 未來預約的成功簡訊都已正常發送'); break; }
+      const rowsH = list.map((x, i) => `<tr style="${x.canSend ? '' : 'background:#fef2f2'}">
+        <td>${esc(x.date.slice(5))} ${esc(x.time)}</td><td><b>${esc(x.name || '(未填)')}</b><br><span class="muted">${esc(x.phone || '—')}</span></td>
+        <td>${esc(x.clinic)}<br>${esc(normDoc(x.doctor))}</td><td style="color:${x.canSend ? '#9a3412' : 'var(--red)'};font-weight:700">${esc(x.why)}</td>
+        <td>${x.canSend ? `<button class="btn btn-p btn-sm" data-act="resend-one" data-id="${esc(x.apptId)}">📨 補發</button>` : '<span class="muted">先補資料</span>'}</td></tr>`).join('');
+      const sendable = list.filter(x => x.canSend).map(x => x.apptId);
+      modal(`<div class="mh">🩹 簡訊勾稽（未來預約）<button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+        <div class="mb">
+          <div style="font-size:16.5px;font-weight:800;margin-bottom:8px">共 ${list.length} 筆沒真正送達：可補發 ${sendable.length} 筆、需先補資料 ${list.length - sendable.length} 筆</div>
+          <table class="tbl"><thead><tr><th>看診</th><th>病人</th><th>院區/醫師</th><th>原因</th><th></th></tr></thead><tbody>${rowsH}</tbody></table>
+          <p class="muted" style="margin-top:8px">「資料不齊」的請先到看診表補登姓名/電話，補完會自動發送，不用回來按。</p></div>
+        <div class="mf"><button class="btn btn-o" data-act="close-modal">關閉</button>
+          ${sendable.length ? `<button class="btn btn-g" data-act="resend-all" data-ids="${esc(sendable.join(','))}">📨 全部補發（${sendable.length} 筆）</button>` : ''}</div>`);
+      break; }
+    case 'resend-one': {
+      el.disabled = true;
+      const r1 = await api.post('resendBookingSms', { apptId: el.dataset.id }, true);
+      if (r1.ok && r1.data && r1.data[0] && r1.data[0].ok) { el.textContent = '✓ 已排入'; el.classList.remove('btn-p'); }
+      else { el.disabled = false; toast('補發失敗：' + ((r1.data && r1.data[0] && r1.data[0].why) || r1.error || ''), 'var(--red)'); }
+      break; }
+    case 'resend-all': {
+      el.disabled = true; el.textContent = '📨 補發中…';
+      const ids = el.dataset.ids.split(',').filter(Boolean);
+      const r2 = await api.post('resendBookingSms', { apptIds: ids }, true);
+      if (r2.ok) {
+        const okN = (r2.data || []).filter(x => x.ok).length;
+        toast(`✓ 已排入補發 ${okN}/${ids.length} 筆（1-2 分鐘內發出）`);
+        closeModals();
+      } else { el.disabled = false; el.textContent = '📨 全部補發'; toast('失敗：' + (r2.error || ''), 'var(--red)'); }
+      break; }
     case 'cd-refresh': S.apptCache.clear(); renderCounter(); break;
     case 'cd-mode': S.cMode = el.dataset.m; renderCounter(); break;
     case 'cd-pill': openMiniCal(); break;
