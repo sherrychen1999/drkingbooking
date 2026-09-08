@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.8';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.9';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -2856,7 +2856,9 @@ async function counterFind() {
   const fmtD2 = v => { const s = String(v || ''); const mm = s.match(/^\d{4}-\d{2}-\d{2}/); return mm ? mm[0] : s.split('T')[0]; };
   const summary = pt ? `<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:11px 14px;margin-bottom:10px">
     <b style="font-size:17px">${esc(pt['姓名'] || '(未填)')}</b>
-    <span class="muted" style="margin-left:8px">📱 ${esc(pt['電話'] || '—')} · 病歷號 ${esc(pt['病例號'] || '—')}</span>
+    <span class="muted" style="margin-left:8px">📱 ${esc(pt['電話'] || '—')}</span>
+    ${pt['各院區清單'] ? `<div style="margin-top:6px;font-size:14px"><b style="color:#1e40af">🗂 各院區病歷號：</b>${pt['各院區清單'].split('、').map(x => `<span class="tag tag-b" style="margin-right:5px">${esc(x)}</span>`).join('')}</div>`
+      : `<span class="muted" style="margin-left:4px">· 病歷號 ${esc(pt['病例號'] || '—')}</span>`}
     <div class="muted" style="font-size:13.5px;margin-top:4px">${sc === 'all'
       ? `共 ${ct.total ?? rows.length} 次預約 · 已報到 ${ct.checked ?? 0} · 取消 ${ct.cancelled ?? 0} · 改約 ${ct.rescheduled ?? 0}`
       : `🔒 僅顯示 ${esc(sc)} 的紀錄（共 ${rows.length} 筆）`}</div></div>` : '';
@@ -3850,7 +3852,7 @@ document.addEventListener('click', async e => {
       const msg = box.querySelector('.bkb-msg');
       if (!caseNo) { msg.textContent = '請先輸入病歷號'; break; }
       msg.textContent = '查詢中…';
-      const res = await api.get('lookupPatient', { keyword: caseNo });
+      const res = await api.get('lookupPatient', { keyword: caseNo, clinic: S.cClinic });
       const hit = (res.ok && res.data && res.data[0]) || null;
       if (hit) {
         box.querySelector('#bkb-name').value = hit.name || hit['病人姓名'] || hit['姓名'] || '';
@@ -3873,7 +3875,7 @@ document.addEventListener('click', async e => {
       const msg = m.querySelector('#qk-case-msg');
       if (!caseNo) { msg.textContent = '請先輸入病歷號'; break; }
       msg.textContent = '查詢中…';
-      const res = await api.get('lookupPatient', { keyword: caseNo });
+      const res = await api.get('lookupPatient', { keyword: caseNo, clinic: S.cClinic });
       const hit = (res.ok && res.data && res.data[0]) || null;
       if (hit) {
         m.querySelector('#qk-name').value = hit.name || hit['病人姓名'] || hit['姓名'] || '';
