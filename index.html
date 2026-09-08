@@ -83,8 +83,8 @@ nav .tabs button.on{background:var(--blue);color:#fff}
 .dcard .ph.phcut .halo{position:absolute;left:50%;top:44%;width:88%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.95) 0%,rgba(255,255,255,.55) 45%,rgba(255,255,255,0) 72%);pointer-events:none}
 .dcard .ph.phcut .cutimg{position:absolute;left:0;bottom:0;width:100%;height:97%;object-fit:contain;object-position:center bottom;filter:drop-shadow(6px 14px 12px rgba(30,41,59,.22)) drop-shadow(-3px 4px 6px rgba(30,41,59,.10));pointer-events:none}
 .dcard .ph.phcut .floorsh{position:absolute;left:50%;bottom:2px;width:72%;height:14px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(ellipse,rgba(30,41,59,.20) 0%,rgba(30,41,59,0) 70%);pointer-events:none}
-.poster-wrap{position:relative;overflow:hidden;max-height:66vh;aspect-ratio:59/84;margin:0 auto;background:#f8fafc;cursor:zoom-in;width:100%}
-.poster-wrap img{position:absolute;left:0;top:-6.5%;width:100%;height:106.5%;object-fit:cover}
+.poster-wrap{position:relative;overflow:hidden;max-height:60vh;aspect-ratio:1/1;margin:0 auto;background:#f1f4f8;cursor:zoom-in;width:100%}
+.poster-wrap img{width:100%;height:100%;object-fit:cover;object-position:center top}   /* ✨ v31.7.3 方形照從頭頂對齊，不再切頭 */
 .dcard .inf{padding:11px 13px}
 .dcard .nm{font-weight:700;font-size:18px}.dcard .cl{font-size:13px;color:var(--txt3);margin-top:4px;line-height:1.55}
 .dcard .dcta{background:#2563eb;color:#fff;text-align:center;font-weight:800;font-size:15.5px;padding:12px 8px;border-radius:10px;margin:10px 12px 14px;letter-spacing:.5px;box-shadow:0 3px 8px rgba(37,99,235,.3)}
@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.7.2';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.8';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -938,8 +938,9 @@ function htmlStep1() {
     inner = `<div class="cgrid">` + CLINICS.filter(c => !S.lockClinic || c.name === S.lockClinic).map(c => {
       const n = new Set(sched.byClinic(c.name).map(s => normDoc(s.doctor))).size;
       return `<div class="ccard" data-act="pick-clinic" data-c="${esc(c.name)}" style="position:relative">
-        <h4>📍 ${esc(c.name)}</h4>
-        <div class="muted" style="font-size:14px;line-height:1.7">${c.tel ? `📞 ${esc(c.tel)}<br>` : ''}${esc(c.addr || c.area)}</div>
+        <h4 style="padding-right:64px">📍 ${esc(c.name.replace(/院區$/, ''))}</h4>
+        <div class="muted" style="font-size:14px;line-height:1.7;margin-top:2px">${esc(c.addr || c.area)}</div>
+        ${c.tel ? `<a href="tel:${esc(String(c.tel).replace(/[^0-9+]/g, ''))}" onclick="event.stopPropagation()" style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:9px;background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:9px;padding:8px 10px;font-size:15px;font-weight:800;color:#065f46;text-decoration:none">📞 ${esc(c.tel)}<span style="font-weight:600;font-size:12.5px;color:#059669">點我撥打</span></a>` : ''}
         ${c.addr ? `<button data-act="nav-map" data-q="${esc('金鶯診所 ' + c.addr)}" style="position:absolute;top:10px;right:10px;background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:5px 10px;font-size:13px;font-weight:700;color:#1e40af;cursor:pointer">🗺 導航</button>` : ''}</div>`;
     }).join('') + `</div>`;
   }
@@ -2204,31 +2205,22 @@ async function bkbSave(btn) {
   } else if (bkb.querySelector('#bkb-rpt')?.checked) {
     qNote = tagNote(qNote, '🩸需看報告', [/🩸需看報告/g]);   // ✨ v24.1 複診需調閱抽血報告
   }
-  // ✨ v29.4 療程套餐：連續 N 週同時段自動預約
+  // ✨ v31.8 療程套餐：單一請求、後端整批建立（原本逐週跑 3 分鐘 → 數秒）
   const courseRaw = bkb.querySelector('#bkb-course')?.value || '';
   if (courseRaw && type === '複診') {
     const [cName, cWeeksS] = courseRaw.split('|');
     const cWeeks = +cWeeksS || 0;
-    const results = [];
-    for (let w = 0; w < cWeeks; w++) {
-      const dW = new Date(date + 'T00:00'); dW.setDate(dW.getDate() + w * 7);
-      const dsW = fmtD(dW);
-      btn.textContent = `建立中 ${w + 1}/${cWeeks}…`;
-      S.apptCache.delete(clinic + '|' + dsW);
-      const apptsW = (await getAppts(clinic, dsW)).filter(a => !isDead(a) && normDoc(a.doctor || a['醫師'] || '') === normDoc(doc));
-      const tM = t2m(t);
-      const clash = apptsW.some(a => { const s = t2m(apptTime(a)); return !isNaN(s) && tM < apptEndMin(a, normDoc(doc)) && s < tM + dur; });
-      if (clash) { results.push({ w: w + 1, ds: dsW, ok: false, why: '該時段已有預約' }); continue; }
-      const noteW = (qNote ? qNote + ' ' : '') + `💊${cName}(第${w + 1}/${cWeeks}週)`;
-      const r = await api.post('createCounterBooking', {
-        clinic, date: dsW, startTime: t, endTime: m2t(tM + dur), doctor: doc,
-        name: name || '(未填)', phone, caseFull: caseNo, type, note: noteW,
-        employeeId: S.cUser.employeeId, employeeName: S.cUser.name, source: 'walk_in'
-      }, true);
-      results.push({ w: w + 1, ds: dsW, ok: !!r.ok, why: r.ok ? '' : (r.error || '建立失敗') });
-      S.apptCache.delete(clinic + '|' + dsW);
-    }
+    btn.textContent = `💊 建立 ${cWeeks} 週療程中…`;
+    const r0 = await api.post('createCounterBooking', {
+      clinic, date, startTime: t, endTime: m2t(t2m(t) + dur), doctor: doc,
+      name: name || '(未填)', phone, caseFull: caseNo, type, note: qNote,
+      course: { name: cName.replace(/療程$/, ''), weeks: cWeeks },
+      employeeId: S.cUser.employeeId, employeeName: S.cUser.name, source: 'walk_in'
+    }, true);
     btn.disabled = false; btn.textContent = '✓ 建立';
+    if (!r0.ok) { toast('失敗：' + (r0.error || ''), 'var(--red)'); return; }
+    const results = (r0.course && r0.course.results || []).map(x => ({ w: x.week, ds: x.date, ok: x.ok, why: x.why || '' }));
+    for (let w = 0; w < cWeeks; w++) { const dW = new Date(date + 'T00:00'); dW.setDate(dW.getDate() + w * 7); S.apptCache.delete(clinic + '|' + fmtD(dW)); }
     const okN = results.filter(x => x.ok).length;
     modal(`<div class="mh">💊 ${esc(cName)}｜建立結果 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
       <div class="mb">
