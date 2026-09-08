@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.10';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.11';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -1966,6 +1966,7 @@ async function loadCDayGrid() {
   // ✨ v25.1 banner 統一在待補登區塊之後插入（避免被 innerHTML 蓋掉）
   const orphEl = $('#cd-orph');
   if (orphEl) orphEl.insertAdjacentHTML('afterbegin', incompleteBanner(incItems));
+  loadAuditInBg();   // ✨ v31.11 簡訊勾稽自動提醒（5 分鐘快取，有問題才亮紅幅）
   // ✨ v25 停診且有預約 → 通知清單
   const stopDocs = docs.filter(dn => dayStat(S.cClinic, S.cDate, dn) === '停診');
   const stopAppts = appts.filter(a => stopDocs.includes(normDoc(a.doctor || a['醫師'] || '')) && !isDead(a));
@@ -2423,6 +2424,38 @@ async function fxSave(m, btn) {
   if (res.ok) { S.apptCache.delete(clinic + '|' + date); toast('✓ 資料已補齊'); closeModals(); renderCounter(); }
   else { btn.disabled = false; toast('儲存失敗：' + (res.error || ''), 'var(--red)'); }
 }
+/* ✨ v31.11 勾稽共用：modal ＋ 背景掃描（5 分鐘快取，看診表自動提醒） */
+function openAuditModal(list) {
+  if (!list.length) { toast('✅ 未來預約的成功簡訊都已正常發送'); return; }
+  const rowsH = list.map((x) => `<tr style="${x.canSend ? '' : 'background:#fef2f2'}">
+    <td>${esc(x.date.slice(5))} ${esc(x.time)}</td><td><b>${esc(x.name || '(未填)')}</b><br><span class="muted">${esc(x.phone || '—')}</span></td>
+    <td>${esc(x.clinic)}<br>${esc(normDoc(x.doctor))}</td><td style="color:${x.canSend ? '#9a3412' : 'var(--red)'};font-weight:700">${esc(x.why)}</td>
+    <td>${x.canSend ? `<button class="btn btn-p btn-sm" data-act="resend-one" data-id="${esc(x.apptId)}">📨 補發</button>` : '<span class="muted">先補資料</span>'}</td></tr>`).join('');
+  const sendable = list.filter(x => x.canSend).map(x => x.apptId);
+  modal(`<div class="mh">🩹 簡訊勾稽（未來預約）<button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb">
+      <div style="font-size:16.5px;font-weight:800;margin-bottom:8px">共 ${list.length} 筆沒真正送達：可補發 ${sendable.length} 筆、需先補資料 ${list.length - sendable.length} 筆</div>
+      <table class="tbl"><thead><tr><th>看診</th><th>病人</th><th>院區/醫師</th><th>原因</th><th></th></tr></thead><tbody>${rowsH}</tbody></table>
+      <p class="muted" style="margin-top:8px">「資料不齊」的請先到看診表補登姓名/電話，補完會自動發送，不用回來按。</p></div>
+    <div class="mf"><button class="btn btn-o" data-act="close-modal">關閉</button>
+      ${sendable.length ? `<button class="btn btn-g" data-act="resend-all" data-ids="${esc(sendable.join(','))}">📨 全部補發（${sendable.length} 筆）</button>` : ''}</div>`);
+}
+function loadAuditInBg() {
+  const c = window.__auditCache;
+  if (c && Date.now() - c.at < 300e3) { paintAuditBanner(); return; }
+  api.post('auditUnsentBookings', {}, true).then(r => {
+    if (r.ok) { window.__auditCache = { at: Date.now(), list: r.data || [] }; paintAuditBanner(); }
+  }).catch(() => {});
+}
+function paintAuditBanner() {
+  const list = ((window.__auditCache || {}).list) || [];
+  const orphEl = $('#cd-orph');
+  if (!orphEl || !list.length || orphEl.querySelector('.audit-bn')) return;
+  orphEl.insertAdjacentHTML('afterbegin', `<div class="audit-bn" data-act="audit-open-cached" style="background:#fef2f2;border:2px solid #fca5a5;border-radius:10px;padding:11px 14px;margin:8px 0;cursor:pointer;display:flex;align-items:center;gap:10px">
+    <b style="color:#b91c1c;font-size:15.5px">⚠️ ${list.length} 筆預約的成功簡訊沒送達客戶</b>
+    <span class="muted">點此查看並一鍵補發 →</span></div>`);
+}
+
 /* 未補齊提醒 banner（日/週共用） */
 function incompleteBanner(items) {
   if (!items.length) return '';
@@ -3821,21 +3854,12 @@ document.addEventListener('click', async e => {
       const r = await api.post('auditUnsentBookings', {}, true);
       el.disabled = false; el.textContent = '🩹 勾稽補發';
       if (!r.ok) { toast('掃描失敗：' + (r.error || ''), 'var(--red)'); break; }
+      window.__auditCache = { at: Date.now(), list: r.data || [] };
       const list = r.data || [];
       if (!list.length) { toast('✅ 未來預約的成功簡訊都已正常發送'); break; }
-      const rowsH = list.map((x, i) => `<tr style="${x.canSend ? '' : 'background:#fef2f2'}">
-        <td>${esc(x.date.slice(5))} ${esc(x.time)}</td><td><b>${esc(x.name || '(未填)')}</b><br><span class="muted">${esc(x.phone || '—')}</span></td>
-        <td>${esc(x.clinic)}<br>${esc(normDoc(x.doctor))}</td><td style="color:${x.canSend ? '#9a3412' : 'var(--red)'};font-weight:700">${esc(x.why)}</td>
-        <td>${x.canSend ? `<button class="btn btn-p btn-sm" data-act="resend-one" data-id="${esc(x.apptId)}">📨 補發</button>` : '<span class="muted">先補資料</span>'}</td></tr>`).join('');
-      const sendable = list.filter(x => x.canSend).map(x => x.apptId);
-      modal(`<div class="mh">🩹 簡訊勾稽（未來預約）<button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
-        <div class="mb">
-          <div style="font-size:16.5px;font-weight:800;margin-bottom:8px">共 ${list.length} 筆沒真正送達：可補發 ${sendable.length} 筆、需先補資料 ${list.length - sendable.length} 筆</div>
-          <table class="tbl"><thead><tr><th>看診</th><th>病人</th><th>院區/醫師</th><th>原因</th><th></th></tr></thead><tbody>${rowsH}</tbody></table>
-          <p class="muted" style="margin-top:8px">「資料不齊」的請先到看診表補登姓名/電話，補完會自動發送，不用回來按。</p></div>
-        <div class="mf"><button class="btn btn-o" data-act="close-modal">關閉</button>
-          ${sendable.length ? `<button class="btn btn-g" data-act="resend-all" data-ids="${esc(sendable.join(','))}">📨 全部補發（${sendable.length} 筆）</button>` : ''}</div>`);
-      break; }
+      openAuditModal(list); break; }
+    case 'audit-open-cached': {   // ✨ v31.11 從紅色橫幅點開
+      openAuditModal((window.__auditCache || {}).list || []); break; }
     case 'resend-one': {
       el.disabled = true;
       const r1 = await api.post('resendBookingSms', { apptId: el.dataset.id }, true);
