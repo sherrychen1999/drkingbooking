@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.11';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.12';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -938,9 +938,11 @@ function htmlStep1() {
     inner = `<div class="cgrid">` + CLINICS.filter(c => !S.lockClinic || c.name === S.lockClinic).map(c => {
       const n = new Set(sched.byClinic(c.name).map(s => normDoc(s.doctor))).size;
       return `<div class="ccard" data-act="pick-clinic" data-c="${esc(c.name)}" style="position:relative">
-        <h4 style="padding-right:64px">📍 ${esc(c.name.replace(/院區$/, ''))}</h4>
-        <div class="muted" style="font-size:14px;line-height:1.7;margin-top:2px">${esc(c.addr || c.area)}</div>
-        ${c.tel ? `<a href="tel:${esc(String(c.tel).replace(/[^0-9+]/g, ''))}" onclick="event.stopPropagation()" style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:9px;background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:9px;padding:8px 10px;font-size:15px;font-weight:800;color:#065f46;text-decoration:none">📞 ${esc(c.tel)}<span style="font-weight:600;font-size:12.5px;color:#059669">點我撥打</span></a>` : ''}
+        <h4 style="padding-right:64px;white-space:nowrap">📍 ${esc(c.name.replace(/院區$/, ''))}</h4>
+        <div class="muted" style="font-size:14px;line-height:1.65;margin-top:2px;min-height:46px">${esc(c.addr || c.area)}</div>
+        ${c.tel ? `<a href="tel:${esc(String(c.tel).replace(/[^0-9+]/g, ''))}" onclick="event.stopPropagation()" style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:9px;background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:9px;padding:9px 12px;text-decoration:none">
+            <span style="white-space:nowrap;font-size:15.5px;font-weight:800;color:#065f46;letter-spacing:.3px">📞 ${esc(c.tel)}</span>
+            <span style="white-space:nowrap;font-weight:700;font-size:12.5px;color:#059669;background:#d1fae5;border-radius:6px;padding:3px 7px">撥打</span></a>` : ''}
         ${c.addr ? `<button data-act="nav-map" data-q="${esc('金鶯診所 ' + c.addr)}" style="position:absolute;top:10px;right:10px;background:#eff6ff;border:1.5px solid #93c5fd;border-radius:8px;padding:5px 10px;font-size:13px;font-weight:700;color:#1e40af;cursor:pointer">🗺 導航</button>` : ''}</div>`;
     }).join('') + `</div>`;
   }
@@ -3130,10 +3132,56 @@ async function restoreCutout(btn) {
 }
 /* 🎨 統一照片背景：全部醫師照 → AI 切出人物 → 貼上基準醫師的背景色 → 人物比例統一（3:4 直式） */
 const UNIFY_REF_DOC = '蕭捷存';   // 基準底色取自這位醫師的照片
+/* ✨ v31.12 保人換底：從邊緣擴散偵測背景像素，只換背景色，人物一個像素不動（肩膀不會被吃掉）
+   回傳 {canvas, ratio}；背景不夠均勻（ratio 太低）時呼叫端可退回 AI 模式 */
+function recolorBg(img, bgColor) {
+  const W = img.width, H = img.height;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
+  const im = cx.getImageData(0, 0, W, H), px = im.data;
+  const tmp = document.createElement('canvas'); tmp.width = tmp.height = 1;
+  const tx = tmp.getContext('2d'); tx.fillStyle = bgColor; tx.fillRect(0, 0, 1, 1);
+  const [tr, tg, tb] = tx.getImageData(0, 0, 1, 1).data;
+  // 背景色域＝四邊界像素的每通道 min~max（涵蓋漸層/暗角），外加小容差
+  let mn = [255, 255, 255], mx = [0, 0, 0];
+  const feed = i => { for (let c = 0; c < 3; c++) { const v = px[i + c]; if (v < mn[c]) mn[c] = v; if (v > mx[c]) mx[c] = v; } };
+  // 只取「上緣＋左右邊上 60%」當背景樣本（下緣會穿過人身，不能採）
+  for (let x = 0; x < W; x += 2) feed(x * 4);
+  for (let y = 0; y < Math.floor(H * 0.6); y += 2) { feed(y * W * 4); feed((y * W + W - 1) * 4); }
+  const M = 12;   // 容差
+  const inBg = i => px[i] >= mn[0] - M && px[i] <= mx[0] + M
+    && px[i+1] >= mn[1] - M && px[i+1] <= mx[1] + M
+    && px[i+2] >= mn[2] - M && px[i+2] <= mx[2] + M;
+  // 從邊界擴散（只走色域內的像素 → 人物內部同色区域不會被誤換）
+  const mask = new Uint8Array(W * H);
+  const stack = [];
+  const push = p => { if (!mask[p] && inBg(p * 4)) { mask[p] = 1; stack.push(p); } };
+  for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
+  for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
+  while (stack.length) {
+    const p = stack.pop(), x = p % W, y = (p / W) | 0;
+    if (x > 0) push(p - 1); if (x < W - 1) push(p + 1);
+    if (y > 0) push(p - W); if (y < H - 1) push(p + W);
+  }
+  let bgN = 0;
+  for (let p = 0; p < W * H; p++) {
+    if (!mask[p]) continue;
+    bgN++; const i = p * 4;
+    px[i] = tr; px[i+1] = tg; px[i+2] = tb;
+  }
+  for (let p = 0; p < W * H; p++) {   // 1px 邊緣柔化
+    if (mask[p]) continue;
+    const x = p % W, y = (p / W) | 0;
+    const edge = (x > 0 && mask[p-1]) || (x < W-1 && mask[p+1]) || (y > 0 && mask[p-W]) || (y < H-1 && mask[p+W]);
+    if (edge) { const i = p * 4; px[i] = (px[i] + tr) >> 1; px[i+1] = (px[i+1] + tg) >> 1; px[i+2] = (px[i+2] + tb) >> 1; }
+  }
+  cx.putImageData(im, 0, 0);
+  return { canvas: cv, ratio: bgN / (W * H) };
+}
 async function unifyBgAll(btn) {
   const targets = S.doctors.filter(d => S.photos[normDoc(d.shortName)]);
   if (!targets.length) { toast('目前沒有照片可處理'); return; }
-  if (!confirm(`將把 ${targets.length} 位醫師照片統一為「${UNIFY_REF_DOC}」照片的背景色，並統一人物比例。\n首次執行需下載 AI 模型（約 30-60 秒）。開始？`)) return;
+  if (!confirm(`將把 ${targets.length} 位醫師照片統一為「${UNIFY_REF_DOC}」照片的背景色。\n採「保人換底」：只換背景像素，人物完全不動。開始？`)) return;
   btn.disabled = true; btn.textContent = '🎨 取基準底色…';
   // 1) 取基準底色（照片左上/右上角平均）
   let bg = '#eceef0';
@@ -3159,8 +3207,26 @@ async function unifyBgAll(btn) {
       if (!r0.ok) { report.push({ n: d.shortName, ok: false, why: r0.error || '照片下載失敗' }); continue; }
       const img = new Image();
       await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('圖片解析失敗')); img.src = r0.data.dataUrl; });
-      if (i === 0) btn.textContent = '🎨 首次載入 AI 模型（約 30-60 秒）…';
-      const cut = await cutHQ(img);                    // 透明背景人物
+      // ✨ v31.12 首選：保人換底（人物零更動、免下載模型）
+      const rc = recolorBg(img, bg);
+      if (rc.ratio >= 0.12 && rc.ratio <= 0.72) {   // 佔比合理才採用；過高=滲漏（改走 AI）
+        const sc0 = Math.min(1, 560 / rc.canvas.width);
+        const cvR = document.createElement('canvas');
+        cvR.width = Math.round(rc.canvas.width * sc0); cvR.height = Math.round(rc.canvas.height * sc0);
+        cvR.getContext('2d').drawImage(rc.canvas, 0, 0, cvR.width, cvR.height);
+        let outR = cvR.toDataURL('image/webp', 0.85);
+        if (outR.length > 49000) outR = cvR.toDataURL('image/webp', 0.62);
+        if (outR.length <= 49000) {
+          const svR = await api.post('saveDoctorPhoto', { '醫師姓名': d.shortName, '照片資料URL': outR,
+            '上傳者': (S.aUser && S.aUser.name) || 'admin', '備註': '[統一底] 保人換底 ' + fmtD(new Date()) }, true);
+          if (svR.ok) { S.photos[key] = outR; delete S.photoCut[key]; report.push({ n: d.shortName, ok: true }); }
+          else report.push({ n: d.shortName, ok: false, why: svR.error || '儲存失敗' });
+          continue;
+        }
+      }
+      // 背景不均勻/太雜 → 退回 AI 模式（維持原有流程）
+      if (i === 0 || !window.__imglyReady) btn.textContent = '🎨 此張背景複雜，改用 AI（首次約 30-60 秒）…';
+      const cut = await cutHQ(img); window.__imglyReady = true;        // 透明背景人物
       // 2) 找人物範圍（alpha bounding box）
       const tc = document.createElement('canvas'); tc.width = cut.width; tc.height = cut.height;
       const tx = tc.getContext('2d'); tx.drawImage(cut, 0, 0);
@@ -3182,7 +3248,7 @@ async function unifyBgAll(btn) {
       cx.fillStyle = bg; cx.fillRect(0, 0, W, H);
       const dw = bw * scale, dh = bh * scale;
       cx.drawImage(tc, minX, minY, bw, bh, (W - dw) / 2, H - dh, dw, dh);
-      let out = cv.toDataURL('image/webp', 0.82);
+      let out = cv.toDataURL('image/webp', 0.82);   // （AI 備援路徑）
       if (out.length > 49000) out = cv.toDataURL('image/webp', 0.6);
       if (out.length > 49000) {
         const cv2 = document.createElement('canvas'); cv2.width = 420; cv2.height = 560;
