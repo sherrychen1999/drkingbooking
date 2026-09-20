@@ -395,7 +395,7 @@ input,select,textarea{font-size:17.5px;padding:11px 13px}
 'use strict';
 
 /* ───── 設定 ───── */
-const FE_VER = 'v31.12';   // ✨ 前端版本（側欄可見，部署後一眼確認）
+const FE_VER = 'v31.18';   // ✨ 前端版本（側欄可見，部署後一眼確認）
 /* ✨ v27 前後台分流 + 院區鎖定（LINE 試營運用）
    前台（客戶）：index.html            → 只看得到「減重預約」
    前台鎖院區　：index.html?c=三樹     → 只開放三樹院區
@@ -489,7 +489,7 @@ const S = {
 function resetBk() {
   S.bk = { step:1, view:'doctor', doctor:null, clinic:null, anyDoc:false,
            date:null, weekday:null, slot:null, slotDoctor:null,
-           calY:null, calM:null, type:'followup',
+           calY:null, calM:null, type:'followup', typePicked:false,
            name:'', phone:'', notify:'sms', items:[], remember:false,
            course:null,   // ✨ v31.7 針劑療程 {name, weeks}
            blood:{ mode:'date', date:null } };
@@ -506,6 +506,25 @@ const tomorrowMD = () => { const d = new Date(Date.now()+864e5); return (d.getMo
 const OPEN_DAYS = 30;
 const dayStat = (cli, ds, doc) => S.dayStatus.get(cli + '|' + ds + '|' + normDoc(doc)) || '';
 /* ✨ v31.6 最早可約日期 */
+/* ✨ v31.15 月曆保鮮心跳：只在病人停留月曆畫面時運作（20 秒/次，離開即停，其他頁維持零輪詢） */
+function calKeepFresh() {
+  if (S._calTimer) { clearTimeout(S._calTimer); S._calTimer = null; }
+  if (IS_STAFF || S.bk.step !== 3) return;
+  S._calTimer = setTimeout(async () => {
+    S._calTimer = null;
+    if (S.bk.step !== 3 || document.hidden) { calKeepFresh(); return; }
+    const before = JSON.stringify([...S.dayStatus.entries()].filter(([k]) => k.startsWith(S.bk.clinic + '|')));
+    await loadPublicCfg();
+    if (S.bk.step !== 3) return;
+    const after = JSON.stringify([...S.dayStatus.entries()].filter(([k]) => k.startsWith(S.bk.clinic + '|')));
+    if (before !== after) {   // 有異動才重繪（就地換月曆，不動其他欄位）
+      const calEl = document.querySelector('#stepbox .cal');
+      if (calEl) calEl.innerHTML = calHtml();
+      if (S.bk.date) loadStep3Slots();   // 已選日期也重驗時段
+    }
+    calKeepFresh();
+  }, 20e3);
+}
 async function loadSoonest(force) {
   if (!force && Date.now() - S._soonAt < 300e3 && Object.keys(S.soonest).length) return;
   try {
@@ -782,6 +801,15 @@ async function loadPublicCfg() {
   } catch (e) {}
   return true;
 }
+document.addEventListener('visibilitychange', () => {   // ✨ v31.15 切回分頁 → 立即保鮮月曆
+  if (document.hidden || IS_STAFF || S.bk.step !== 3) return;
+  if (Date.now() - (S._cfgAt || 0) > 5e3) loadPublicCfg().then(() => {
+    if (S.bk.step !== 3) return;
+    const calEl = document.querySelector('#stepbox .cal');
+    if (calEl) calEl.innerHTML = calHtml();
+    if (S.bk.date) loadStep3Slots();
+  });
+});
 async function boot() {
   const [ok] = await Promise.all([loadSchedules(false), loadTimeCfg(), loadDocOrder(), loadPublicCfg()]);
   buildDoctors();
@@ -870,6 +898,16 @@ function renderSteps() {
 function renderStep() {
   renderSteps();
   const b = $('#stepbox');
+  if (!S.bk.typePicked) {   // ✨ v31.13 Step 0：先選身份別，再看班表（初診時段會依 2 週後回診空檔過濾）
+    b.innerHTML = `<h2 style="font-size:22px">請先選擇您的身份</h2>
+      <p class="muted" style="margin:8px 0 16px">初診與複診的看診時間不同；<b>初診</b>會同步保留 <b>2 週後同時段</b>的首次回診，因此僅顯示「回診時段也有空」的初診時段。</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:640px">
+        <button class="btn" data-act="pick-type" data-v="initial" style="padding:26px 16px;background:#faf5ff;border:2.5px solid #a855f7;border-radius:14px;font-size:20px;font-weight:800;color:#6b21a8">🆕 我是初診<br><small style="font-weight:600;font-size:14px;color:#7e22ce">第一次來金鶯看減重</small></button>
+        <button class="btn" data-act="pick-type" data-v="followup" style="padding:26px 16px;background:#eff6ff;border:2.5px solid #3b82f6;border-radius:14px;font-size:20px;font-weight:800;color:#1e40af">🔁 我是複診<br><small style="font-weight:600;font-size:14px;color:#1d4ed8">之前看過診，回診追蹤</small></button>
+      </div>
+      <div style="margin-top:16px"><button class="btn btn-o" data-act="hub-back">← 回首頁</button></div>`;
+    return;
+  }
   if (S.bk.step === 1) b.innerHTML = htmlStep1();
   else if (S.bk.step === 2) b.innerHTML = htmlStep2();
   else if (S.bk.step === 3) {
@@ -882,8 +920,9 @@ function renderStep() {
         c2.innerHTML = htmlStep3(); loadStep3Slots(); loadSoonest();
       });
     } else { b.innerHTML = htmlStep3(); loadStep3Slots(); loadSoonest(); }
+    calKeepFresh();
   }
-  else if (S.bk.step === 4) b.innerHTML = htmlStep4();
+  else if (S.bk.step === 4) { b.innerHTML = htmlStep4(); calKeepFresh(); }
   else if (S.bk.step === 5) b.innerHTML = htmlStep5();
 }
 
@@ -984,6 +1023,38 @@ function clinicWeekTable(clinic) {
 }
 
 /* ── 醫師介紹 modal ── */
+/* ✨ v31.14 初診分流推薦：想約高人氣醫師 → 直接秀其他醫師的最快初診空檔＋轉診說明 */
+function openDivertSuggest(docName) {
+  const dObj = S.doctors.find(x => normDoc(x.shortName) === normDoc(docName)) || { clinics: [] };
+  // 該醫師各院區的「其他醫師」依最快可約排序，取前 4
+  const alts = [];
+  dObj.clinics.forEach(c => {
+    Object.entries(S.soonest).forEach(([k, ds]) => {
+      const [doc2, cli2] = k.split('|');
+      if (cli2 !== c || normDoc(doc2) === normDoc(docName)) return;
+      alts.push({ doc: doc2, clinic: cli2, ds });
+    });
+  });
+  alts.sort((a, b) => a.ds < b.ds ? -1 : 1);
+  const top = alts.slice(0, 4);
+  const mine = soonestFor(docName, dObj.clinics);
+  modal(`<div class="mh">🔥 ${esc(docName)} 醫師初診量大 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+    <div class="mb">
+      <div style="background:#fff7ed;border:1.5px solid #fdba74;border-radius:10px;padding:11px 14px;font-size:15.5px;color:#9a3412;line-height:1.75">
+        ${esc(docName)} 醫師預約量大${mine ? `，初診最快要等到 <b>${mdTxt(mine.date)}</b>` : ''}。<br>
+        <b>建議先由其他醫師完成初診</b>（同套療程、立即啟動），之後回診想指定 ${esc(docName)} 醫師，現場或 LINE 客服即可安排轉診。</div>
+      ${top.length ? `<div style="font-weight:800;font-size:16px;margin:12px 0 8px">✨ 這些醫師更快有初診空檔：</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${top.map(a => `<div style="display:flex;align-items:center;gap:10px;background:#ecfdf5;border:1.5px solid #6ee7b7;border-radius:10px;padding:10px 14px">
+          <div style="flex:1"><b style="font-size:16.5px">${esc(a.doc)} 醫師</b><span class="muted" style="margin-left:8px">${esc(a.clinic)}</span>
+            <div style="color:#047857;font-weight:700;font-size:14.5px">⚡ 最快 ${mdTxt(a.ds)} 可約</div></div>
+          <button class="btn btn-g" data-act="divert-pick" data-d="${esc(a.doc)}" data-c="${esc(a.clinic)}" data-ds="${esc(a.ds)}">選這位 →</button></div>`).join('')}
+      </div>` : `<p class="muted" style="margin-top:10px">（其他醫師空檔載入中，也可直接回上一頁選其他醫師）</p>`}
+    </div>
+    <div class="mf"><button class="btn btn-o" data-act="book-doc" data-d="${esc(docName)}" data-force="1">仍要等 ${esc(docName)} 醫師</button>
+      <button class="btn btn-p" data-act="close-modal">← 我再想想</button></div>`);
+}
+
 async function openDoctorIntro(shortName) {
   const ph = S.photos[shortName];
   const hero = ph
@@ -1075,10 +1146,10 @@ function htmlStep3() {
   const cfgTxt = b.anyDoc ? ['依各醫師設定','依各醫師設定'] : [cfgFor(b.doctor, b.clinic).initMin+' 分鐘', cfgFor(b.doctor, b.clinic).followMin+' 分鐘'];
   return `<h2 style="font-size:22px">Step 3 · 選擇看診日期與時段</h2>
     <div style="margin-top:10px">${banner}</div>
-    <div class="frow" style="max-width:460px"><label>就診類型（時段長度不同，請先選）*</label><div class="vt">
-      <button class="${b.type==='initial'?'on':''}" data-act="vt" data-v="initial">初診<br><small class="muted">${cfgTxt[0]}</small></button>
-      <button class="${b.type==='followup'?'on':''}" data-act="vt" data-v="followup">複診<br><small class="muted">${cfgTxt[1]}</small></button>
-    </div></div>
+    <div style="max-width:460px;display:flex;align-items:center;gap:10px;margin:6px 0 2px">
+      <span style="background:${b.type==='initial'?'#faf5ff;border:1.5px solid #a855f7;color:#6b21a8':'#eff6ff;border:1.5px solid #3b82f6;color:#1e40af'};border-radius:9px;padding:8px 14px;font-weight:800;font-size:16px">${b.type==='initial'?'🆕 初診':'🔁 複診'} · ${b.type==='initial'?cfgTxt[0]:cfgTxt[1]}</span>
+      <button class="btn btn-o btn-sm" data-act="retype">重選身份</button></div>
+    ${b.type==='initial' ? `<p class="muted" style="font-size:14px;margin:6px 0 2px">🔁 初診會同步保留 2 週後同時段回診；「回診已滿」的時段無法選取</p>` : ''}
     <div class="calwrap">
       <div class="cal">${calHtml()}</div>
       <p class="muted" style="font-size:13px;margin-top:6px">📅 網路預約開放 <b>${OPEN_DAYS} 天內</b>的日期；標示「未開放」的日期尚未開放預約，將依門診表陸續開放。24 小時內的時段不開放網路預約，請加 LINE <b>@selectgoodfood</b> 或電聯院所。</p>
@@ -1168,6 +1239,20 @@ async function loadStep3Slots() {
   });
   fine.sort((a,b2) => a.m - b2.m);
   const appts = await getAppts(b.clinic, b.date);
+  // ✨ v31.13 初診：同步抓 2 週後同日的預約與狀態，回診沒空的時段要擋
+  let blocks14 = null, d14 = null;
+  if (b.type === 'initial') {
+    d14 = fmtD(new Date(new Date(b.date + 'T00:00').getTime() + 14 * 864e5));
+    const appts14 = await getAppts(b.clinic, d14);
+    blocks14 = {};
+    appts14.forEach(a => {
+      if (isDead(a)) return;
+      const dn = normDoc(a.doctor || a['醫師'] || '');
+      const st = t2m(apptTime(a));
+      if (isNaN(st)) return;
+      (blocks14[dn] = blocks14[dn] || []).push([st, apptEndMin(a, dn)]);
+    });
+  }
   if (S.bk.date !== b.date) return;
   // 每位醫師的已佔用區間（初診佔 30 分就整段擋掉）
   const blocks = {};
@@ -1191,11 +1276,21 @@ async function loadStep3Slots() {
     h += `<div class="tsgrp"><h4>${g}</h4><div class="tslots">`;
     arr.forEach(f => {
       if (slotSoon(b.date, f.t)) { hadSoon = true; return; }
-      const full = overlaps(normDoc(f.doctor), f.m, f.m + f.dur);
+      let full = overlaps(normDoc(f.doctor), f.m, f.m + f.dur);
+      let fuBusy = false;   // ✨ v31.13 初診：2 週後回診時段檢查
+      if (!full && blocks14) {
+        const dn14 = normDoc(f.doctor);
+        const fDur = cfgFor(f.doctor, b.clinic).followMin;
+        const st14 = dayStat(b.clinic, d14, f.doctor);
+        fuBusy = st14 === '滿診' || st14 === '停診'
+          || (blocks14[dn14] || []).some(([bs, be]) => f.m < be && bs < f.m + fDur);
+      }
       const sel = b.slot === f.t && (!b.anyDoc || b.slotDoctor === f.doctor);
       const rangeTxt = `${f.t}<small>~${m2t(f.m + f.dur)}${b.anyDoc ? ' ' + esc(f.doctor) + ' 醫師' : ''}</small>`;
       h += full
         ? `<div class="ts full" title="此時段已被預約">${rangeTxt}</div>`
+        : fuBusy
+        ? `<div class="ts full" title="2 週後同時段的回診已滿，初診須同步保留回診，請改選其他時段" style="position:relative">${rangeTxt}<small style="display:block;color:#b45309;font-weight:700">回診已滿</small></div>`
         : `<div class="ts ${sel ? 'sel' : ''}" data-act="pick-slot" data-t="${f.t}" data-d="${esc(f.doctor)}">${rangeTxt}</div>`;
     });
     h += `</div></div>`;
@@ -1340,6 +1435,10 @@ async function confirmBooking() {
   } else {
     btn.disabled = false; btn.textContent = '✓ 確認預約';
     const ph = res.clinicPhone || cliPhone(b.clinic);
+    if (res.error === 'followup_slot_taken') {   // ✨ v31.13 初診回診連動：被搶走 → 回日曆重選
+      toast('此時段 2 週後的回診剛被約走，請改選其他時段', 'var(--amber)');
+      S.bk.step = 3; S.bk.slot = null; S.apptCache.clear(); renderStep(); return;
+    }
     const M = { blacklisted: `此手機號碼需來電預約，請撥 ${ph}`, within_24h: `24 小時內不開放網路預約，請加 LINE @selectgoodfood 或來電 ${ph}`,
       closed_day: '該日停診，請重新選擇日期', full_day: `該日已額滿，請改選其他日期${ph ? `或來電 ${ph}` : ''}`,
       too_far: `僅開放 ${OPEN_DAYS} 天內的網路預約` };
@@ -2761,18 +2860,31 @@ async function loadCBlood() {
 /* ── ⛔ 黑名單 ── */
 async function loadCBlack() {
   const box = $('#blk-box'); if (!box) return;
-  const res = await api.post('getBlacklist', cScope() === 'all' ? {} : { clinic: cScope() }, true);
+  const [res, auto] = await Promise.all([
+    api.post('getBlacklist', cScope() === 'all' ? {} : { clinic: cScope() }, true),
+    api.post('getAutoBlockedList', {}, true),   // ✨ v31.18 自動封鎖中的號碼也列出來
+  ]);
   if (!document.querySelector('#blk-box')) return;
   if (!res.ok) { box.textContent = '載入失敗：' + (res.error || '請確認後端已更新 v13.1'); return; }
   const rows = res.data || [];
-  if (!rows.length) { box.innerHTML = '<div class="muted" style="padding:10px">目前沒有手動封鎖的號碼（自動規則仍持續生效）</div>'; return; }
+  const autos = (auto.ok && auto.data) || [];
   window.__blIndex = rows;
   box.classList.remove('muted'); box.style.padding = '0';
-  box.innerHTML = `<table class="tbl"><thead><tr><th>電話</th><th>姓名</th><th>院區</th><th>原因</th><th>加入時間</th><th>操作</th></tr></thead><tbody>
-    ${rows.map((r, i) => `<tr><td><b>${esc(String(r['電話']).replace(/^'/, ''))}</b></td><td>${esc(r['姓名'] || '')}</td>
-      <td>${esc(r['院區'] || '')}</td><td>${esc(r['原因'] || '')}</td>
-      <td>${esc(String(r['加入時間'] || '').slice(0, 10))}</td>
-      <td><button class="btn btn-o btn-sm" data-act="bl-remove" data-i="${i}">解除封鎖</button></td></tr>`).join('')}</tbody></table>`;
+  const manualH = rows.length
+    ? `<table class="tbl"><thead><tr><th>電話</th><th>姓名</th><th>院區</th><th>原因</th><th>加入時間</th><th>操作</th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td><b>${esc(String(r['電話']).replace(/^'/, ''))}</b></td><td>${esc(r['姓名'] || '')}</td>
+        <td>${esc(r['院區'] || '')}</td><td>${esc(r['原因'] || '')}</td>
+        <td>${esc(String(r['加入時間'] || '').slice(0, 10))}</td>
+        <td><button class="btn btn-o btn-sm" data-act="bl-remove" data-i="${i}">解除封鎖</button></td></tr>`).join('')}</tbody></table>`
+    : '<div class="muted" style="padding:10px">目前沒有手動封鎖的號碼</div>';
+  const autoH = autos.length
+    ? `<div style="margin-top:14px;font-weight:800;font-size:15.5px;color:#9a3412">🤖 自動封鎖中（初診未到 ≥2 次，共 ${autos.length} 支）</div>
+      <table class="tbl" style="margin-top:6px"><thead><tr><th>電話</th><th>姓名</th><th>未到次數</th><th>最近未到</th><th>操作</th></tr></thead><tbody>
+      ${autos.map(a => `<tr style="background:#fff7ed"><td><b>${esc(a.phone)}</b></td><td>${esc(a.name || '')}</td>
+        <td style="color:var(--red);font-weight:700">${a.misses} 次</td><td>${esc(String(a.lastMiss).slice(0, 10))}</td>
+        <td><button class="btn btn-g btn-sm" data-act="bl-whitelist" data-p="${esc(a.phone)}" data-n="${esc(a.name || '')}">解除（加白名單）</button></td></tr>`).join('')}</tbody></table>`
+    : '<div class="muted" style="margin-top:12px;padding:4px 10px">🤖 目前沒有被自動規則封鎖的號碼</div>';
+  box.innerHTML = manualH + autoH;
 }
 /* ── 💊 拿藥需求看板 ── */
 async function fetchMedReqs(force) {
@@ -2919,6 +3031,7 @@ function htmlCNotify() {
       <span style="flex:1"></span>
       <button class="btn btn-o btn-sm" data-act="cd-refresh">🔄</button>
       <button class="btn btn-p btn-sm" data-act="audit-unsent" title="掃描所有未來預約，列出「預約成功簡訊沒真正送出」的名單並一鍵補發">🩹 勾稽補發</button>
+      <button class="btn btn-o btn-sm" data-act="repair-zeros" title="一次性修復：把舊資料中被試算表吃掉開頭 0 的電話/病歷號整批補回">🧰 資料修復(補0)</button>
     </div>
     <p class="muted" style="margin-bottom:10px">📨 上半：本日「看診」預約的通知狀態 ｜ 下半：本日「實際發出」的簡訊/LINE 紀錄（含幫未來預約發的）</p>
     <div id="cn-box" class="muted" style="padding:14px;text-align:center">載入中…</div>
@@ -3152,17 +3265,9 @@ function recolorBg(img, bgColor) {
   const inBg = i => px[i] >= mn[0] - M && px[i] <= mx[0] + M
     && px[i+1] >= mn[1] - M && px[i+1] <= mx[1] + M
     && px[i+2] >= mn[2] - M && px[i+2] <= mx[2] + M;
-  // 從邊界擴散（只走色域內的像素 → 人物內部同色区域不會被誤換）
+  // ✨ v31.17 全圖色域替換：連「手臂與身體圍出的封閉背景」也一起換（膚色/白袍/髮色都在色域外，不受影響）
   const mask = new Uint8Array(W * H);
-  const stack = [];
-  const push = p => { if (!mask[p] && inBg(p * 4)) { mask[p] = 1; stack.push(p); } };
-  for (let x = 0; x < W; x++) { push(x); push((H - 1) * W + x); }
-  for (let y = 0; y < H; y++) { push(y * W); push(y * W + W - 1); }
-  while (stack.length) {
-    const p = stack.pop(), x = p % W, y = (p / W) | 0;
-    if (x > 0) push(p - 1); if (x < W - 1) push(p + 1);
-    if (y > 0) push(p - W); if (y < H - 1) push(p + W);
-  }
+  for (let p = 0; p < W * H; p++) if (inBg(p * 4)) mask[p] = 1;
   let bgN = 0;
   for (let p = 0; p < W * H; p++) {
     if (!mask[p]) continue;
@@ -3541,8 +3646,10 @@ function htmlASched() {
   S.schedules.forEach(s => byC[s.clinic] = (byC[s.clinic]||0) + 1);
   const chips = Object.entries(byC).sort().map(([c,n]) => `<span class="tag tag-b" style="margin:2px">${esc(c)} ${n}</span>`).join('');
   return `<div class="card">
-    <div class="syncbar"><div style="font-size:15.5px;color:#1e3a8a"><b>📡 Drive 班表同步</b> · <span id="as-info">檢查中…</span></div>
-    <button class="btn btn-p btn-sm" data-act="a-sync">🔄 立即同步</button></div>
+    <div class="syncbar" style="background:#ecfdf5;border-color:#6ee7b7"><div style="font-size:15.5px;color:#065f46"><b>🗓 請假系統同步（新資料來源）</b> · 班表與請假每小時自動同步，也可手動立即同步</div>
+    <button class="btn btn-g btn-sm" data-act="ls-sync">🔄 立即從請假系統同步</button></div>
+    <div class="syncbar"><div style="font-size:15.5px;color:#1e3a8a"><b>📡 Drive 班表同步（舊備援）</b> · <span id="as-info">檢查中…</span></div>
+    <button class="btn btn-o btn-sm" data-act="a-sync">🔄 舊來源同步</button></div>
     <h3>📅 班表管理（目前 ${S.schedules.length} 筆）</h3>
     <div style="margin:10px 0">${chips}</div>
     <div style="display:flex;gap:8px;margin:10px 0">
@@ -3639,6 +3746,8 @@ document.addEventListener('click', async e => {
       break; }
     /* hub */
     case 'hub-new': resetBk(); showFlow(); break;
+    case 'pick-type': S.bk.type = el.dataset.v; S.bk.typePicked = true; renderStep(); break;
+    case 'retype': S.bk.typePicked = false; S.bk.step = 1; S.bk.date = null; S.bk.slot = null; renderStep(); break;
     case 'bind-open': openBindMgr(); break;
     case 'bind-add': {
       const ph = String($('#bd-phone').value || '').replace(/\D/g, '');
@@ -3665,7 +3774,21 @@ document.addEventListener('click', async e => {
     case 'view-doc': S.bk.view = 'doctor'; renderStep(); break;
     case 'view-clinic': S.bk.view = 'clinic'; S.bk.clinic = null; S.bk.doctor = null; renderStep(); break;
     case 'pick-doc': openDoctorIntro(el.dataset.d); break;
-    case 'book-doc': closeModals(); openDoctorSchedule(el.dataset.d); break;
+    case 'book-doc': {
+      closeModals();
+      const dv = el.dataset.d;
+      if (S.bk.type === 'initial' && S.docDiverts[normDoc(dv)] && !el.dataset.force) { openDivertSuggest(dv); break; }   // ✨ v31.14
+      openDoctorSchedule(dv); break; }
+    case 'divert-pick': {   // ✨ v31.14 一鍵改約推薦醫師（直達日期頁）
+      closeModals();
+      S.bk.doctor = el.dataset.d; S.bk.clinic = el.dataset.c; S.bk.anyDoc = false;
+      S.bk.step = 3; S.bk.slot = null;
+      const ds3 = el.dataset.ds;
+      if (ds3) { S.bk.date = ds3; S.bk.weekday = isoWd(ds3); S.bk.calY = +ds3.slice(0, 4); S.bk.calM = +ds3.slice(5, 7); }
+      else { S.bk.date = null; S.bk.calY = null; }
+      showFlow();
+      toast(`已帶入 ${S.bk.doctor} 醫師 · ${S.bk.clinic}，請選時段`, 'var(--blue)');
+      break; }
     case 'nav-map': {
       const url = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(el.dataset.q);
       if (window.liff && liff.isInClient && liff.isInClient()) liff.openWindow({ url, external: true });
@@ -3712,9 +3835,20 @@ document.addEventListener('click', async e => {
       if (S.bk.calM < 1) { S.bk.calM = 12; S.bk.calY--; }
       if (S.bk.calM > 12) { S.bk.calM = 1; S.bk.calY++; }
       renderStep(); break; }
-    case 'pick-date':
-      S.bk.date = el.dataset.ds; S.bk.weekday = +el.dataset.w; S.bk.slot = null;
-      renderStep(); break;
+    case 'pick-date': {
+      const dsP = el.dataset.ds, wdP = +el.dataset.w;
+      if (!IS_STAFF && Date.now() - (S._cfgAt || 0) > 5e3) {   // ✨ v31.15 點擊當下即時驗
+        await loadPublicCfg();
+        const stP = S.bk.anyDoc ? '' : dayStat(S.bk.clinic, dsP, S.bk.doctor);
+        if (stP === '滿診' || stP === '停診') {
+          toast(`該日剛被設為${stP}，請改選其他日期`, 'var(--amber)');
+          const calEl = document.querySelector('#stepbox .cal');
+          if (calEl) calEl.innerHTML = calHtml();
+          break;
+        }
+      }
+      S.bk.date = dsP; S.bk.weekday = wdP; S.bk.slot = null;
+      renderStep(); break; }
     case 'f-course': {   // ✨ v31.7 針劑療程
       const wN = +el.dataset.w;
       S.bk.course = wN > 0 ? { name: el.dataset.n, weeks: wN } : null;
@@ -3873,6 +4007,12 @@ document.addEventListener('click', async e => {
       if (res.ok) { toast('✓ 已加入黑名單'); loadCBlack(); }
       else toast('失敗：' + (res.error || ''), 'var(--red)');
       break; }
+    case 'bl-whitelist': {   // ✨ v31.18 自動封鎖 → 一鍵加白名單
+      el.disabled = true; el.textContent = '解除中…';
+      const rw = await api.post('removeBlacklist', { phone: el.dataset.p, name: el.dataset.n, operator: (S.cUser || {}).name || '' }, true);
+      if (rw.ok) { toast('✓ 已加入白名單，此號碼不再被自動封鎖'); loadCBlack(); }
+      else { el.disabled = false; el.textContent = '解除（加白名單）'; toast('失敗：' + (rw.error || ''), 'var(--red)'); }
+      break; }
     case 'bl-remove': {
       const r = (window.__blIndex || [])[+el.dataset.i]; if (!r) break;
       if (!confirm(`確定解除 ${r['姓名'] || ''} ${r['電話']} 的封鎖？（同時豁免自動規則）`)) break;
@@ -3915,6 +4055,14 @@ document.addEventListener('click', async e => {
     case 'cd-nav': { const d = new Date(S.cDate+'T00:00'); d.setDate(d.getDate() + +el.dataset.d); S.cDate = fmtD(d); renderCounter(); break; }
     case 'cd-today': S.cDate = fmtD(new Date()); renderCounter(); break;
     case 'cd-sess': S.cSession = el.dataset.s; renderCounter(); break;
+    case 'repair-zeros': {   // ✨ v31.17 一次性資料修復
+      if (!confirm('將掃描「預約」與「病人」資料表，把被吃掉開頭 0 的電話/病歷號補回（一次性，約 1 分鐘）。開始？')) break;
+      el.disabled = true; el.textContent = '🧰 修復中…';
+      const rz = await api.post('repairLeadingZeros', {}, true);
+      el.disabled = false; el.textContent = '🧰 資料修復(補0)';
+      if (rz.ok) toast(`✓ 修復完成：預約表 ${rz.fixed['預約'] ?? 0} 格、病人表 ${rz.fixed['病人'] ?? 0} 格`);
+      else toast('修復失敗：' + (rz.error || ''), 'var(--red)');
+      break; }
     case 'audit-unsent': {   // ✨ v31.10 勾稽未發送＋補發
       el.disabled = true; el.textContent = '🩹 掃描中…';
       const r = await api.post('auditUnsentBookings', {}, true);
@@ -3941,6 +4089,22 @@ document.addEventListener('click', async e => {
         toast(`✓ 已排入補發 ${okN}/${ids.length} 筆（1-2 分鐘內發出）`);
         closeModals();
       } else { el.disabled = false; el.textContent = '📨 全部補發'; toast('失敗：' + (r2.error || ''), 'var(--red)'); }
+      break; }
+    case 'ls-sync': {   // ✨ v31.16 請假系統同步
+      el.disabled = true; el.textContent = '🔄 同步中…（約 30 秒）';
+      const r = await api.post('syncLeaveSystem', {}, true);
+      el.disabled = false; el.textContent = '🔄 立即從請假系統同步';
+      if (r.ok) {
+        const s2 = r.schedule || {}, lv = r.leave || {};
+        modal(`<div class="mh">🗓 請假系統同步完成 <button class="btn btn-o btn-sm" data-act="close-modal">✕</button></div>
+          <div class="mb" style="font-size:15.5px;line-height:2">
+            📅 班表：<b>${s2.count ?? 0}</b> 筆減重專診（${s2.clinics ?? 0} 個院區）<br>
+            🏖 請假停診：目前生效 <b>${lv.active ?? 0}</b> 診次（本次新增 ${lv.added ?? 0}、撤銷 ${lv.removed ?? 0}）
+            ${(r.warnings || []).length ? `<div style="color:#9a3412;font-weight:700;margin-top:6px">⚠ ${r.warnings.map(esc).join('；')}</div>` : ''}
+            <div class="muted" style="margin-top:6px">前台重新整理後生效；請假造成的停診會照常出現在櫃檯的電話通知清單。</div></div>
+          <div class="mf"><button class="btn btn-p" style="width:100%" data-act="close-modal">完成</button></div>`);
+        loadSchedules(true).then(() => { buildDoctors(); });
+      } else toast('同步失敗：' + (r.error || ''), 'var(--red)');
       break; }
     case 'cd-refresh': S.apptCache.clear(); renderCounter(); break;
     case 'cd-mode': S.cMode = el.dataset.m; renderCounter(); break;
